@@ -97,6 +97,7 @@ import io.github.toolicious.labler.printer.dither.DitherMode
 import io.github.toolicious.labler.printer.dither.OutlineMethod
 import io.github.toolicious.labler.render.LabelRenderer
 import io.github.toolicious.labler.ui.components.ClearButton
+import io.github.toolicious.labler.ui.components.RasterEffectControls
 import io.github.toolicious.labler.ui.components.rememberBlePermissionRunner
 import io.github.toolicious.labler.ui.home.LabelDialog
 import kotlinx.coroutines.Dispatchers
@@ -854,79 +855,26 @@ private fun OutlineOptionsRow(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ImageProperties(element: ImageElement, onUpdate: (LabelElement) -> Unit) {
-    GroupLabel(stringResource(R.string.group_raster))
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        val modes = listOf(
-            DitherMode.OUTLINE to R.string.dither_outline,
-            DitherMode.THRESHOLD to R.string.dither_threshold,
-            DitherMode.FLOYD_STEINBERG to R.string.dither_fs,
-            DitherMode.ATKINSON to R.string.dither_atkinson,
-        )
-        modes.forEach { (mode, label) ->
-            ChoiceChip(
-                selected = element.dither == mode,
-                onClick = { onUpdate(element.copy(dither = mode)) },
-                label = { Text(stringResource(label)) },
-            )
-        }
-    }
-    when (element.dither) {
-        DitherMode.OUTLINE -> {
-            Spacer(Modifier.height(6.dp))
-            Text(
-                stringResource(R.string.prop_outline_detail) + ": ${element.outlineSensitivity}",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Slider(
-                value = element.outlineSensitivity.toFloat(),
-                onValueChange = { onUpdate(element.copy(outlineSensitivity = it.roundToInt())) },
-                valueRange = 0f..100f,
-            )
-            Stepper(
-                label = stringResource(R.string.prop_line_width) + ": ",
-                value = "${element.outlineThickness} px",
-                onDecrease = { onUpdate(element.copy(outlineThickness = (element.outlineThickness - 1).coerceAtLeast(1))) },
-                onIncrease = { onUpdate(element.copy(outlineThickness = (element.outlineThickness + 1).coerceAtMost(3))) },
-            )
-            OutlineOptionsRow(
-                method = element.outlineMethod,
-                smooth = element.outlineSmooth,
-                invert = element.invert,
-                onMethod = { onUpdate(element.copy(outlineMethod = it)) },
-                onSmooth = { onUpdate(element.copy(outlineSmooth = it)) },
-                onInvert = { onUpdate(element.copy(invert = it)) },
-            )
-        }
-        DitherMode.THRESHOLD -> {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                stringResource(R.string.prop_image_threshold) + ": ${element.threshold}",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Slider(
-                value = element.threshold.toFloat(),
-                onValueChange = { onUpdate(element.copy(threshold = it.toInt())) },
-                valueRange = 20f..235f,
-            )
-        }
-        else -> {
-            // Floyd-Steinberg / Atkinson: contrast tunes the tones before dithering.
-            Spacer(Modifier.height(6.dp))
-            GroupLabel(stringResource(R.string.prop_contrast) + ": ${element.contrast}")
-            Slider(
-                value = element.contrast.toFloat(),
-                onValueChange = { onUpdate(element.copy(contrast = it.roundToInt())) },
-                valueRange = -100f..100f,
-            )
-        }
-    }
-    if (element.dither != DitherMode.OUTLINE) {
-        Spacer(Modifier.height(4.dp))
-        ToggleRow(stringResource(R.string.prop_invert), element.invert) { onUpdate(element.copy(invert = it)) }
-    }
+    RasterEffectControls(
+        mode = element.dither,
+        threshold = element.threshold,
+        contrast = element.contrast,
+        invert = element.invert,
+        outlineSensitivity = element.outlineSensitivity,
+        outlineThickness = element.outlineThickness,
+        outlineMethod = element.outlineMethod,
+        outlineSmooth = element.outlineSmooth,
+        onMode = { onUpdate(element.copy(dither = it)) },
+        onThreshold = { onUpdate(element.copy(threshold = it)) },
+        onContrast = { onUpdate(element.copy(contrast = it)) },
+        onInvert = { onUpdate(element.copy(invert = it)) },
+        onOutlineSensitivity = { onUpdate(element.copy(outlineSensitivity = it)) },
+        onOutlineThickness = { onUpdate(element.copy(outlineThickness = it)) },
+        onOutlineMethod = { onUpdate(element.copy(outlineMethod = it)) },
+        onOutlineSmooth = { onUpdate(element.copy(outlineSmooth = it)) },
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)

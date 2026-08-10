@@ -36,14 +36,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.Alignment as UiAlignment
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.toolicious.labler.R
 import io.github.toolicious.labler.data.PrintHistoryEntry
+import io.github.toolicious.labler.data.HistoryRepository
 import io.github.toolicious.labler.model.LabelSpec
 import io.github.toolicious.labler.printer.MonoImage
 import io.github.toolicious.labler.render.LabelRenderer
+import io.github.toolicious.labler.render.MonoConverter
 import io.github.toolicious.labler.ui.components.rememberBlePermissionRunner
 import io.github.toolicious.labler.ui.print.PrintSheet
 import java.text.SimpleDateFormat
@@ -97,7 +100,8 @@ fun HistoryScreen(onBack: () -> Unit, vm: HistoryViewModel = viewModel()) {
                     entry = entry,
                     onReprint = {
                         withBlePermissions {
-                            reprint = LabelRenderer.renderMono(entry.spec, entry.elements) to entry
+                            val exact = HistoryRepository.decodeRaster(entry)
+                            reprint = (exact ?: LabelRenderer.renderMono(entry.spec, entry.elements)) to entry
                         }
                     },
                     onDelete = { vm.delete(entry.id) }
@@ -124,7 +128,9 @@ private fun HistoryCard(
     Card {
         Column(Modifier.padding(12.dp)) {
             val bitmap = remember(entry.id) {
-                LabelRenderer.render(entry.spec, entry.elements).asImageBitmap()
+                val exact = HistoryRepository.decodeRaster(entry)
+                if (exact != null) MonoConverter.toBitmap(exact).asImageBitmap()
+                else LabelRenderer.render(entry.spec, entry.elements).asImageBitmap()
             }
             Image(
                 bitmap = bitmap,
@@ -133,7 +139,8 @@ private fun HistoryCard(
                     .fillMaxWidth()
                     .height(180.dp)
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                contentScale = ContentScale.Fit
+                contentScale = if (entry.rasterBase64 != null) ContentScale.FillWidth else ContentScale.Fit,
+                alignment = if (entry.rasterBase64 != null) UiAlignment.TopCenter else UiAlignment.Center,
             )
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {

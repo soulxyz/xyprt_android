@@ -8,14 +8,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -30,8 +28,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -50,13 +46,13 @@ import io.github.toolicious.labler.R
 import io.github.toolicious.labler.printer.MediaType
 import io.github.toolicious.labler.printer.MonoImage
 import io.github.toolicious.labler.printer.dither.DitherMode
-import io.github.toolicious.labler.printer.dither.OutlineMethod
 import io.github.toolicious.labler.ui.components.MonoPaperPreview
+import io.github.toolicious.labler.ui.components.RasterEffectControls
 import io.github.toolicious.labler.ui.components.rememberBlePermissionRunner
 import io.github.toolicious.labler.ui.print.PrintSheet
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.math.roundToInt
 
 private enum class SourceMode { TEXT, IMAGE, PDF }
 
@@ -72,6 +68,7 @@ fun QuickPrintScreen(
     mode: String,
     onBack: () -> Unit,
     externalIntent: Intent? = null,
+    vm: QuickPrintViewModel = viewModel(),
 ) {
     val context = LocalContext.current
     val inferred = remember(mode, externalIntent) { inferMode(mode, externalIntent) }
@@ -206,9 +203,27 @@ fun QuickPrintScreen(
 
             if (sourceMode == SourceMode.IMAGE || sourceMode == SourceMode.PDF) {
                 Spacer(Modifier.height(6.dp))
-                QuickAdjustmentPanel(
-                    value = adjustments,
-                    onChange = { adjustments = it }
+                RasterEffectControls(
+                    mode = adjustments.mode,
+                    threshold = adjustments.threshold,
+                    contrast = adjustments.contrast,
+                    invert = adjustments.invert,
+                    outlineSensitivity = adjustments.outlineSensitivity,
+                    outlineThickness = adjustments.outlineThickness,
+                    outlineMethod = adjustments.outlineMethod,
+                    outlineSmooth = adjustments.outlineSmooth,
+                    onMode = { adjustments = adjustments.copy(mode = it) },
+                    onThreshold = { adjustments = adjustments.copy(threshold = it) },
+                    onContrast = { adjustments = adjustments.copy(contrast = it) },
+                    onInvert = { adjustments = adjustments.copy(invert = it) },
+                    onOutlineSensitivity = { adjustments = adjustments.copy(outlineSensitivity = it) },
+                    onOutlineThickness = { adjustments = adjustments.copy(outlineThickness = it) },
+                    onOutlineMethod = { adjustments = adjustments.copy(outlineMethod = it) },
+                    onOutlineSmooth = { adjustments = adjustments.copy(outlineSmooth = it) },
+                    rotationDegrees = adjustments.rotationDegrees,
+                    onRotationDegrees = { adjustments = adjustments.copy(rotationDegrees = it) },
+                    scalePercent = adjustments.scalePercent,
+                    onScalePercent = { adjustments = adjustments.copy(scalePercent = it) },
                 )
             }
 
@@ -245,150 +260,37 @@ fun QuickPrintScreen(
     }
 
     if (showPrint) mono?.let { image ->
-        PrintSheet(image = image, initialMedia = MediaType.CONTINUOUS, onDismiss = { showPrint = false })
-    }
-}
-
-@Composable
-private fun QuickAdjustmentPanel(value: QuickImageAdjustments, onChange: (QuickImageAdjustments) -> Unit) {
-    Text(stringResource(R.string.quick_processing_title), style = MaterialTheme.typography.labelLarge)
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        listOf(
-            Triple(DitherMode.OUTLINE, R.string.dither_outline, "线稿"),
-            Triple(DitherMode.THRESHOLD, R.string.dither_threshold, "黑白"),
-            Triple(DitherMode.FLOYD_STEINBERG, R.string.dither_fs, "细腻"),
-            Triple(DitherMode.ATKINSON, R.string.dither_atkinson, "清晰"),
-        ).forEach { (mode, _, shortLabel) ->
-            FilterChip(
-                selected = value.mode == mode,
-                onClick = { onChange(value.copy(mode = mode)) },
-                label = { Text(shortLabel, maxLines = 1) },
-                modifier = Modifier.weight(1f)
-            )
-        }
-    }
-
-    when (value.mode) {
-        DitherMode.OUTLINE -> {
-            CompactSliderRow(
-                label = "细节 ${value.outlineSensitivity}",
-                value = value.outlineSensitivity.toFloat(),
-                valueRange = 0f..100f,
-                onValueChange = { onChange(value.copy(outlineSensitivity = it.roundToInt())) }
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text("线宽", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(48.dp))
-                listOf(1, 2, 3).forEach { n ->
-                    FilterChip(
-                        selected = value.outlineThickness == n,
-                        onClick = { onChange(value.copy(outlineThickness = n)) },
-                        label = { Text(n.toString()) }
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-                Text("平滑")
-                Switch(checked = value.outlineSmooth, onCheckedChange = { onChange(value.copy(outlineSmooth = it)) })
-                Text("反色")
-                Switch(checked = value.invert, onCheckedChange = { onChange(value.copy(invert = it)) })
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text("线稿方式", style = MaterialTheme.typography.bodyMedium)
-                FilterChip(
-                    selected = value.outlineMethod == OutlineMethod.CANNY,
-                    onClick = { onChange(value.copy(outlineMethod = OutlineMethod.CANNY)) },
-                    label = { Text("边缘") }
+        PrintSheet(
+            image = image,
+            initialMedia = MediaType.CONTINUOUS,
+            onDismiss = { showPrint = false },
+            onPrinted = { copies, _ ->
+                vm.recordPrinted(
+                    title = quickHistoryTitle(context, sourceMode, text, uris),
+                    image = image,
+                    copies = copies,
                 )
-                FilterChip(
-                    selected = value.outlineMethod == OutlineMethod.LINES,
-                    onClick = { onChange(value.copy(outlineMethod = OutlineMethod.LINES)) },
-                    label = { Text("图形") }
-                )
-            }
-        }
-        DitherMode.THRESHOLD -> {
-            CompactSliderRow(
-                label = "黑白 ${value.threshold}",
-                value = value.threshold.toFloat(),
-                valueRange = 20f..235f,
-                onValueChange = { onChange(value.copy(threshold = it.roundToInt())) },
-                trailing = {
-                    Text("反色")
-                    Switch(checked = value.invert, onCheckedChange = { onChange(value.copy(invert = it)) })
-                }
-            )
-        }
-        DitherMode.FLOYD_STEINBERG, DitherMode.ATKINSON -> {
-            CompactSliderRow(
-                label = "对比 ${value.contrast}",
-                value = value.contrast.toFloat(),
-                valueRange = -100f..100f,
-                onValueChange = { onChange(value.copy(contrast = it.roundToInt())) },
-                trailing = {
-                    Text("反色")
-                    Switch(checked = value.invert, onCheckedChange = { onChange(value.copy(invert = it)) })
-                }
-            )
-        }
-    }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp)
-    ) {
-        Text("旋转", style = MaterialTheme.typography.labelLarge)
-        listOf(0, 90, 180, 270).forEach { deg ->
-            FilterChip(
-                selected = value.rotationDegrees == deg,
-                onClick = { onChange(value.copy(rotationDegrees = deg)) },
-                label = { Text("${deg}°", maxLines = 1) }
-            )
-        }
-    }
-    CompactSliderRow(
-        label = "缩放 ${value.scalePercent}%",
-        value = value.scalePercent.toFloat(),
-        valueRange = 50f..180f,
-        onValueChange = { onChange(value.copy(scalePercent = it.roundToInt())) }
-    )
-}
-
-@Composable
-private fun CompactSliderRow(
-    label: String,
-    value: Float,
-    valueRange: ClosedFloatingPointRange<Float>,
-    onValueChange: (Float) -> Unit,
-    trailing: (@Composable RowScope.() -> Unit)? = null,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().height(48.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(82.dp), maxLines = 1)
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = valueRange,
-            modifier = Modifier.weight(1f)
+            },
         )
-        trailing?.invoke(this)
     }
 }
 
+private fun quickHistoryTitle(context: android.content.Context, mode: SourceMode, text: String, uris: List<Uri>): String = when (mode) {
+    SourceMode.TEXT -> text.trim().lineSequence().firstOrNull()?.take(24)?.takeIf { it.isNotBlank() } ?: "快速文字"
+    SourceMode.IMAGE -> if (uris.size > 1) "图片打印（${uris.size}张）" else displayName(context, uris.firstOrNull()) ?: "图片打印"
+    SourceMode.PDF -> displayName(context, uris.firstOrNull()) ?: "PDF 打印"
+}
+
+private fun displayName(context: android.content.Context, uri: Uri?): String? {
+    if (uri == null) return null
+    return runCatching {
+        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    }.getOrNull()
+}
+
+/* Legacy local adjustment panel removed: quick image/PDF and editor image properties now use one shared component. */
 private fun inferMode(mode: String, intent: Intent?): SourceMode {
     val mime = intent?.type.orEmpty()
     return when {
