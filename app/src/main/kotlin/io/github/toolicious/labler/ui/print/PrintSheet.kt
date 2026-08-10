@@ -1,15 +1,11 @@
 package io.github.toolicious.labler.ui.print
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,9 +25,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -40,7 +33,7 @@ import io.github.toolicious.labler.R
 import io.github.toolicious.labler.ble.PrinterState
 import io.github.toolicious.labler.printer.MediaType
 import io.github.toolicious.labler.printer.MonoImage
-import io.github.toolicious.labler.render.MonoConverter
+import io.github.toolicious.labler.ui.components.MonoPaperPreview
 
 /**
  * Print dialog with pixel-exact 1-bit preview (exactly what the printer
@@ -63,7 +56,6 @@ fun PrintSheet(
 
     var copies by remember { mutableIntStateOf(1) }
     val media = MediaType.CONTINUOUS // BY-288 normal workflow: continuous roll; no gap calibration needed.
-    val preview = remember(image) { MonoConverter.toBitmap(image).asImageBitmap() }
 
     val view = LocalView.current
     DisposableEffect(working) {
@@ -89,16 +81,10 @@ fun PrintSheet(
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(Modifier.height(4.dp))
-            Image(
-                bitmap = preview,
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(image.width.toFloat() / image.height.coerceAtLeast(1))
-                    .heightIn(max = 420.dp)
-                    .border(1.dp, MaterialTheme.colorScheme.outline),
-                contentScale = ContentScale.FillBounds,
-                filterQuality = FilterQuality.None
+            MonoPaperPreview(
+                image = image,
+                minViewportHeight = 180.dp,
+                maxViewportHeight = 420.dp,
             )
             Spacer(Modifier.height(12.dp))
 

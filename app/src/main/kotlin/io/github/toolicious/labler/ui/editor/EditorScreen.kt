@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -122,6 +123,8 @@ fun EditorScreen(
     val canRedo by vm.canRedo.collectAsState()
     var showPrintSheet by remember { mutableStateOf(false) }
     var showMetaDialog by remember { mutableStateOf(false) }
+    var showAddTextDialog by remember { mutableStateOf(false) }
+    var pendingText by remember { mutableStateOf("") }
     val withBlePermissions = rememberBlePermissionRunner()
 
     val t = template
@@ -237,7 +240,8 @@ fun EditorScreen(
             GroupLabel(stringResource(R.string.group_add))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 AddButton(stringResource(R.string.add_text)) {
-                    vm.addElement(TextElement(id = UUID.randomUUID().toString(), x = 8f, y = 32f))
+                    pendingText = ""
+                    showAddTextDialog = true
                 }
                 AddButton(stringResource(R.string.add_symbol)) {
                     vm.addElement(IconElement(id = UUID.randomUUID().toString(), x = 8f, y = 24f))
@@ -334,6 +338,47 @@ fun EditorScreen(
                 showMetaDialog = false
             },
             onImport = null,
+        )
+    }
+
+    if (showAddTextDialog && t != null) {
+        AlertDialog(
+            onDismissRequest = { showAddTextDialog = false },
+            title = { Text("添加文字") },
+            text = {
+                OutlinedTextField(
+                    value = pendingText,
+                    onValueChange = { pendingText = it },
+                    label = { Text("输入要放到纸上的文字") },
+                    minLines = 2,
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val maxBottom = t.elements.maxOfOrNull { e ->
+                            e.y + LabelRenderer.measure(e).height
+                        } ?: 16f
+                        val y = (maxBottom + 12f).coerceAtMost((t.spec.lengthPx - 48).toFloat())
+                        vm.addElement(
+                            TextElement(
+                                id = UUID.randomUUID().toString(),
+                                x = 12f,
+                                y = y.coerceAtLeast(16f),
+                                text = pendingText,
+                            )
+                        )
+                        showAddTextDialog = false
+                        pendingText = ""
+                    },
+                    enabled = pendingText.isNotBlank(),
+                ) { Text("添加") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showAddTextDialog = false }) { Text("取消") }
+            },
         )
     }
 }

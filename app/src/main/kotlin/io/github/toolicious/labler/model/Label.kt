@@ -69,7 +69,7 @@ data class TextElement(
     override val x: Float = 8f,
     override val y: Float = 24f,
     override val rotation: Int = 0,
-    val text: String = "Text",
+    val text: String = "文字",
     val fontSizePx: Float = 32f,
     val bold: Boolean = false,
     val italic: Boolean = false,

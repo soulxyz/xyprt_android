@@ -19,7 +19,7 @@
     <string name="cd_back">返回</string>
     <string name="cd_settings">设置</string>
     <string name="cd_history">打印历史</string>
-    <string name="cd_new_label">新建排版</string>
+    <string name="cd_new_label">新建文档</string>
     <string name="cd_favorite">收藏</string>
     <string name="cd_menu">菜单</string>
     <string name="cd_clear">清除</string>
@@ -31,8 +31,8 @@
 
     <!-- Home -->
     <string name="home_search_hint">搜索</string>
-    <string name="home_empty">还没有保存的排版。\n可以先用上面的“文字 / 图片 / 文档”快速打印。</string>
-    <string name="home_no_results">没有匹配的排版。</string>
+    <string name="home_empty">还没有保存的文档。\n可以先用上面的“文字 / 图片 / 文档”快速打印。</string>
+    <string name="home_no_results">没有匹配的文档。</string>
     <string name="template_size">%1$d x %2$d mm</string>
     <string name="menu_edit">编辑</string>
     <string name="menu_duplicate">复制</string>
@@ -41,12 +41,12 @@
     <string name="toast_export_failed">导出失败：%1$s</string>
     <string name="toast_export_ok">已导出。</string>
     <string name="toast_import_failed">导入失败：%1$s</string>
-    <string name="delete_title">删除排版？</string>
+    <string name="delete_title">删除文档？</string>
     <string name="delete_message">%1$s 将被永久删除。</string>
 
     <!-- Label dialog -->
-    <string name="dialog_new_title">新建排版</string>
-    <string name="dialog_edit_title">排版设置</string>
+    <string name="dialog_new_title">新建文档</string>
+    <string name="dialog_edit_title">文档设置</string>
     <string name="field_name">名称</string>
     <string name="size_hint">尺寸（标签带宽度 x 长度）：</string>
     <string name="preset_custom">自定义 …</string>
@@ -125,7 +125,7 @@
 
     <!-- Print dialog -->
     <string name="print_title">打印：%1$s</string>
-    <string name="print_preview">预览（%1$d mm，按打印效果的 1 位）：</string>
+    <string name="print_preview">实际打印预览 · 约 %1$d mm：</string>
     <string name="print_paper">纸张：</string>
     <string name="print_copies">份数：</string>
     <string name="print_counter_start">编号从 %1$d 开始</string>
@@ -151,7 +151,7 @@
     <string name="settings_experimental_hint">实验性打印机命令。仅在已连接打印机时使用；不确定就忽略。</string>
     <string name="exp_learn_gap">校准标签间隙</string>
     <string name="settings_about">关于</string>
-    <string name="about_text">错题小印 Revival %1$s\n\n通过 Bluetooth Classic SPP 用于 BY-288 / 错题小印 X1的独立 FOSS 应用。该协议是从 BleWebler 逆向工程得到的，BleWebler 是一个无需安装、在 Chrome 浏览器中运行的网页版。未使用任何代码。</string>
+    <string name="about_text">错题小印 %1$s\n\n面向 BY-288 / 错题小印 X1 的离线热敏打印应用，通过 Bluetooth Classic SPP 直接连接打印机。</string>
     <string name="scan_title">查找打印机</string>
     <string name="scan_show_all">显示所有蓝牙设备</string>
     <string name="scan_empty">未找到任何设备。打印机开着吗？</string>
@@ -185,7 +185,7 @@
     <string name="about_description">错题小印是一款面向 BY-288 / 错题小印 X1 的离线热敏打印应用，支持文字、图片、PDF、二维码、条码和自由排版，并可从其他应用直接分享或打开内容进行打印。</string>
     <string name="about_license">许可证：GPL-3.0-or-later</string>
     <string name="about_source">源代码和帮助</string>
-    <string name="about_thanks">感谢开源的 Chrome 网页应用 %1$s，它使 BY-288 协议得以公开。</string>
+    <string name="about_thanks">本项目基于 LaBLEr 开源应用改造，并保留 GPL-3.0-or-later 许可。</string>
     <string name="about_version">版本 %1$s</string>
     <string name="action_close">关闭</string>
     <string name="add_barcode">条码</string>
@@ -200,10 +200,10 @@
     <string name="backup_import">导入</string>
     <string name="backup_ok">备份完成。</string>
     <string name="backup_replace">替换</string>
-    <string name="backup_replace_message">替换现有标签，还是添加导入的标签？</string>
+    <string name="backup_replace_message">替换现有文档，还是添加导入的文档？</string>
     <string name="backup_replace_title">导入备份</string>
     <string name="cd_info">信息</string>
-    <string name="default_label_name">新建排版</string>
+    <string name="default_label_name">新建文档</string>
     <string name="duplicate_name">%1$s（副本）</string>
     <string name="err_file_invalid">无效文件</string>
     <string name="err_file_not_readable">文件无法读取</string>
@@ -248,11 +248,11 @@
     <!-- Alpha2: document-first BY-288 workflow -->
     <string name="home_printer">打印机</string>
     <string name="home_quick_title">快速打印</string>
-    <string name="home_templates_title">排版模板</string>
-    <string name="home_new_layout">+ 新建排版</string>
+    <string name="home_templates_title">我的文档</string>
+    <string name="home_new_layout">+ 新建文档</string>
     <string name="template_auto_length">自动长度 · 384 点宽</string>
     <string name="template_fixed_length">固定 %1$d mm · 384 点宽</string>
-    <string name="paper_width_fixed">BY-288 的可打印宽度由硬件固定为 384 点（约 47.3 mm）。纸卷本身可以更宽，因此这里不再让你填写“纸张宽度”。</string>
+    <string name="paper_width_fixed">BY-288 的打印头有效宽度固定为 384 点。纸卷的物理宽度无需在这里填写，内容会按打印头宽度排版。</string>
     <string name="length_mode">页面长度</string>
     <string name="length_auto">自动长度（推荐）</string>
     <string name="length_fixed">固定长度</string>
@@ -266,4 +266,6 @@
     <string name="quick_image_mode">图片效果</string>
     <string name="quick_preview">打印预览</string>
     <string name="quick_no_content">请选择内容或输入文字。</string>
+    <string name="about_link">项目主页</string>
+    <string name="about_repo">源代码</string>
 </resources>

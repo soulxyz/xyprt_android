@@ -1,12 +1,9 @@
 package io.github.toolicious.labler.ui.print
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -32,9 +29,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -45,8 +39,8 @@ import io.github.toolicious.labler.model.LabelTemplate
 import io.github.toolicious.labler.model.Placeholders
 import io.github.toolicious.labler.printer.MediaType
 import io.github.toolicious.labler.render.LabelRenderer
-import io.github.toolicious.labler.render.MonoConverter
 import io.github.toolicious.labler.ui.components.ClearButton
+import io.github.toolicious.labler.ui.components.MonoPaperPreview
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -84,9 +78,9 @@ fun TemplatePrintSheet(
             answers = answers,
         )
         val resolved = Placeholders.resolve(template.elements, context)
-        LabelRenderer.renderMono(template.spec, LabelRenderer.reanchor(template.elements, resolved))
+        val rendered = LabelRenderer.renderMono(template.spec, LabelRenderer.reanchor(template.elements, resolved))
+        if (template.spec.autoLength) rendered.trimTrailingWhite() else rendered
     }
-    val previewBitmap = remember(previewImage) { MonoConverter.toBitmap(previewImage).asImageBitmap() }
 
     val view = LocalView.current
     DisposableEffect(working) {
@@ -132,15 +126,10 @@ fun TemplatePrintSheet(
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(Modifier.height(4.dp))
-            Image(
-                bitmap = previewBitmap,
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(previewImage.width.toFloat() / previewImage.height)
-                    .border(1.dp, MaterialTheme.colorScheme.outline),
-                contentScale = ContentScale.FillBounds,
-                filterQuality = FilterQuality.None
+            MonoPaperPreview(
+                image = previewImage,
+                minViewportHeight = 180.dp,
+                maxViewportHeight = 420.dp,
             )
             Spacer(Modifier.height(12.dp))
 
