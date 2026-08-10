@@ -1,34 +1,26 @@
-# Gradle files
 .gradle/
 build/
-
-# Local configuration file (sdk path, etc)
-local.properties
-
-# Log/OS Files
-*.log
-
-# Android Studio generated files and folders
-captures/
-.externalNativeBuild/
-.cxx/
-*.aab
-*.apk
-output-metadata.json
-
-# IntelliJ
-*.iml
+/local.properties
+.kotlin/
 .idea/
-misc.xml
-deploymentTargetDropDown.xml
-render.experimental.xml
+captures/
+.cxx/
+*.iml
+/.claude/
+/.kangentic/
+kangentic.json
+.kangentic/
+.claude/settings.local.json
+kangentic.local.json
 
-# Keystore files
-*.jks
+# Lokale README-Vorschau (nicht Teil des Repos)
+README-preview.html
+
+# Design-Originale (nur die verkleinerten docs/ kommen ins Repo)
+Design/
+
+# Signing-Geheimnisse gehoeren nie ins Repo (Keystore liegt in ../_signing)
 *.keystore
-
-# Google Services (e.g. APIs or Firebase)
-google-services.json
-
-# Android Profiling
-*.hprof
+*.jks
+keystore.properties
+/keystore/
