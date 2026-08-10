@@ -20,6 +20,7 @@ data class TemplateEntity(
     val tapeWidthMm: Int,
     val lengthMm: Int,
     val media: String,
+    val autoLength: Boolean = true,
     val elementsJson: String,
     val schemaVersion: Int,
     val favorite: Boolean,
@@ -47,6 +48,7 @@ data class PrintHistoryEntity(
     val tapeWidthMm: Int,
     val lengthMm: Int,
     val media: String,
+    val autoLength: Boolean = true,
     val elementsJson: String,
     val copies: Int,
     val printedAt: Long,
@@ -155,7 +157,7 @@ private fun encodeTemplates(items: List<TemplateEntity>): String {
     items.forEach { e ->
         arr.put(JSONObject().apply {
             put("id", e.id); put("name", e.name); put("tapeWidthMm", e.tapeWidthMm)
-            put("lengthMm", e.lengthMm); put("media", e.media); put("elementsJson", e.elementsJson)
+            put("lengthMm", e.lengthMm); put("media", e.media); put("autoLength", e.autoLength); put("elementsJson", e.elementsJson)
             put("schemaVersion", e.schemaVersion); put("favorite", e.favorite); put("counterValue", e.counterValue)
             put("createdAt", e.createdAt); put("updatedAt", e.updatedAt)
         })
@@ -171,8 +173,8 @@ private fun decodeTemplates(raw: String?): List<TemplateEntity> = runCatching {
             val o = arr.getJSONObject(i)
             add(TemplateEntity(
                 id = o.getString("id"), name = o.optString("name"), tapeWidthMm = o.optInt("tapeWidthMm", 48),
-                lengthMm = o.optInt("lengthMm", 60), media = o.optString("media", "CONTINUOUS"),
-                elementsJson = o.optString("elementsJson", "[]"), schemaVersion = o.optInt("schemaVersion", 1),
+                lengthMm = o.optInt("lengthMm", 80), media = o.optString("media", "CONTINUOUS"),
+                autoLength = o.optBoolean("autoLength", true), elementsJson = o.optString("elementsJson", "[]"), schemaVersion = o.optInt("schemaVersion", 1),
                 favorite = o.optBoolean("favorite", false), counterValue = o.optInt("counterValue", 1),
                 createdAt = o.optLong("createdAt"), updatedAt = o.optLong("updatedAt"),
             ))
@@ -185,7 +187,7 @@ private fun encodeHistory(items: List<PrintHistoryEntity>): String {
     items.forEach { e ->
         arr.put(JSONObject().apply {
             put("id", e.id); put("templateId", e.templateId ?: JSONObject.NULL); put("templateName", e.templateName)
-            put("tapeWidthMm", e.tapeWidthMm); put("lengthMm", e.lengthMm); put("media", e.media)
+            put("tapeWidthMm", e.tapeWidthMm); put("lengthMm", e.lengthMm); put("media", e.media); put("autoLength", e.autoLength)
             put("elementsJson", e.elementsJson); put("copies", e.copies); put("printedAt", e.printedAt)
         })
     }
@@ -201,8 +203,8 @@ private fun decodeHistory(raw: String?): List<PrintHistoryEntity> = runCatching 
             add(PrintHistoryEntity(
                 id = o.optLong("id"), templateId = if (o.isNull("templateId")) null else o.optString("templateId"),
                 templateName = o.optString("templateName"), tapeWidthMm = o.optInt("tapeWidthMm", 48),
-                lengthMm = o.optInt("lengthMm", 60), media = o.optString("media", "CONTINUOUS"),
-                elementsJson = o.optString("elementsJson", "[]"), copies = o.optInt("copies", 1),
+                lengthMm = o.optInt("lengthMm", 80), media = o.optString("media", "CONTINUOUS"),
+                autoLength = o.optBoolean("autoLength", true), elementsJson = o.optString("elementsJson", "[]"), copies = o.optInt("copies", 1),
                 printedAt = o.optLong("printedAt"),
             ))
         }

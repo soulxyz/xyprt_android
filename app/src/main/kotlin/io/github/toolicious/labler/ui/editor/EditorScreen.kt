@@ -137,10 +137,8 @@ fun EditorScreen(
                         pngBase64 = loaded.pngBase64,
                         srcWidth = loaded.width,
                         srcHeight = loaded.height,
-                        // Default to fit within the label height (no clipping), so the box matches the
-                        // image. The lower bound is capped so a very tall/narrow image cannot exceed 96 px.
-                        widthPx = (76f * loaded.width / loaded.height)
-                            .coerceIn(minOf(16f, 96f * loaded.width / loaded.height), 480f),
+                        // Portrait BY-288 page: default images nearly fill the printable 384-dot width.
+                        widthPx = (LabelSpec.PRINT_WIDTH_PX - 32).toFloat(),
                     )
                 )
             }
@@ -214,7 +212,7 @@ fun EditorScreen(
                 onResizeEnd = vm::endResize,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(200.dp)
+                    .height(320.dp)
             )
             // Only the label (canvas) stays fixed; everything below it scrolls. imePadding must come
             // BEFORE verticalScroll so it shrinks the scroll viewport to the keyboard edge (not just
@@ -227,7 +225,8 @@ fun EditorScreen(
                     .verticalScroll(rememberScrollState())
             ) {
             Text(
-                stringResource(R.string.template_size, t.spec.tapeWidthMm, t.spec.lengthMm),
+                if (t.spec.autoLength) stringResource(R.string.template_auto_length)
+                else stringResource(R.string.template_fixed_length, t.spec.lengthMm),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
@@ -270,9 +269,9 @@ fun EditorScreen(
                     } else {
                         FrameElement(
                             id = id,
-                            x = 2f, y = 2f,
-                            widthPx = (t.spec.lengthPx - 4).toFloat(),
-                            heightPx = (LabelSpec.PRINT_HEIGHT_PX - 4).toFloat()
+                            x = 16f, y = 16f,
+                            widthPx = (LabelSpec.PRINT_WIDTH_PX - 32).toFloat(),
+                            heightPx = 120f
                         )
                     }
                     vm.addElement(frame)
@@ -432,7 +431,7 @@ private fun PropertiesPanel(
             }
             Column {
                 GroupLabel(stringResource(R.string.group_scale))
-                val pct = (LabelRenderer.measure(element).height / LabelSpec.PRINT_HEIGHT_PX * 100f)
+                val pct = (LabelRenderer.measure(element).width / LabelSpec.PRINT_WIDTH_PX * 100f)
                     .roundToInt().coerceIn(1, 999)
                 // Codes cap at 100 % (their box must fit the printable height to stay scannable);
                 // everything else scales up to 200 %.
@@ -469,13 +468,12 @@ private fun LabelElement.withRotation(deg: Int): LabelElement = when (this) {
     is ImageElement -> copy(rotation = deg)
 }
 
-/** Scales the element so its height becomes pct % of the label height; width proportional. */
+/** Scales the element relative to the fixed 384-dot printable paper width. */
 private fun LabelElement.scaledToHeightPercent(pct: Int): LabelElement {
-    val target = pct / 100f * LabelSpec.PRINT_HEIGHT_PX
-    val current = LabelRenderer.measure(this).height
+    val target = pct / 100f * LabelSpec.PRINT_WIDTH_PX
+    val current = LabelRenderer.measure(this).width
     val factor = if (current > 0.1f) target / current else 1f
-    // Allow up to 200 % (bigger than the label) so an element can be zoomed/cropped.
-    val maxH = 2f * LabelSpec.PRINT_HEIGHT_PX
+    val maxH = 2f * LabelSpec.PRINT_WIDTH_PX
     return when (this) {
         is TextElement -> copy(
             fontSizePx = (fontSizePx * factor).coerceIn(6f, 200f),
@@ -489,9 +487,9 @@ private fun LabelElement.scaledToHeightPercent(pct: Int): LabelElement {
         is BarcodeElement -> {
             // Scale the reserved box like an image (keep aspect); the code re-fits and centers inside.
             // Capped at the label height so the printed code stays within the printable area.
-            val h = target.coerceIn(16f, LabelSpec.PRINT_HEIGHT_PX.toFloat())
-            val f = if (current > 0.1f) h / current else 1f
-            copy(heightPx = h, widthPx = (widthPx * f).coerceAtLeast(16f))
+            val w = target.coerceIn(16f, LabelSpec.PRINT_WIDTH_PX.toFloat())
+            val f = if (current > 0.1f) w / current else 1f
+            copy(widthPx = w, heightPx = (heightPx * f).coerceAtLeast(16f))
         }
         is ImageElement -> copy(widthPx = (widthPx * factor).coerceAtLeast(8f))
     }
@@ -1138,6 +1136,6 @@ private fun FrameProperties(element: FrameElement, onUpdate: (LabelElement) -> U
         label = stringResource(R.string.prop_height) + ": ",
         value = "${element.heightPx.toInt()} px",
         onDecrease = { onUpdate(element.copy(heightPx = (element.heightPx - 8).coerceAtLeast(8f))) },
-        onIncrease = { onUpdate(element.copy(heightPx = (element.heightPx + 8).coerceAtMost(96f))) }
+        onIncrease = { onUpdate(element.copy(heightPx = (element.heightPx + 8).coerceAtMost(2000f))) }
     )
 }

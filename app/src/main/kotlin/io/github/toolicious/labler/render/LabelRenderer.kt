@@ -36,7 +36,7 @@ import io.github.toolicious.labler.printer.dither.Outline
 import kotlin.math.ceil
 
 /**
- * Renders a label 1:1 at print resolution (lengthPx x 96, white background).
+ * Renders a portrait page 1:1 at print resolution (384 dots wide x variable feed length).
  * Used identically for the editor preview, thumbnails and printing (WYSIWYG);
  * the 1-bit quantization is handled by the MonoConverter.
  */
@@ -50,7 +50,7 @@ object LabelRenderer {
     private val imageCache = LruCache<String, IntArray>(8)
 
     fun render(spec: LabelSpec, elements: List<LabelElement>): Bitmap {
-        val bmp = Bitmap.createBitmap(spec.lengthPx, LabelSpec.PRINT_HEIGHT_PX, Bitmap.Config.ARGB_8888)
+        val bmp = Bitmap.createBitmap(LabelSpec.PRINT_WIDTH_PX, spec.lengthPx, Bitmap.Config.ARGB_8888)
         drawInto(Canvas(bmp), spec, elements)
         return bmp
     }

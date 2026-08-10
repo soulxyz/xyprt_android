@@ -14,7 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -74,7 +73,7 @@ fun TemplatePrintSheet(
     val questions = remember(template.id) { Placeholders.questions(template.elements) }
     var answers by remember(template.id) { mutableStateOf(questions.associateWith { "" }) }
     var copies by remember { mutableIntStateOf(1) }
-    var media by remember { mutableStateOf(template.spec.media) }
+    val media = MediaType.CONTINUOUS // BY-288 uses continuous paper in the normal UI.
 
     val previewImage = remember(template, answers) {
         val now = Date()
@@ -129,7 +128,7 @@ fun TemplatePrintSheet(
             }
 
             Text(
-                stringResource(R.string.print_preview, template.spec.lengthMm),
+                stringResource(R.string.print_preview, (previewImage.height + 7) / 8),
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(Modifier.height(4.dp))
@@ -144,26 +143,6 @@ fun TemplatePrintSheet(
                 filterQuality = FilterQuality.None
             )
             Spacer(Modifier.height(12.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(stringResource(R.string.print_paper), style = MaterialTheme.typography.bodyMedium)
-                FilterChip(
-                    selected = media == MediaType.DIE_CUT,
-                    onClick = { media = MediaType.DIE_CUT },
-                    label = { Text(stringResource(R.string.media_die_cut)) },
-                    enabled = !working
-                )
-                FilterChip(
-                    selected = media == MediaType.CONTINUOUS,
-                    onClick = { media = MediaType.CONTINUOUS },
-                    label = { Text(stringResource(R.string.media_continuous)) },
-                    enabled = !working
-                )
-            }
-            Spacer(Modifier.height(8.dp))
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,

@@ -37,6 +37,7 @@ class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json
                 tapeWidthMm = spec.tapeWidthMm,
                 lengthMm = spec.lengthMm,
                 media = spec.media.name,
+                autoLength = spec.autoLength,
                 elementsJson = json.encodeToString(resolvedElements),
                 copies = copies,
                 printedAt = System.currentTimeMillis(),
@@ -56,7 +57,8 @@ class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json
         spec = LabelSpec(
             tapeWidthMm = tapeWidthMm,
             lengthMm = lengthMm,
-            media = runCatching { MediaType.valueOf(media) }.getOrDefault(MediaType.DIE_CUT),
+            media = runCatching { MediaType.valueOf(media) }.getOrDefault(MediaType.CONTINUOUS),
+            autoLength = autoLength,
         ),
         elements = runCatching { json.decodeFromString<List<LabelElement>>(elementsJson) }
             .getOrDefault(emptyList()),

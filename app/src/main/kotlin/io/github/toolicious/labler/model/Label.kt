@@ -14,25 +14,30 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class LabelSpec(
+    // Kept for backward-compatible template JSON. BY-288's printable width is hardware-fixed
+    // at 384 dots, so alpha2 no longer asks the user to configure a "tape width".
     val tapeWidthMm: Int = 48,
-    val lengthMm: Int = 60,
+    /** Used when autoLength=false. */
+    val lengthMm: Int = 80,
     val media: MediaType = MediaType.CONTINUOUS,
+    /** Continuous-paper workflow: use a comfortable editing canvas, crop trailing blank space at print time. */
+    val autoLength: Boolean = true,
 ) {
-    val lengthPx: Int get() = lengthMm * Protocol.DOTS_PER_MM
+    val workingLengthMm: Int get() = if (autoLength) AUTO_CANVAS_MM else lengthMm.coerceIn(MIN_LENGTH_MM, MAX_LENGTH_MM)
+    val lengthPx: Int get() = workingLengthMm * Protocol.DOTS_PER_MM
 
     companion object {
-        const val PRINT_HEIGHT_PX = Protocol.HEAD_DOTS
-
-        /** Practical presets for 48 mm continuous paper on BY-288. */
-        val PRESETS = listOf(
-            48 to 40,
-            48 to 60,
-            48 to 80,
-            48 to 100,
-            48 to 150,
-        )
+        /** Fixed printable width across the BY-288 head. */
+        const val PRINT_WIDTH_PX = Protocol.HEAD_DOTS
+        // Compatibility alias for a few old call sites; this means printable WIDTH in alpha2.
+        const val PRINT_HEIGHT_PX = PRINT_WIDTH_PX
+        const val AUTO_CANVAS_MM = 100
+        const val MIN_LENGTH_MM = 20
+        const val MAX_LENGTH_MM = 500
+        val LENGTH_PRESETS = listOf(40, 60, 80, 120, 160, 240)
     }
 }
+
 
 enum class LabelTextAlign { LEFT, CENTER, RIGHT }
 

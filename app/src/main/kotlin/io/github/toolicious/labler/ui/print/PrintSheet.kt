@@ -9,10 +9,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -25,7 +25,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -63,7 +62,7 @@ fun PrintSheet(
     val savedPrinter by vm.savedPrinter.collectAsState(initial = null)
 
     var copies by remember { mutableIntStateOf(1) }
-    var media by remember { mutableStateOf(initialMedia) }
+    val media = MediaType.CONTINUOUS // BY-288 normal workflow: continuous roll; no gap calibration needed.
     val preview = remember(image) { MonoConverter.toBitmap(image).asImageBitmap() }
 
     val view = LocalView.current
@@ -86,7 +85,7 @@ fun PrintSheet(
             Spacer(Modifier.height(12.dp))
 
             Text(
-                stringResource(R.string.print_preview, image.width / 8),
+                stringResource(R.string.print_preview, image.height / 8),
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(Modifier.height(4.dp))
@@ -95,32 +94,13 @@ fun PrintSheet(
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(image.width.toFloat() / image.height)
+                    .aspectRatio(image.width.toFloat() / image.height.coerceAtLeast(1))
+                    .heightIn(max = 420.dp)
                     .border(1.dp, MaterialTheme.colorScheme.outline),
                 contentScale = ContentScale.FillBounds,
                 filterQuality = FilterQuality.None
             )
             Spacer(Modifier.height(12.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(stringResource(R.string.print_paper), style = MaterialTheme.typography.bodyMedium)
-                FilterChip(
-                    selected = media == MediaType.DIE_CUT,
-                    onClick = { media = MediaType.DIE_CUT },
-                    label = { Text(stringResource(R.string.media_die_cut)) },
-                    enabled = !working
-                )
-                FilterChip(
-                    selected = media == MediaType.CONTINUOUS,
-                    onClick = { media = MediaType.CONTINUOUS },
-                    label = { Text(stringResource(R.string.media_continuous)) },
-                    enabled = !working
-                )
-            }
-            Spacer(Modifier.height(8.dp))
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,

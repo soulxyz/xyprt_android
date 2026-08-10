@@ -5,24 +5,19 @@ import io.github.toolicious.labler.model.LabelTextAlign
 import io.github.toolicious.labler.model.TextElement
 import io.github.toolicious.labler.printer.MonoImage
 
-/** Fast single-text label (test print); uses the real LabelRenderer. */
+/** Simple portrait quick-text renderer kept for internal diagnostics. */
 object TextTestRenderer {
-
-    fun render(text: String, spec: LabelSpec = LabelSpec()): MonoImage {
-        var element = TextElement(
+    fun render(text: String, spec: LabelSpec = LabelSpec(lengthMm = 60, autoLength = false)): MonoImage {
+        val element = TextElement(
             id = "quicktext",
-            x = 8f,
-            y = 0f,
-            text = text.ifBlank { "LaBLEr" },
-            fontSizePx = 40f,
+            x = 12f,
+            y = 16f,
+            text = text.ifBlank { "错题小印" },
+            fontSizePx = 34f,
             bold = true,
-            align = LabelTextAlign.CENTER,
-            boxWidthPx = (spec.lengthPx - 16).toFloat(),
+            align = LabelTextAlign.LEFT,
+            boxWidthPx = (LabelSpec.PRINT_WIDTH_PX - 24).toFloat(),
         )
-        val size = LabelRenderer.measure(element)
-        element = element.copy(
-            y = ((LabelSpec.PRINT_HEIGHT_PX - size.height) / 2f).coerceAtLeast(0f)
-        )
-        return LabelRenderer.renderMono(spec, listOf(element))
+        return LabelRenderer.renderMono(spec, listOf(element)).trimTrailingWhite()
     }
 }

@@ -141,10 +141,6 @@ fun InfoDialog(onDismiss: () -> Unit) {
         }
     }
 
-    var showLangPicker by remember { mutableStateOf(false) }
-    if (showLangPicker) {
-        LanguagePickerDialog(onDismiss = { showLangPicker = false })
-    }
     pendingImport?.let { raw ->
         AlertDialog(
             onDismissRequest = { pendingImport = null },
@@ -277,36 +273,30 @@ fun InfoDialog(onDismiss: () -> Unit) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Abbreviation (e.g. "EN") opens the language selection.
-                    TextButton(onClick = { showLangPicker = true }) {
-                        Text(currentLanguageBadge())
+                Box {
+                    TextButton(onClick = { showBackupMenu = true }) {
+                        Text(stringResource(R.string.backup))
                     }
-                    Box {
-                        TextButton(onClick = { showBackupMenu = true }) {
-                            Text(stringResource(R.string.backup))
-                        }
-                        DropdownMenu(
-                            expanded = showBackupMenu,
-                            onDismissRequest = { showBackupMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.backup_export)) },
-                                onClick = {
-                                    showBackupMenu = false
-                                    val stamp = java.time.LocalDateTime.now()
-                                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"))
-                                    exportLauncher.launch("labler-backup-$stamp.json")
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.backup_import)) },
-                                onClick = {
-                                    showBackupMenu = false
-                                    importLauncher.launch(arrayOf("application/json"))
-                                }
-                            )
-                        }
+                    DropdownMenu(
+                        expanded = showBackupMenu,
+                        onDismissRequest = { showBackupMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.backup_export)) },
+                            onClick = {
+                                showBackupMenu = false
+                                val stamp = java.time.LocalDateTime.now()
+                                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"))
+                                exportLauncher.launch("cuotixiaoyin-backup-$stamp.json")
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.backup_import)) },
+                            onClick = {
+                                showBackupMenu = false
+                                importLauncher.launch(arrayOf("application/json"))
+                            }
+                        )
                     }
                 }
                 TextButton(onClick = onDismiss) {

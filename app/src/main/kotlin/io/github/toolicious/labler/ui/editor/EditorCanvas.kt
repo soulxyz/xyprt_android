@@ -72,8 +72,8 @@ fun EditorCanvas(
 ) {
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
 
-    val labelW = spec.lengthPx.toFloat()
-    val labelH = LabelSpec.PRINT_HEIGHT_PX.toFloat()
+    val labelW = LabelSpec.PRINT_WIDTH_PX.toFloat()
+    val labelH = spec.lengthPx.toFloat()
     // Fixed size (die-cut label) = rounded corners, continuous = hard corners.
     val isDieCut = spec.media == MediaType.DIE_CUT
     val cornerR = 12f // label pixels (~1.5 mm)

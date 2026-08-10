@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">错题小印 Revival</string>
+    <string name="app_name">错题小印</string>
 
     <!-- Aktionen -->
     <string name="action_cancel">Abbrechen</string>
@@ -185,7 +185,7 @@
     <!-- Verlauf -->
     <string name="history_title">Druckverlauf</string>
     <string name="history_empty">Noch nichts gedruckt.</string>
-    <string name="history_meta">%1$s · %2$d× · %3$d x %4$d mm</string>
+    <string name="history_meta">%1$s · %2$d copies · %3$s</string>
 
     <!-- Info-Dialog / App-Sprache -->
     <string name="cd_info">Info</string>
@@ -256,4 +256,25 @@
     <string name="err_file_not_readable">Datei nicht lesbar</string>
     <string name="err_file_invalid">Ungültige Datei</string>
     <string name="err_no_scanner">BLE-Scanner nicht verfügbar</string>
+
+    <string name="home_printer">Printer</string>
+    <string name="home_quick_title">Quick print</string>
+    <string name="home_templates_title">Layouts</string>
+    <string name="home_new_layout">+ New layout</string>
+    <string name="template_auto_length">Auto length · 384 dots</string>
+    <string name="template_fixed_length">Fixed %1$d mm · 384 dots</string>
+    <string name="paper_width_fixed">Printable width is fixed at 384 dots.</string>
+    <string name="length_mode">Page length</string>
+    <string name="length_auto">Auto length</string>
+    <string name="length_fixed">Fixed length</string>
+    <string name="length_auto_hint">Trailing blank paper is cropped automatically.</string>
+    <string name="length_fixed_hint">20–500 mm.</string>
+    <string name="settings_simple_hint">Connect the printer here. Diagnostic label-gap tools are hidden from normal use.</string>
+    <string name="quick_print_title">Quick print</string>
+    <string name="quick_text_hint">Text</string>
+    <string name="quick_choose_image">Choose image</string>
+    <string name="quick_choose_pdf">Choose PDF</string>
+    <string name="quick_image_mode">Image mode</string>
+    <string name="quick_preview">Preview</string>
+    <string name="quick_no_content">Choose content.</string>
 </resources>

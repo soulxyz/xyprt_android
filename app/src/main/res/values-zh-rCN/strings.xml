@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">错题小印 Revival</string>
+    <string name="app_name">错题小印</string>
 
     <!-- Actions -->
     <string name="action_cancel">取消</string>
@@ -19,7 +19,7 @@
     <string name="cd_back">返回</string>
     <string name="cd_settings">设置</string>
     <string name="cd_history">打印历史</string>
-    <string name="cd_new_label">新建标签</string>
+    <string name="cd_new_label">新建排版</string>
     <string name="cd_favorite">收藏</string>
     <string name="cd_menu">菜单</string>
     <string name="cd_clear">清除</string>
@@ -31,8 +31,8 @@
 
     <!-- Home -->
     <string name="home_search_hint">搜索</string>
-    <string name="home_empty">还没有标签。\n点按 + 创建第一个。</string>
-    <string name="home_no_results">无结果。</string>
+    <string name="home_empty">还没有保存的排版。\n可以先用上面的“文字 / 图片 / 文档”快速打印。</string>
+    <string name="home_no_results">没有匹配的排版。</string>
     <string name="template_size">%1$d x %2$d mm</string>
     <string name="menu_edit">编辑</string>
     <string name="menu_duplicate">复制</string>
@@ -41,12 +41,12 @@
     <string name="toast_export_failed">导出失败：%1$s</string>
     <string name="toast_export_ok">已导出。</string>
     <string name="toast_import_failed">导入失败：%1$s</string>
-    <string name="delete_title">删除标签？</string>
+    <string name="delete_title">删除排版？</string>
     <string name="delete_message">%1$s 将被永久删除。</string>
 
     <!-- Label dialog -->
-    <string name="dialog_new_title">新建标签</string>
-    <string name="dialog_edit_title">编辑标签</string>
+    <string name="dialog_new_title">新建排版</string>
+    <string name="dialog_edit_title">排版设置</string>
     <string name="field_name">名称</string>
     <string name="size_hint">尺寸（标签带宽度 x 长度）：</string>
     <string name="preset_custom">自定义 …</string>
@@ -62,7 +62,7 @@
     <string name="add_symbol">符号</string>
     <string name="add_frame">边框</string>
     <string name="element_frame">边框</string>
-    <string name="editor_hint">点按标签上的元素，或从上方添加。选中的元素可拖动；右下角的手柄用于缩放。</string>
+    <string name="editor_hint">点按纸张上的元素，或从上方添加。元素可拖动、缩放和旋转；打印宽度固定为 384 点。</string>
     <string name="group_format">格式</string>
     <string name="group_align">对齐</string>
     <string name="group_variables">变量</string>
@@ -129,7 +129,7 @@
     <string name="print_paper">纸张：</string>
     <string name="print_copies">份数：</string>
     <string name="print_counter_start">编号从 %1$d 开始</string>
-    <string name="print_label_progress">标签 %1$d/%2$d</string>
+    <string name="print_label_progress">第 %1$d/%2$d 份</string>
 
     <!-- Settings -->
     <string name="settings_title">设置</string>
@@ -173,7 +173,7 @@
     <!-- History -->
     <string name="history_title">打印历史</string>
     <string name="history_empty">尚未打印任何内容。</string>
-    <string name="history_meta">%1$s · %2$d× · %3$d x %4$d mm</string>
+    <string name="history_meta">%1$s · %2$d 份 · %3$s</string>
 
     <!-- Backend error messages -->
     <string name="err_no_bluetooth">此设备没有蓝牙</string>
@@ -182,7 +182,7 @@
     <string name="err_connect_failed">连接失败</string>
     <string name="err_not_connected">未连接打印机</string>
     <string name="err_print_failed">打印失败</string>
-    <string name="about_description">错题小印 Revival 是一款用于 Marklife 系列（BY-288 / 错题小印 X1）Bluetooth Classic SPP 热敏标签打印机的标签打印应用。直接在手机上用文本、符号和边框设计自己的标签，将其保存为模板，随时再次打印。</string>
+    <string name="about_description">错题小印是一款面向 BY-288 / 错题小印 X1 的离线热敏打印应用，支持文字、图片、PDF、二维码、条码和自由排版，并可从其他应用直接分享或打开内容进行打印。</string>
     <string name="about_license">许可证：GPL-3.0-or-later</string>
     <string name="about_source">源代码和帮助</string>
     <string name="about_thanks">感谢开源的 Chrome 网页应用 %1$s，它使 BY-288 协议得以公开。</string>
@@ -203,7 +203,7 @@
     <string name="backup_replace_message">替换现有标签，还是添加导入的标签？</string>
     <string name="backup_replace_title">导入备份</string>
     <string name="cd_info">信息</string>
-    <string name="default_label_name">新建标签</string>
+    <string name="default_label_name">新建排版</string>
     <string name="duplicate_name">%1$s（副本）</string>
     <string name="err_file_invalid">无效文件</string>
     <string name="err_file_not_readable">文件无法读取</string>
@@ -244,4 +244,26 @@
     <string name="qr_url">URL</string>
     <string name="qr_wifi_pw_error_wep">5 或 13 个字符</string>
     <string name="qr_wifi_pw_error_wpa">8 到 63 个字符</string>
+
+    <!-- Alpha2: document-first BY-288 workflow -->
+    <string name="home_printer">打印机</string>
+    <string name="home_quick_title">快速打印</string>
+    <string name="home_templates_title">排版模板</string>
+    <string name="home_new_layout">+ 新建排版</string>
+    <string name="template_auto_length">自动长度 · 384 点宽</string>
+    <string name="template_fixed_length">固定 %1$d mm · 384 点宽</string>
+    <string name="paper_width_fixed">BY-288 的可打印宽度由硬件固定为 384 点（约 47.3 mm）。纸卷本身可以更宽，因此这里不再让你填写“纸张宽度”。</string>
+    <string name="length_mode">页面长度</string>
+    <string name="length_auto">自动长度（推荐）</string>
+    <string name="length_fixed">固定长度</string>
+    <string name="length_auto_hint">编辑时使用一张竖向工作纸，打印时自动裁掉末尾空白，不需要提前猜长度。</string>
+    <string name="length_fixed_hint">仅在必须留出固定长度时设置，范围 20–500 mm。</string>
+    <string name="settings_simple_hint">普通使用只需要连接打印机即可。几何测试和“标签间隙校准”已从常用界面移除，避免误操作。</string>
+    <string name="quick_print_title">快速打印</string>
+    <string name="quick_text_hint">输入文字，可多行</string>
+    <string name="quick_choose_image">选择图片</string>
+    <string name="quick_choose_pdf">选择 PDF 文档</string>
+    <string name="quick_image_mode">图片效果</string>
+    <string name="quick_preview">打印预览</string>
+    <string name="quick_no_content">请选择内容或输入文字。</string>
 </resources>

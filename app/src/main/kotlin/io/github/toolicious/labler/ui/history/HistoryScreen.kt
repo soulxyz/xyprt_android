@@ -131,24 +131,23 @@ private fun HistoryCard(
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(entry.spec.lengthPx.toFloat() / LabelSpec.PRINT_HEIGHT_PX)
+                    .height(180.dp)
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                contentScale = ContentScale.FillBounds
+                contentScale = ContentScale.Fit
             )
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(entry.templateName, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
                     val dateText = remember(entry.id) {
-                        SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMANY).format(Date(entry.printedAt))
+                        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA).format(Date(entry.printedAt))
                     }
                     Text(
                         stringResource(
                             R.string.history_meta,
                             dateText,
                             entry.copies,
-                            entry.spec.tapeWidthMm,
-                            entry.spec.lengthMm
+                            if (entry.spec.autoLength) "自动长度" else "${entry.spec.lengthMm} mm"
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant

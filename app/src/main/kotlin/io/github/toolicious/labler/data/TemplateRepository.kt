@@ -86,7 +86,8 @@ class TemplateRepository(private val dao: TemplateDao, private val json: Json) {
         spec = LabelSpec(
             tapeWidthMm = tapeWidthMm,
             lengthMm = lengthMm,
-            media = runCatching { MediaType.valueOf(media) }.getOrDefault(MediaType.DIE_CUT),
+            media = runCatching { MediaType.valueOf(media) }.getOrDefault(MediaType.CONTINUOUS),
+            autoLength = autoLength,
         ),
         elements = decodeElements(schemaVersion, elementsJson),
         favorite = favorite,
@@ -101,6 +102,7 @@ class TemplateRepository(private val dao: TemplateDao, private val json: Json) {
         tapeWidthMm = spec.tapeWidthMm,
         lengthMm = spec.lengthMm,
         media = spec.media.name,
+        autoLength = spec.autoLength,
         elementsJson = json.encodeToString(elements),
         schemaVersion = SCHEMA_VERSION,
         favorite = favorite,

@@ -15,6 +15,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import io.github.toolicious.labler.ui.editor.EditorScreen
 import io.github.toolicious.labler.ui.history.HistoryScreen
+import io.github.toolicious.labler.ui.quickprint.QuickPrintScreen
 import io.github.toolicious.labler.ui.home.HomeScreen
 import io.github.toolicious.labler.ui.settings.SettingsScreen
 import io.github.toolicious.labler.ui.testprint.TestPrintScreen
@@ -78,11 +79,19 @@ fun AppNav() {
             HomeScreen(
                 onOpenSettings = { nav.navigate("settings") },
                 onOpenTemplate = { id -> nav.navigate("editor/$id") },
-                onOpenHistory = { nav.navigate("history") }
+                onOpenHistory = { nav.navigate("history") },
+                onQuickText = { nav.navigate("quick/text") },
+                onQuickImage = { nav.navigate("quick/image") },
+                onQuickDocument = { nav.navigate("quick/pdf") },
             )
         }
         composable("history") {
             HistoryScreen(onBack = { nav.popBackStack() })
+        }
+
+        composable("quick/{mode}") { entry ->
+            val mode = entry.arguments?.getString("mode") ?: "text"
+            QuickPrintScreen(mode = mode, onBack = { nav.popBackStack() })
         }
         composable("editor/{id}") { entry ->
             val id = entry.arguments?.getString("id").orEmpty()

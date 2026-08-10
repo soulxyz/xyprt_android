@@ -229,19 +229,19 @@ class EditorViewModel(app: Application, private val templateId: String) : Androi
         dragRaw = raw
 
         val size = LabelRenderer.measure(el)
-        val centerX = spec.lengthPx / 2f
-        val centerY = LabelSpec.PRINT_HEIGHT_PX / 2f
+        val centerX = LabelSpec.PRINT_WIDTH_PX / 2f
+        val centerY = spec.lengthPx / 2f
 
         // Label center + borders, then the cached lines of the other elements.
         val xTargets = listOf(
             SnapTarget(centerX, true, LABEL_SNAP_TOL),
             SnapTarget(0f, false, LABEL_SNAP_TOL),
-            SnapTarget(spec.lengthPx.toFloat(), false, LABEL_SNAP_TOL),
+            SnapTarget(LabelSpec.PRINT_WIDTH_PX.toFloat(), false, LABEL_SNAP_TOL),
         ) + dragXTargets
         val yTargets = listOf(
             SnapTarget(centerY, true, LABEL_SNAP_TOL),
             SnapTarget(0f, false, LABEL_SNAP_TOL),
-            SnapTarget(LabelSpec.PRINT_HEIGHT_PX.toFloat(), false, LABEL_SNAP_TOL),
+            SnapTarget(spec.lengthPx.toFloat(), false, LABEL_SNAP_TOL),
         ) + dragYTargets
 
         val snapX = bestSnapAxis(raw.x, size.width, xTargets)
@@ -251,8 +251,8 @@ class EditorViewModel(app: Application, private val templateId: String) : Androi
         var ny = snapY?.origin ?: raw.y
 
         // Keep at least 8 px grabbable
-        nx = nx.coerceIn(8f - size.width, spec.lengthPx - 8f)
-        ny = ny.coerceIn(8f - size.height, LabelSpec.PRINT_HEIGHT_PX - 8f)
+        nx = nx.coerceIn(8f - size.width, LabelSpec.PRINT_WIDTH_PX - 8f)
+        ny = ny.coerceIn(8f - size.height, spec.lengthPx - 8f)
 
         _guides.value = SnapGuides(snapX?.guideLine, snapY?.guideLine)
         applyWithoutHistory(el.moved(nx - el.x, ny - el.y))
@@ -324,22 +324,22 @@ class EditorViewModel(app: Application, private val templateId: String) : Androi
             )
             is FrameElement -> el.copy(
                 widthPx = (el.widthPx + delta.x).coerceAtLeast(8f),
-                heightPx = (el.heightPx + delta.y).coerceIn(8f, LabelSpec.PRINT_HEIGHT_PX.toFloat())
+                heightPx = (el.heightPx + delta.y).coerceIn(8f, (_template.value?.spec?.lengthPx ?: 800).toFloat())
             )
             is BarcodeElement -> if (el.symbology == Symbology.QR_CODE) {
                 // QR stays square.
                 val s = (minOf(el.widthPx, el.heightPx) + max(delta.x, delta.y))
-                    .coerceIn(24f, LabelSpec.PRINT_HEIGHT_PX.toFloat())
+                    .coerceIn(24f, LabelSpec.PRINT_WIDTH_PX.toFloat())
                 el.copy(widthPx = s, heightPx = s)
             } else {
                 el.copy(
                     widthPx = (el.widthPx + delta.x).coerceAtLeast(32f),
-                    heightPx = (el.heightPx + delta.y).coerceIn(16f, LabelSpec.PRINT_HEIGHT_PX.toFloat())
+                    heightPx = (el.heightPx + delta.y).coerceIn(16f, (_template.value?.spec?.lengthPx ?: 800).toFloat())
                 )
             }
             is ImageElement -> el.copy(
                 // Width scales, height follows via the aspect ratio.
-                widthPx = (el.widthPx + max(delta.x, delta.y)).coerceIn(16f, 480f)
+                widthPx = (el.widthPx + max(delta.x, delta.y)).coerceIn(16f, LabelSpec.PRINT_WIDTH_PX.toFloat())
             )
         }
         applyWithoutHistory(updated)

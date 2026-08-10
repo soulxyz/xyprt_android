@@ -188,30 +188,12 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(Modifier.height(24.dp))
-            Text(stringResource(R.string.settings_diagnostics), style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(4.dp))
-            TextButton(onClick = onOpenTestPrint) { Text(stringResource(R.string.settings_testtools)) }
-
-            Spacer(Modifier.height(16.dp))
-            Text(stringResource(R.string.settings_experimental), style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(20.dp))
             Text(
-                stringResource(R.string.settings_experimental_hint),
+                stringResource(R.string.settings_simple_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.height(8.dp))
-            val commandFeedback by vm.commandFeedback.collectAsState()
-            OutlinedButton(
-                onClick = { vm.learnGap() },
-                enabled = state is PrinterState.Ready
-            ) { Text(stringResource(R.string.exp_learn_gap)) }
-            commandFeedback?.let {
-                Spacer(Modifier.height(4.dp))
-                Text(it, style = MaterialTheme.typography.bodySmall)
-            }
-
             Spacer(Modifier.height(24.dp))
         }
     }
