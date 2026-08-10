@@ -7,15 +7,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -32,6 +32,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -65,7 +66,7 @@ private fun defaultAdjustments(mode: SourceMode) = when (mode) {
     SourceMode.TEXT -> QuickImageAdjustments(mode = DitherMode.THRESHOLD, threshold = 170)
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuickPrintScreen(
     mode: String,
@@ -152,61 +153,66 @@ fun QuickPrintScreen(
             Modifier.padding(padding).padding(horizontal = 16.dp).fillMaxSize().imePadding().verticalScroll(rememberScrollState())
         ) {
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 FilterChip(selected = sourceMode == SourceMode.TEXT, onClick = { switchMode(SourceMode.TEXT) }, label = { Text("文字") })
                 FilterChip(selected = sourceMode == SourceMode.IMAGE, onClick = { imagePicker.launch(arrayOf("image/*")) }, label = { Text("图片") })
                 FilterChip(selected = sourceMode == SourceMode.PDF, onClick = { pdfPicker.launch(arrayOf("application/pdf")) }, label = { Text("PDF") })
+                Spacer(Modifier.weight(1f))
+                when (sourceMode) {
+                    SourceMode.IMAGE -> TextButton(onClick = { imagePicker.launch(arrayOf("image/*")) }) {
+                        Text(if (uris.isEmpty()) "选图片" else "换图片")
+                    }
+                    SourceMode.PDF -> TextButton(onClick = { pdfPicker.launch(arrayOf("application/pdf")) }) {
+                        Text(if (uris.isEmpty()) "选 PDF" else "换 PDF")
+                    }
+                    SourceMode.TEXT -> Unit
+                }
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
 
-            when (sourceMode) {
-                SourceMode.TEXT -> OutlinedTextField(
+            if (sourceMode == SourceMode.TEXT) {
+                OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 5,
                     label = { Text(stringResource(R.string.quick_text_hint)) }
                 )
-                SourceMode.IMAGE -> OutlinedButton(onClick = { imagePicker.launch(arrayOf("image/*")) }) {
-                    Text(if (uris.isEmpty()) stringResource(R.string.quick_choose_image) else "重新选择图片（${uris.size}）")
-                }
-                SourceMode.PDF -> OutlinedButton(onClick = { pdfPicker.launch(arrayOf("application/pdf")) }) {
-                    Text(if (uris.isEmpty()) stringResource(R.string.quick_choose_pdf) else "重新选择 PDF")
-                }
             }
 
             if (sourceMode == SourceMode.PDF) {
-                Spacer(Modifier.height(12.dp))
-                Text(stringResource(R.string.quick_pdf_layout), style = MaterialTheme.typography.labelLarge)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(stringResource(R.string.quick_pdf_layout), style = MaterialTheme.typography.labelLarge)
                     FilterChip(
                         selected = pdfAutoCrop,
                         onClick = { pdfAutoCrop = true },
-                        label = { Text(stringResource(R.string.quick_pdf_crop)) }
+                        label = { Text("去白边") }
                     )
                     FilterChip(
                         selected = !pdfAutoCrop,
                         onClick = { pdfAutoCrop = false },
-                        label = { Text(stringResource(R.string.quick_pdf_full)) }
+                        label = { Text("整页") }
                     )
                 }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    stringResource(R.string.quick_pdf_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
 
             if (sourceMode == SourceMode.IMAGE || sourceMode == SourceMode.PDF) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(6.dp))
                 QuickAdjustmentPanel(
                     value = adjustments,
                     onChange = { adjustments = it }
                 )
             }
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(8.dp))
             Text(stringResource(R.string.quick_preview), style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(6.dp))
             when {
@@ -243,110 +249,144 @@ fun QuickPrintScreen(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun QuickAdjustmentPanel(value: QuickImageAdjustments, onChange: (QuickImageAdjustments) -> Unit) {
     Text(stringResource(R.string.quick_processing_title), style = MaterialTheme.typography.labelLarge)
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         listOf(
-            DitherMode.OUTLINE to R.string.dither_outline,
-            DitherMode.THRESHOLD to R.string.dither_threshold,
-            DitherMode.FLOYD_STEINBERG to R.string.dither_fs,
-            DitherMode.ATKINSON to R.string.dither_atkinson,
-        ).forEach { (mode, label) ->
+            Triple(DitherMode.OUTLINE, R.string.dither_outline, "线稿"),
+            Triple(DitherMode.THRESHOLD, R.string.dither_threshold, "黑白"),
+            Triple(DitherMode.FLOYD_STEINBERG, R.string.dither_fs, "细腻"),
+            Triple(DitherMode.ATKINSON, R.string.dither_atkinson, "清晰"),
+        ).forEach { (mode, _, shortLabel) ->
             FilterChip(
                 selected = value.mode == mode,
                 onClick = { onChange(value.copy(mode = mode)) },
-                label = { Text(stringResource(label)) }
+                label = { Text(shortLabel, maxLines = 1) },
+                modifier = Modifier.weight(1f)
             )
         }
     }
 
     when (value.mode) {
         DitherMode.OUTLINE -> {
-            Spacer(Modifier.height(6.dp))
-            Text(stringResource(R.string.quick_outline_detail, value.outlineSensitivity), style = MaterialTheme.typography.bodyMedium)
-            Slider(
+            CompactSliderRow(
+                label = "细节 ${value.outlineSensitivity}",
                 value = value.outlineSensitivity.toFloat(),
-                onValueChange = { onChange(value.copy(outlineSensitivity = it.roundToInt())) },
-                valueRange = 0f..100f
+                valueRange = 0f..100f,
+                onValueChange = { onChange(value.copy(outlineSensitivity = it.roundToInt())) }
             )
-            Text(stringResource(R.string.quick_line_width, value.outlineThickness), style = MaterialTheme.typography.bodyMedium)
-            Slider(
-                value = value.outlineThickness.toFloat(),
-                onValueChange = { onChange(value.copy(outlineThickness = it.roundToInt())) },
-                valueRange = 1f..3f,
-                steps = 1
-            )
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text("线宽", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(48.dp))
+                listOf(1, 2, 3).forEach { n ->
+                    FilterChip(
+                        selected = value.outlineThickness == n,
+                        onClick = { onChange(value.copy(outlineThickness = n)) },
+                        label = { Text(n.toString()) }
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                Text("平滑")
+                Switch(checked = value.outlineSmooth, onCheckedChange = { onChange(value.copy(outlineSmooth = it)) })
+                Text("反色")
+                Switch(checked = value.invert, onCheckedChange = { onChange(value.copy(invert = it)) })
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text("线稿方式", style = MaterialTheme.typography.bodyMedium)
                 FilterChip(
                     selected = value.outlineMethod == OutlineMethod.CANNY,
                     onClick = { onChange(value.copy(outlineMethod = OutlineMethod.CANNY)) },
-                    label = { Text(stringResource(R.string.outline_canny)) }
+                    label = { Text("边缘") }
                 )
                 FilterChip(
                     selected = value.outlineMethod == OutlineMethod.LINES,
                     onClick = { onChange(value.copy(outlineMethod = OutlineMethod.LINES)) },
-                    label = { Text(stringResource(R.string.outline_lines)) }
+                    label = { Text("图形") }
                 )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.quick_smooth))
-                    Switch(checked = value.outlineSmooth, onCheckedChange = { onChange(value.copy(outlineSmooth = it)) })
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.quick_invert))
-                    Switch(checked = value.invert, onCheckedChange = { onChange(value.copy(invert = it)) })
-                }
             }
         }
         DitherMode.THRESHOLD -> {
-            Spacer(Modifier.height(6.dp))
-            Text(stringResource(R.string.quick_threshold, value.threshold), style = MaterialTheme.typography.bodyMedium)
-            Slider(
+            CompactSliderRow(
+                label = "黑白 ${value.threshold}",
                 value = value.threshold.toFloat(),
+                valueRange = 20f..235f,
                 onValueChange = { onChange(value.copy(threshold = it.roundToInt())) },
-                valueRange = 20f..235f
+                trailing = {
+                    Text("反色")
+                    Switch(checked = value.invert, onCheckedChange = { onChange(value.copy(invert = it)) })
+                }
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.quick_invert))
-                Switch(checked = value.invert, onCheckedChange = { onChange(value.copy(invert = it)) })
-            }
         }
         DitherMode.FLOYD_STEINBERG, DitherMode.ATKINSON -> {
-            Spacer(Modifier.height(6.dp))
-            Text(stringResource(R.string.quick_contrast, value.contrast), style = MaterialTheme.typography.bodyMedium)
-            Slider(
+            CompactSliderRow(
+                label = "对比 ${value.contrast}",
                 value = value.contrast.toFloat(),
+                valueRange = -100f..100f,
                 onValueChange = { onChange(value.copy(contrast = it.roundToInt())) },
-                valueRange = -100f..100f
+                trailing = {
+                    Text("反色")
+                    Switch(checked = value.invert, onCheckedChange = { onChange(value.copy(invert = it)) })
+                }
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.quick_invert))
-                Switch(checked = value.invert, onCheckedChange = { onChange(value.copy(invert = it)) })
-            }
         }
     }
 
-    Spacer(Modifier.height(8.dp))
-    Text(stringResource(R.string.quick_rotation), style = MaterialTheme.typography.labelLarge)
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Text("旋转", style = MaterialTheme.typography.labelLarge)
         listOf(0, 90, 180, 270).forEach { deg ->
             FilterChip(
                 selected = value.rotationDegrees == deg,
                 onClick = { onChange(value.copy(rotationDegrees = deg)) },
-                label = { Text("${deg}°") }
+                label = { Text("${deg}°", maxLines = 1) }
             )
         }
     }
-    Spacer(Modifier.height(6.dp))
-    Text(stringResource(R.string.quick_zoom, value.scalePercent), style = MaterialTheme.typography.bodyMedium)
-    Slider(
+    CompactSliderRow(
+        label = "缩放 ${value.scalePercent}%",
         value = value.scalePercent.toFloat(),
-        onValueChange = { onChange(value.copy(scalePercent = it.roundToInt())) },
-        valueRange = 50f..180f
+        valueRange = 50f..180f,
+        onValueChange = { onChange(value.copy(scalePercent = it.roundToInt())) }
     )
+}
+
+@Composable
+private fun CompactSliderRow(
+    label: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    onValueChange: (Float) -> Unit,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().height(48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(82.dp), maxLines = 1)
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            modifier = Modifier.weight(1f)
+        )
+        trailing?.invoke(this)
+    }
 }
 
 private fun inferMode(mode: String, intent: Intent?): SourceMode {

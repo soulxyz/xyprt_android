@@ -275,7 +275,7 @@
     <string name="quick_pdf_layout">PDF 页面</string>
     <string name="quick_pdf_crop">自动去白边</string>
     <string name="quick_pdf_full">保留整页</string>
-    <string name="quick_pdf_hint">PDF 会先高清渲染，再按下方效果转成热敏打印图。文字偏小或四周空白较多时，建议开启“自动去白边”。</string>
+    <string name="quick_pdf_hint"></string>
     <string name="quick_threshold">黑白阈值：%1$d</string>
     <string name="quick_contrast">对比度：%1$d</string>
     <string name="quick_outline_detail">线稿细节：%1$d</string>
