@@ -1,5 +1,7 @@
 package io.github.toolicious.labler.ui.info
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,17 +38,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextLinkStyles
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import io.github.toolicious.labler.App
@@ -67,7 +63,6 @@ import kotlinx.coroutines.withContext
 @Composable
 fun InfoDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val uriHandler = LocalUriHandler.current
     val version = remember {
         runCatching {
             @Suppress("DEPRECATION")
@@ -77,7 +72,6 @@ fun InfoDialog(onDismiss: () -> Unit) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val cardColor = MaterialTheme.colorScheme.surfaceContainerLow
     val repoUrl = stringResource(R.string.about_repo)
-    val bleweblerUrl = stringResource(R.string.about_link)
 
     val scope = rememberCoroutineScope()
     val backup = remember(context) { (context.applicationContext as App).container.backup }
@@ -86,6 +80,12 @@ fun InfoDialog(onDismiss: () -> Unit) {
     var pendingImport by remember { mutableStateOf<String?>(null) }
 
     fun toast(res: Int) = Toast.makeText(context, context.getString(res), Toast.LENGTH_SHORT).show()
+
+    fun openSourcePage() {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(repoUrl)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val ok = runCatching { context.startActivity(intent) }.isSuccess
+        if (!ok) toast(R.string.about_source_unavailable)
+    }
 
     fun runImport(raw: String, replace: Boolean) {
         scope.launch {
@@ -194,6 +194,11 @@ fun InfoDialog(onDismiss: () -> Unit) {
                     color = muted
                 )
                 Text(
+                    stringResource(R.string.about_author),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
                     stringResource(R.string.about_description),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -206,7 +211,7 @@ fun InfoDialog(onDismiss: () -> Unit) {
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
                         .background(cardColor)
-                        .clickable { uriHandler.openUri(repoUrl) }
+                        .clickable { openSourcePage() }
                         .padding(start = 12.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -232,28 +237,12 @@ fun InfoDialog(onDismiss: () -> Unit) {
                     }
                 }
 
-                // Thanks to BleWebler, name as inline link, plus license. No origin information.
-                val linkStyles = TextLinkStyles(
-                    style = SpanStyle(
-                        color = MaterialTheme.colorScheme.primary,
-                        textDecoration = TextDecoration.Underline
-                    )
-                )
-                // Whole sentence as one string with placeholder %1$s; the link covers only "BleWebler".
-                val thanksParts = stringResource(R.string.about_thanks).split("%1\$s", limit = 2)
-                val credit = buildAnnotatedString {
-                    append(thanksParts[0])
-                    withLink(LinkAnnotation.Url(url = bleweblerUrl, styles = linkStyles)) {
-                        append("BleWebler")
-                    }
-                    if (thanksParts.size > 1) append(thanksParts[1])
-                }
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
-                        credit,
+                        stringResource(R.string.about_thanks),
                         style = MaterialTheme.typography.labelSmall,
                         color = muted,
                         textAlign = TextAlign.Center

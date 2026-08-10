@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Matrix
 import android.graphics.Rect
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
@@ -14,15 +15,36 @@ import android.text.StaticLayout
 import android.text.TextPaint
 import io.github.toolicious.labler.printer.MonoImage
 import io.github.toolicious.labler.printer.Protocol
+import io.github.toolicious.labler.printer.dither.Canny
+import io.github.toolicious.labler.printer.dither.Contrast
 import io.github.toolicious.labler.printer.dither.DitherMode
 import io.github.toolicious.labler.printer.dither.Ditherer
+import io.github.toolicious.labler.printer.dither.Outline
+import io.github.toolicious.labler.printer.dither.OutlineMethod
 import kotlin.math.roundToInt
 
-/** Render arbitrary shared content into the BY-288's normal portrait paper coordinate system. */
+/** Processing options shared by quick-image and PDF printing. */
+data class QuickImageAdjustments(
+    val mode: DitherMode = DitherMode.FLOYD_STEINBERG,
+    val threshold: Int = 155,
+    val contrast: Int = 0,
+    val invert: Boolean = false,
+    val outlineSensitivity: Int = 88,
+    val outlineThickness: Int = 1,
+    val outlineMethod: OutlineMethod = OutlineMethod.CANNY,
+    val outlineSmooth: Boolean = false,
+    val rotationDegrees: Int = 0,
+    val scalePercent: Int = 100,
+)
+
+/** Render arbitrary shared content into the BY-288's portrait paper coordinate system. */
 object QuickPrintRenderer {
-    private const val MARGIN = 16
-    private const val CONTENT_WIDTH = Protocol.HEAD_DOTS - MARGIN * 2
+    // Keep only a very small safety edge. 16 px/side made documents needlessly tiny.
+    private const val EDGE_MARGIN = 4
+    private const val CONTENT_WIDTH = Protocol.HEAD_DOTS - EDGE_MARGIN * 2
     private const val MAX_HEIGHT = 60_000
+    private const val PDF_RENDER_WIDTH = Protocol.HEAD_DOTS * 2
+    private const val PDF_PAGE_GAP = 16
 
     fun text(text: String, fontPx: Float = 30f): Bitmap {
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -35,107 +57,192 @@ object QuickPrintRenderer {
             .setIncludePad(true)
             .setLineSpacing(2f, 1f)
             .build()
-        val h = (layout.height + MARGIN * 2).coerceIn(64, MAX_HEIGHT)
+        val h = (layout.height + EDGE_MARGIN * 2).coerceIn(64, MAX_HEIGHT)
         return Bitmap.createBitmap(Protocol.HEAD_DOTS, h, Bitmap.Config.ARGB_8888).also { out ->
             Canvas(out).apply {
                 drawColor(Color.WHITE)
                 save()
-                translate(MARGIN.toFloat(), MARGIN.toFloat())
+                translate(EDGE_MARGIN.toFloat(), EDGE_MARGIN.toFloat())
                 layout.draw(this)
                 restore()
             }
         }
     }
 
-    fun image(context: Context, uri: Uri): Bitmap =
+    fun image(context: Context, uri: Uri, rotationDegrees: Int = 0, scalePercent: Int = 100): Bitmap =
         context.contentResolver.openInputStream(uri)?.use { input ->
             BitmapFactory.decodeStream(input)
-        }?.let(::fitBitmap) ?: error("无法读取图片")
+        }?.let { src ->
+            val rotated = rotate(src, rotationDegrees)
+            if (rotated !== src) src.recycle()
+            val out = fitBitmapNoRecycle(rotated, scalePercent)
+            rotated.recycle()
+            out
+        } ?: error("无法读取图片")
 
-    fun images(context: Context, uris: List<Uri>): Bitmap {
-        val pages = uris.take(20).map { image(context, it) }
+    fun images(context: Context, uris: List<Uri>, rotationDegrees: Int = 0, scalePercent: Int = 100): Bitmap {
+        val pages = uris.take(20).map { image(context, it, rotationDegrees, scalePercent) }
         return stack(pages)
     }
 
-    fun pdf(context: Context, uri: Uri): Bitmap {
+    /**
+     * PDF is rendered above printer resolution first, optionally cropped to the real page content,
+     * then downsampled once. This is substantially sharper than rendering the full A4 page directly
+     * into ~350 pixels, especially for small text.
+     */
+    fun pdf(context: Context, uri: Uri, autoCropWhiteMargins: Boolean = true, rotationDegrees: Int = 0, scalePercent: Int = 100): Bitmap {
         val pfd = context.contentResolver.openFileDescriptor(uri, "r") ?: error("无法打开 PDF")
         val rendered = mutableListOf<Bitmap>()
         PdfRenderer(pfd).use { pdf ->
             var used = 0
             for (i in 0 until minOf(pdf.pageCount, 20)) {
                 pdf.openPage(i).use { page ->
-                    val targetW = CONTENT_WIDTH
-                    val targetH = (page.height * (targetW / page.width.toFloat())).roundToInt().coerceAtLeast(1)
-                    if (used + targetH + MARGIN * 2 > MAX_HEIGHT) return@use
-                    val pageBmp = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
-                    Canvas(pageBmp).drawColor(Color.WHITE)
-                    page.render(pageBmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
-                    rendered += pageBmp
-                    used += targetH + MARGIN
+                    val renderW = PDF_RENDER_WIDTH
+                    val renderH = (page.height * (renderW / page.width.toFloat())).roundToInt().coerceAtLeast(1)
+                    val hi = Bitmap.createBitmap(renderW, renderH, Bitmap.Config.ARGB_8888)
+                    Canvas(hi).drawColor(Color.WHITE)
+                    page.render(hi, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
+
+                    val content = if (autoCropWhiteMargins) cropWhiteMargins(hi) else hi
+                    val rotated = rotate(content, rotationDegrees)
+                    val fitted = fitBitmapNoRecycle(rotated, scalePercent)
+                    if (rotated !== content) rotated.recycle()
+                    if (content !== hi) content.recycle()
+                    hi.recycle()
+
+                    if (used + fitted.height > MAX_HEIGHT) {
+                        fitted.recycle()
+                        return@use
+                    }
+                    rendered += fitted
+                    used += fitted.height + PDF_PAGE_GAP
                 }
                 if (used >= MAX_HEIGHT - 1024) break
             }
         }
         pfd.close()
         if (rendered.isEmpty()) error("PDF 没有可打印页面")
-        return stack(rendered)
+        return stack(rendered, PDF_PAGE_GAP)
     }
 
-    /** Fit one image to the printable width without rotating it. */
-    private fun fitBitmap(src: Bitmap): Bitmap {
-        val scale = CONTENT_WIDTH / src.width.toFloat().coerceAtLeast(1f)
-        val h = (src.height * scale).roundToInt().coerceIn(1, MAX_HEIGHT - MARGIN * 2)
-        val scaled = Bitmap.createScaledBitmap(src, CONTENT_WIDTH, h, true)
-        val out = Bitmap.createBitmap(Protocol.HEAD_DOTS, h + MARGIN * 2, Bitmap.Config.ARGB_8888)
+    /** Fit content to the paper; values above 100% zoom and crop around the center. */
+    private fun fitBitmapNoRecycle(src: Bitmap, scalePercent: Int = 100): Bitmap {
+        val pct = scalePercent.coerceIn(40, 200) / 100f
+        val targetW = (CONTENT_WIDTH * pct).roundToInt().coerceAtLeast(1)
+        val targetH = (src.height * (targetW / src.width.toFloat().coerceAtLeast(1f))).roundToInt()
+            .coerceIn(1, MAX_HEIGHT - EDGE_MARGIN * 2)
+        val scaled = Bitmap.createScaledBitmap(src, targetW, targetH, true)
+        val visibleW = minOf(targetW, Protocol.HEAD_DOTS)
+        val leftInScaled = ((targetW - visibleW) / 2).coerceAtLeast(0)
+        val xOnPaper = ((Protocol.HEAD_DOTS - visibleW) / 2).coerceAtLeast(0)
+        val out = Bitmap.createBitmap(Protocol.HEAD_DOTS, targetH + EDGE_MARGIN * 2, Bitmap.Config.ARGB_8888)
         Canvas(out).apply {
             drawColor(Color.WHITE)
-            drawBitmap(scaled, null, Rect(MARGIN, MARGIN, MARGIN + CONTENT_WIDTH, MARGIN + h), null)
+            drawBitmap(
+                scaled,
+                Rect(leftInScaled, 0, leftInScaled + visibleW, targetH),
+                Rect(xOnPaper, EDGE_MARGIN, xOnPaper + visibleW, EDGE_MARGIN + targetH),
+                null
+            )
         }
         if (scaled !== src) scaled.recycle()
-        src.recycle()
         return out
     }
 
-    private fun stack(parts: List<Bitmap>): Bitmap {
-        if (parts.size == 1 && parts[0].width == Protocol.HEAD_DOTS) return parts[0]
-        val heights = parts.map { p ->
-            if (p.width == Protocol.HEAD_DOTS) p.height
-            else (p.height * (CONTENT_WIDTH / p.width.toFloat())).roundToInt() + MARGIN * 2
+    private fun rotate(src: Bitmap, degrees: Int): Bitmap {
+        val d = ((degrees % 360) + 360) % 360
+        if (d == 0) return src
+        val m = Matrix().apply { postRotate(d.toFloat()) }
+        return Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
+    }
+
+    /** Crop only obvious near-white outer margins; keep a small breathing margin around content. */
+    private fun cropWhiteMargins(src: Bitmap): Bitmap {
+        val w = src.width
+        val h = src.height
+        val row = IntArray(w)
+        var left = w
+        var right = -1
+        var top = h
+        var bottom = -1
+        // Sampling every 2 pixels makes large multi-page PDFs much cheaper while still finding text.
+        var y = 0
+        while (y < h) {
+            src.getPixels(row, 0, w, 0, y, w, 1)
+            var x = 0
+            while (x < w) {
+                val p = row[x]
+                val r = (p shr 16) and 0xff
+                val g = (p shr 8) and 0xff
+                val b = p and 0xff
+                if (r < 246 || g < 246 || b < 246) {
+                    if (x < left) left = x
+                    if (x > right) right = x
+                    if (y < top) top = y
+                    if (y > bottom) bottom = y
+                }
+                x += 2
+            }
+            y += 2
         }
-        val total = (heights.sum() + MARGIN * (parts.size - 1)).coerceAtMost(MAX_HEIGHT)
+        if (right < left || bottom < top) return src
+        val padX = (w * 0.018f).roundToInt().coerceAtLeast(8)
+        val padY = (h * 0.012f).roundToInt().coerceAtLeast(8)
+        left = (left - padX).coerceAtLeast(0)
+        right = (right + padX).coerceAtMost(w - 1)
+        top = (top - padY).coerceAtLeast(0)
+        bottom = (bottom + padY).coerceAtMost(h - 1)
+        // If the detected crop would barely change anything, preserve the original page.
+        if ((right - left + 1) > w * 0.94 && (bottom - top + 1) > h * 0.94) return src
+        return Bitmap.createBitmap(src, left, top, right - left + 1, bottom - top + 1)
+    }
+
+    private fun stack(parts: List<Bitmap>, gap: Int = EDGE_MARGIN * 2): Bitmap {
+        if (parts.size == 1 && parts[0].width == Protocol.HEAD_DOTS) return parts[0]
+        val total = (parts.sumOf { it.height } + gap * (parts.size - 1)).coerceAtMost(MAX_HEIGHT)
         val out = Bitmap.createBitmap(Protocol.HEAD_DOTS, total.coerceAtLeast(64), Bitmap.Config.ARGB_8888)
         val c = Canvas(out)
         c.drawColor(Color.WHITE)
         var y = 0
         parts.forEachIndexed { index, p ->
             if (y >= total) return@forEachIndexed
-            if (p.width == Protocol.HEAD_DOTS) {
-                c.drawBitmap(p, 0f, y.toFloat(), null)
-                y += p.height
-            } else {
-                val h = (p.height * (CONTENT_WIDTH / p.width.toFloat())).roundToInt()
-                val bottom = minOf(total, y + MARGIN + h)
-                if (bottom > y + MARGIN) c.drawBitmap(p, null, Rect(MARGIN, y + MARGIN, MARGIN + CONTENT_WIDTH, bottom), null)
-                y += h + MARGIN * 2
-            }
-            if (index != parts.lastIndex) y += MARGIN
+            val h = minOf(p.height, total - y)
+            c.drawBitmap(p, null, Rect(0, y, Protocol.HEAD_DOTS, y + h), null)
+            y += h
+            if (index != parts.lastIndex) y += gap
             p.recycle()
         }
         return out
     }
 
-    fun toMono(bitmap: Bitmap, mode: DitherMode): MonoImage {
+    /** Same image-processing family used by the normal editor: outline, threshold, FS and Atkinson. */
+    fun toMono(bitmap: Bitmap, a: QuickImageAdjustments): MonoImage {
         require(bitmap.width == Protocol.HEAD_DOTS)
-        val pixels = IntArray(bitmap.width * bitmap.height)
-        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-        val gray = FloatArray(pixels.size)
-        for (i in pixels.indices) {
-            val p = pixels[i]
-            val r = (p shr 16) and 0xff
-            val g = (p shr 8) and 0xff
-            val b = p and 0xff
-            gray[i] = (r * 0.299f + g * 0.587f + b * 0.114f)
+        val w = bitmap.width
+        val h = bitmap.height
+        val px = IntArray(w * h)
+        bitmap.getPixels(px, 0, w, 0, 0, w, h)
+        val opaque = BooleanArray(px.size) { (px[it] ushr 24) >= 128 }
+        val black = if (a.mode == DitherMode.OUTLINE) {
+            val edge = when (a.outlineMethod) {
+                OutlineMethod.CANNY -> Canny.detect(px, opaque, w, h, a.outlineSensitivity, a.outlineThickness, smooth = a.outlineSmooth)
+                OutlineMethod.LINES -> Outline.trace(px, opaque, w, h, a.outlineSensitivity, a.outlineThickness, borderIsBackground = false, smooth = a.outlineSmooth)
+            }
+            if (a.invert) BooleanArray(edge.size) { !edge[it] } else edge
+        } else {
+            val gray = FloatArray(px.size) { i ->
+                val p = px[i]
+                val r = (p shr 16) and 0xff
+                val g = (p shr 8) and 0xff
+                val b = p and 0xff
+                val lum = r * 0.299f + g * 0.587f + b * 0.114f
+                if (a.invert) 255f - lum else lum
+            }
+            when (a.mode) {
+                DitherMode.THRESHOLD -> BooleanArray(gray.size) { gray[it] < a.threshold }
+                else -> Ditherer.of(a.mode).dither(Contrast.adjust(gray, a.contrast), w, h)
+            }
         }
-        return MonoImage(bitmap.height, Ditherer.of(mode).dither(gray, bitmap.width, bitmap.height)).trimTrailingWhite()
+        return MonoImage(h, black).trimTrailingWhite()
     }
 }

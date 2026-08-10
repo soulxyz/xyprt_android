@@ -13,13 +13,13 @@ android {
         applicationId = "io.github.toolicious.labler.by288"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1010003
-        versionName = "1.1.0-by288-alpha3"
+        versionCode = 1010004
+        versionName = "1.1.0"
         manifestPlaceholders["appName"] = "错题小印"
     }
 
     buildTypes {
-        debug { manifestPlaceholders["appName"] = "错题小印 α3" }
+        debug { manifestPlaceholders["appName"] = "错题小印" }
         release {
             isMinifyEnabled = false
             isShrinkResources = false

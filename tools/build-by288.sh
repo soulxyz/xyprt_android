@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Reproducible alpha1 build helper for the portable Android environment.
+# 错题小印 BY-288 reproducible build helper for the portable Android environment.
 # Usage:
 #   tools/build-by288-alpha1.sh /path/to/android_offline_env_complete /path/to/LaBLEr-1.1.0.apk [output.apk]
 
 ENV_ROOT=${1:?environment root required}
 UPSTREAM_APK=${2:?upstream LaBLEr 1.1.0 APK required}
-OUT=${3:-"$PWD/by288_labler_alpha1.apk"}
+OUT=${3:-"$PWD/cuotixiaoyin.apk"}
 PROJECT=$(cd "$(dirname "$0")/.." && pwd)
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -38,8 +38,8 @@ cp "$TMP/zxing.dex" "$TMP/classes${next}.dex"
 
 BT="$ENV_ROOT/android-sdk/build-tools/36.1.0"
 "$BT/zipalign" -f -P 16 4 "$TMP/base.apk" "$TMP/aligned.apk"
-KS=${ANDROID_DEBUG_KEYSTORE:-"$HOME/.android/debug.keystore"}
-"$BT/apksigner" sign --ks "$KS" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out "$TMP/signed.apk" "$TMP/aligned.apk"
+KS=${BY288_SIGNING_KEYSTORE:-"$PROJECT/signing/by288-test.jks"}
+"$BT/apksigner" sign --ks "$KS" --ks-key-alias by288test --ks-pass pass:android --key-pass pass:android --out "$TMP/signed.apk" "$TMP/aligned.apk"
 "$BT/apksigner" verify --verbose "$TMP/signed.apk"
 "$BT/zipalign" -c -P 16 4 "$TMP/signed.apk"
 cp "$TMP/signed.apk" "$OUT"
