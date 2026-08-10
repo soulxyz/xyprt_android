@@ -29,9 +29,9 @@ class SettingsRepository(private val context: Context) {
         SavedPrinter(address, prefs[Keys.PRINTER_NAME] ?: address)
     }
 
-    val defaultTapeWidthMm: Flow<Int> = context.dataStore.data.map { it[Keys.DEFAULT_TAPE_WIDTH] ?: 12 }
-    val defaultLengthMm: Flow<Int> = context.dataStore.data.map { it[Keys.DEFAULT_LENGTH] ?: 40 }
-    val defaultDieCut: Flow<Boolean> = context.dataStore.data.map { it[Keys.DEFAULT_DIE_CUT] ?: true }
+    val defaultTapeWidthMm: Flow<Int> = context.dataStore.data.map { it[Keys.DEFAULT_TAPE_WIDTH] ?: 48 }
+    val defaultLengthMm: Flow<Int> = context.dataStore.data.map { it[Keys.DEFAULT_LENGTH] ?: 60 }
+    val defaultDieCut: Flow<Boolean> = context.dataStore.data.map { it[Keys.DEFAULT_DIE_CUT] ?: false }
 
     suspend fun savePrinter(address: String, name: String) {
         context.dataStore.edit {

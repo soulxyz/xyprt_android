@@ -4,6 +4,7 @@ import io.github.toolicious.labler.model.LabelElement
 import io.github.toolicious.labler.model.LabelSpec
 import io.github.toolicious.labler.model.LabelTemplate
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**

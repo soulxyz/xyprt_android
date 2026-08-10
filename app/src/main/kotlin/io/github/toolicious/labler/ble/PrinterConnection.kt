@@ -1,44 +1,82 @@
 package io.github.toolicious.labler.ble
 
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothSocket
 import android.content.Context
 import io.github.toolicious.labler.printer.Protocol
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.io.OutputStream
+import java.util.UUID
 
-/** Established connection to the printer including the negotiated chunk size. */
+/** Bluetooth Classic RFCOMM/SPP connection used by Beeprt BY-288. */
 class PrinterConnection private constructor(
-    val client: GattClient,
-    val writeChar: BluetoothGattCharacteristic,
+    private val socket: BluetoothSocket,
+    private val input: InputStream,
+    private val output: OutputStream,
     val chunkSize: Int,
-    val mtu: Int,
 ) {
-    fun close() = client.close()
+    val isConnected: Boolean get() = socket.isConnected
+
+    suspend fun write(bytes: ByteArray) = withContext(Dispatchers.IO) {
+        output.write(bytes)
+        output.flush()
+    }
+
+    /** Write a query and collect bytes until a short quiet period follows the first response. */
+    suspend fun query(bytes: ByteArray, firstByteTimeoutMs: Long = 1000, quietMs: Long = 120): ByteArray =
+        withContext(Dispatchers.IO) {
+            output.write(bytes)
+            output.flush()
+            val out = ByteArrayOutputStream()
+            val firstDeadline = System.currentTimeMillis() + firstByteTimeoutMs
+            while (input.available() <= 0 && System.currentTimeMillis() < firstDeadline) {
+                Thread.sleep(10)
+            }
+            var quietDeadline = System.currentTimeMillis() + quietMs
+            while (System.currentTimeMillis() < quietDeadline) {
+                val available = input.available()
+                if (available > 0) {
+                    val buf = ByteArray(minOf(512, available))
+                    val n = input.read(buf)
+                    if (n > 0) {
+                        out.write(buf, 0, n)
+                        quietDeadline = System.currentTimeMillis() + quietMs
+                    }
+                } else {
+                    Thread.sleep(10)
+                }
+            }
+            out.toByteArray()
+        }
+
+    fun close() = runCatching { socket.close() }.getOrNull()
 
     companion object {
+        @SuppressLint("MissingPermission")
         suspend fun open(
             context: Context,
             device: BluetoothDevice,
             autoConnect: Boolean = false,
             connectTimeoutMs: Long? = 10_000,
             log: (String) -> Unit = {},
-        ): PrinterConnection {
-            val client = GattClient()
+        ): PrinterConnection = withContext(Dispatchers.IO) {
+            // SPP has no GATT autoConnect equivalent; the arguments remain for source/API compatibility.
+            val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
+            runCatching { adapter?.cancelDiscovery() }
+            val socket = device.createRfcommSocketToServiceRecord(UUID.fromString(Protocol.SPP_UUID))
             try {
-                client.connect(context, device, autoConnect, connectTimeoutMs)
-                log("Connected, discovering services ...")
-                client.discoverServices()
-                val writeChar = client.findCharacteristic(PrinterUuids.PRINT_SERVICE, PrinterUuids.PRINT_WRITE)
-                    ?: error("Print characteristic (0xFF02) not found. Is this a P15/P12/L13?")
-                val mtu = client.requestMtu(Protocol.REQUESTED_MTU)
-                val chunkSize = if (mtu >= Protocol.MIN_MTU_FOR_FULL_CHUNKS) {
-                    Protocol.CHUNK_SIZE
-                } else {
-                    Protocol.FALLBACK_CHUNK_SIZE
-                }
-                log("MTU $mtu, chunk size $chunkSize bytes")
-                return PrinterConnection(client, writeChar, chunkSize, mtu)
+                log("RFCOMM connecting to ${device.address} ...")
+                socket.connect()
+                log("RFCOMM connected")
+                PrinterConnection(socket, socket.inputStream, socket.outputStream, Protocol.CHUNK_SIZE)
             } catch (t: Throwable) {
-                client.close()
+                runCatching { socket.close() }
                 throw t
             }
         }

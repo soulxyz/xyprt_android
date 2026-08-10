@@ -1,12 +1,10 @@
 package io.github.toolicious.labler
 
 import android.content.Context
-import androidx.room.Room
 import io.github.toolicious.labler.ble.PrinterManager
-import io.github.toolicious.labler.data.AppDatabase
+import io.github.toolicious.labler.data.LocalDatabase
 import io.github.toolicious.labler.data.BackupRepository
 import io.github.toolicious.labler.data.HistoryRepository
-import io.github.toolicious.labler.data.MIGRATION_1_2
 import io.github.toolicious.labler.data.SettingsRepository
 import io.github.toolicious.labler.data.TemplateJson
 import io.github.toolicious.labler.data.TemplateRepository
@@ -29,13 +27,11 @@ class AppContainer(context: Context) {
         coerceInputValues = true
     }
 
-    private val database = Room.databaseBuilder(context, AppDatabase::class.java, "labler.db")
-        .addMigrations(MIGRATION_1_2)
-        .build()
+    private val database = LocalDatabase(context)
 
     val settings = SettingsRepository(context)
-    val templateRepository = TemplateRepository(database.templateDao(), json)
-    val historyRepository = HistoryRepository(database.printHistoryDao(), json)
+    val templateRepository = TemplateRepository(database.templateDao, json)
+    val historyRepository = HistoryRepository(database.printHistoryDao, json)
     val templateJson = TemplateJson(json)
     val backup = BackupRepository(templateRepository, settings, json)
     val printerManager = PrinterManager(context, settings, applicationScope)

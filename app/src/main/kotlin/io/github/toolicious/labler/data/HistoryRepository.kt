@@ -5,6 +5,7 @@ import io.github.toolicious.labler.model.LabelSpec
 import io.github.toolicious.labler.printer.MediaType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 data class PrintHistoryEntry(

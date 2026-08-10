@@ -1,12 +1,14 @@
 package io.github.toolicious.labler.ble
 
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
-import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanResult
-import android.bluetooth.le.ScanSettings
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
 import io.github.toolicious.labler.R
 import io.github.toolicious.labler.printer.Protocol
 import kotlinx.coroutines.channels.awaitClose
@@ -17,10 +19,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 data class FoundPrinter(val device: BluetoothDevice, val name: String, val rssi: Int)
 
-@SuppressLint("MissingPermission") // Permissions are ensured before every action in the UI
+/** Classic Bluetooth discovery. Bonded devices are emitted immediately, then inquiry starts. */
+@SuppressLint("MissingPermission")
 class PrinterScanner(private val context: Context) {
-
-    /** Raw BLE scan as a Flow; only devices with a name are reported. */
     fun scan(): Flow<FoundPrinter> = callbackFlow {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         val adapter = manager.adapter
@@ -29,28 +30,50 @@ class PrinterScanner(private val context: Context) {
             close(IllegalStateException(context.getString(R.string.err_bt_off)))
             return@callbackFlow
         }
-        val scanner = adapter.bluetoothLeScanner
-            ?: run { close(IllegalStateException(context.getString(R.string.err_no_scanner))); return@callbackFlow }
 
-        val cb = object : ScanCallback() {
-            override fun onScanResult(callbackType: Int, result: ScanResult) {
-                val name = result.scanRecord?.deviceName ?: result.device?.name ?: return
-                trySend(FoundPrinter(result.device, name, result.rssi))
-            }
-
-            override fun onScanFailed(errorCode: Int) {
-                close(IllegalStateException("BLE scan failed (code $errorCode)"))
+        // Paired printers remain the fastest and most reliable discovery path for SPP.
+        runCatching {
+            adapter.bondedDevices.forEach { d ->
+                trySend(FoundPrinter(d, d.name ?: d.address, 0))
             }
         }
-        val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-            .build()
-        scanner.startScan(null, settings, cb)
-        awaitClose { runCatching { scanner.stopScan(cb) } }
+
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                when (intent?.action) {
+                    BluetoothDevice.ACTION_FOUND -> {
+                        val device = if (Build.VERSION.SDK_INT >= 33)
+                            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                        else @Suppress("DEPRECATION") intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                        device ?: return
+                        val rssi = intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, Short.MIN_VALUE).toInt()
+                        val name = runCatching { device.name }.getOrNull() ?: device.address
+                        trySend(FoundPrinter(device, name, rssi))
+                    }
+                    BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> close()
+                }
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(BluetoothDevice.ACTION_FOUND)
+            addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
+        }
+        if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        else @Suppress("DEPRECATION") context.registerReceiver(receiver, filter)
+
+        runCatching { adapter.cancelDiscovery() }
+        if (!adapter.startDiscovery()) {
+            runCatching { context.unregisterReceiver(receiver) }
+            close(IllegalStateException(context.getString(R.string.err_no_scanner)))
+            return@callbackFlow
+        }
+        awaitClose {
+            runCatching { adapter.cancelDiscovery() }
+            runCatching { context.unregisterReceiver(receiver) }
+        }
     }
 
-    /** Returns the first printer with a matching name prefix, or null after a timeout. */
     suspend fun findFirstPrinter(timeoutMs: Long = 15_000): FoundPrinter? = withTimeoutOrNull(timeoutMs) {
-        scan().first { found -> Protocol.DEVICE_NAME_PREFIXES.any { found.name.startsWith(it) } }
+        scan().first { found -> Protocol.DEVICE_NAME_PREFIXES.any { found.name.startsWith(it, ignoreCase = true) } }
     }
 }

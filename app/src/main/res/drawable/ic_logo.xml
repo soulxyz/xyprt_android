@@ -7,7 +7,7 @@
     android:height="28dp"
     android:viewportWidth="46.295166"
     android:viewportHeight="56.904602"
-    android:tint="?attr/colorControlNormal">
+    android:tint="?android:attr/textColorPrimary">
     <group
         android:translateX="-22.3023071"
         android:translateY="-18.055908">

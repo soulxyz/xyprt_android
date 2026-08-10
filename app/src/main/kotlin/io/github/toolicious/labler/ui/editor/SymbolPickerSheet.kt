@@ -108,7 +108,6 @@ fun SymbolPickerSheet(
         sheetState = sheetState,
         // The content area does NOT move the dialog, otherwise it would collide with
         // scrolling. Only the handle at the top pulls it up (larger) or down (close).
-        sheetGesturesEnabled = false,
         dragHandle = {
             Box(
                 Modifier

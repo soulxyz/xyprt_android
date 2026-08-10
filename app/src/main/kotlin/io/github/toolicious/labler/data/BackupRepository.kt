@@ -3,6 +3,7 @@ package io.github.toolicious.labler.data
 import io.github.toolicious.labler.model.LabelTemplate
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.util.UUID
 

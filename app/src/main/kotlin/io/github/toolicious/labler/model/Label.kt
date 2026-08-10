@@ -9,25 +9,27 @@ import kotlinx.serialization.Serializable
 
 /**
  * Coordinate system: label pixels (1 px = 1 dot = 0.125 mm), origin top
- * left, X along the tape, Y across (0..95). Identical in editor,
+ * left, X along the paper, Y across (0..383). Identical in editor,
  * renderer and print.
  */
 @Serializable
 data class LabelSpec(
-    val tapeWidthMm: Int = 12,
-    val lengthMm: Int = 40,
-    val media: MediaType = MediaType.DIE_CUT,
+    val tapeWidthMm: Int = 48,
+    val lengthMm: Int = 60,
+    val media: MediaType = MediaType.CONTINUOUS,
 ) {
     val lengthPx: Int get() = lengthMm * Protocol.DOTS_PER_MM
 
     companion object {
         const val PRINT_HEIGHT_PX = Protocol.HEAD_DOTS
 
-        /** Commercially available die-cut labels for P15/P12 (tape width x length in mm). */
+        /** Practical presets for 48 mm continuous paper on BY-288. */
         val PRESETS = listOf(
-            12 to 40,
-            14 to 30, 14 to 40,
-            15 to 30, 15 to 40,
+            48 to 40,
+            48 to 60,
+            48 to 80,
+            48 to 100,
+            48 to 150,
         )
     }
 }

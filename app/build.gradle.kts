@@ -1,65 +1,29 @@
-import java.util.Properties
-
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.ksp)
-}
-
-// Release signing from the shared folder outside the repo (../_signing, never in Git).
-// If the properties or keystore file is missing (debug build, CI without secret, another machine),
-// the release build simply stays unsigned instead of failing.
-val signingProps = rootProject.file("../_signing/labler.properties")
-val signing = if (signingProps.exists()) {
-    Properties().apply { signingProps.inputStream().use { load(it) } }
-} else {
-    null
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "io.github.toolicious.labler"
-    compileSdk = 37
+    compileSdk = 36
+    buildToolsVersion = "36.1.0"
 
     defaultConfig {
-        applicationId = "io.github.toolicious.labler"
+        applicationId = "io.github.toolicious.labler.by288"
         minSdk = 26
         targetSdk = 36
-        // Positional version (Luanti/Minetest-style): code = major*1_000_000 + minor*10_000 +
-        // patch*100 + build, where build 0 = release (code ends in "00") and 01..99 are test/beta
-        // builds above it; name is "major.minor.patch" (plus "-devNN" for a test build). Written as
-        // literals, not computed, so F-Droid can parse them for automatic update detection. Update
-        // both by hand when bumping. 1.1.0 = 1*1_000_000 + 1*10_000 + 0*100 + 0 = 1010000.
-        versionCode = 1010000
-        versionName = "1.1.0"
-        manifestPlaceholders["appName"] = "LaBLEr"
-    }
-
-    signingConfigs {
-        if (signing != null) {
-            create("release") {
-                storeFile = signingProps.parentFile.resolve(signing.getProperty("storeFile"))
-                storePassword = signing.getProperty("storePassword")
-                keyAlias = signing.getProperty("keyAlias")
-                keyPassword = signing.getProperty("keyPassword")
-            }
-        }
+        versionCode = 1010001
+        versionName = "1.1.0-by288-alpha1"
+        manifestPlaceholders["appName"] = "错题小印 Revival"
     }
 
     buildTypes {
-        debug {
-            // Separate package name + name so debug and release sit side by side in the drawer.
-            applicationIdSuffix = ".debug"
-            manifestPlaceholders["appName"] = "LaBLEr DEBUG"
-        }
+        debug { manifestPlaceholders["appName"] = "错题小印 Revival α1" }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-            if (signing != null) signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+            isShrinkResources = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
@@ -72,31 +36,36 @@ android {
         compose = true
         buildConfig = true
     }
+
+    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+
+    kotlinOptions {
+        jvmTarget = "17"
+        freeCompilerArgs += listOf(
+            "-Xplugin=${rootProject.file("tools/kotlin-serialization-compiler-plugin.jar").absolutePath}"
+        )
+    }
 }
 
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
+configurations.all {
+    resolutionStrategy.force("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.6.4")
+    resolutionStrategy.force("com.google.guava:guava:31.1-jre")
 }
 
 dependencies {
-    implementation(project(":printer"))
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.emoji2.emojipicker)
-    implementation(platform(libs.compose.bom))
-    implementation(libs.compose.ui)
-    implementation(libs.compose.material3)
-    implementation(libs.compose.material.icons.core)
-    implementation(libs.compose.ui.tooling.preview)
-    implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.navigation.compose)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.room.runtime)
-    ksp(libs.androidx.room.compiler)
-    implementation(libs.androidx.datastore.preferences)
-    implementation(libs.kotlinx.serialization.json)
-    implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.zxing.core)
-    debugImplementation(libs.compose.ui.tooling)
-    testImplementation(libs.junit)
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.emoji2:emoji2-emojipicker:1.0.0-alpha03")
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.ui:ui:1.7.6")
+    implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("androidx.compose.material:material-icons-core:1.6.0")
+    implementation("androidx.navigation:navigation-compose:2.8.5")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.6.3")
+    implementation(files("libs/kotlinx-serialization-json-jvm-1.6.2.jar"))
+    compileOnly(files("libs/zxing-compile-stubs.jar"))
+    testImplementation("junit:junit:4.13.2")
 }

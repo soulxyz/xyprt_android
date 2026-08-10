@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">LaBLEr</string>
+    <string name="app_name">错题小印 Revival</string>
 
     <!-- Actions -->
     <string name="action_cancel">取消</string>
@@ -148,10 +148,10 @@
     <string name="settings_diagnostics">诊断</string>
     <string name="settings_testtools">测试打印工具（几何图案）</string>
     <string name="settings_experimental">实验性</string>
-    <string name="settings_experimental_hint">实验性打印机命令，未在 P15 上验证。仅在已连接打印机时使用；不确定就忽略。</string>
+    <string name="settings_experimental_hint">实验性打印机命令。仅在已连接打印机时使用；不确定就忽略。</string>
     <string name="exp_learn_gap">校准标签间隙</string>
     <string name="settings_about">关于</string>
-    <string name="about_text">LaBLEr %1$s\n\n通过 Bluetooth LE 用于 P15 标签打印机的独立 FOSS 应用。该协议是从 BleWebler 逆向工程得到的，BleWebler 是一个无需安装、在 Chrome 浏览器中运行的网页版。未使用任何代码。</string>
+    <string name="about_text">错题小印 Revival %1$s\n\n通过 Bluetooth Classic SPP 用于 BY-288 / 错题小印 X1的独立 FOSS 应用。该协议是从 BleWebler 逆向工程得到的，BleWebler 是一个无需安装、在 Chrome 浏览器中运行的网页版。未使用任何代码。</string>
     <string name="scan_title">查找打印机</string>
     <string name="scan_show_all">显示所有蓝牙设备</string>
     <string name="scan_empty">未找到任何设备。打印机开着吗？</string>
@@ -182,10 +182,10 @@
     <string name="err_connect_failed">连接失败</string>
     <string name="err_not_connected">未连接打印机</string>
     <string name="err_print_failed">打印失败</string>
-    <string name="about_description">LaBLEr 是一款用于 Marklife 系列（P15、P12、L13）Bluetooth Low Energy 热敏标签打印机的标签打印应用。直接在手机上用文本、符号和边框设计自己的标签，将其保存为模板，随时再次打印。</string>
+    <string name="about_description">错题小印 Revival 是一款用于 Marklife 系列（BY-288 / 错题小印 X1）Bluetooth Classic SPP 热敏标签打印机的标签打印应用。直接在手机上用文本、符号和边框设计自己的标签，将其保存为模板，随时再次打印。</string>
     <string name="about_license">许可证：GPL-3.0-or-later</string>
     <string name="about_source">源代码和帮助</string>
-    <string name="about_thanks">感谢开源的 Chrome 网页应用 %1$s，它使 P15 协议得以公开。</string>
+    <string name="about_thanks">感谢开源的 Chrome 网页应用 %1$s，它使 BY-288 协议得以公开。</string>
     <string name="about_version">版本 %1$s</string>
     <string name="action_close">关闭</string>
     <string name="add_barcode">条码</string>
@@ -208,7 +208,7 @@
     <string name="err_file_invalid">无效文件</string>
     <string name="err_file_not_readable">文件无法读取</string>
     <string name="err_file_not_writable">文件无法写入</string>
-    <string name="err_no_scanner">BLE 扫描器不可用</string>
+    <string name="err_no_scanner">蓝牙扫描不可用</string>
     <string name="forget_message">将不再记住 %1$s，也不再自动连接。</string>
     <string name="forget_title">忘记打印机？</string>
     <string name="group_scale">缩放</string>

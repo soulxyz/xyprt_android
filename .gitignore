@@ -24,3 +24,13 @@ Design/
 *.jks
 keystore.properties
 /keystore/
+# Local build / signing files are intentionally not versioned
+.local-build/
+local-build/
+signing/
+*.jks
+*.keystore
+*.apk
+*.aab
+app/libs/*.jar
+tools/*.jar
