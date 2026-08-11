@@ -59,22 +59,31 @@ Gradle 版本由 Wrapper 自动管理，无需手动安装。
 | 中国大陆镜像（ghfast 加速） | [下载最新版 APK](https://ghfast.top/https://github.com/soulxyz/xyprt_android/releases/latest/download/xyprt.apk) |
 
 ## 项目数据
-
-<p align="center">
-<a href="https://www.star-history.com/?repos=soulxyz%2Fxyprt_android&type=date&logscale=&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=soulxyz/xyprt_android&type=date&theme=dark&legend=top-left&sealed_token=fQ4ntrxGWdrv5idgfDSeTqfSpcLkCbtJP29IdrshQkZAp_d1tJ5VPXXfWDftmXYXZ78fxvvJ5sHptgoiJPuEmLwx5W5uXjl-HSFcZU9MQ7VMCnOFEGRgdDECSWFvu1SrAIlq1RNEy_LvHBixSx3HvrVlwU7tkpuntlVmASDCM5pISchWZTUDFLrP9Ghc" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=soulxyz/xyprt_android&type=date&legend=top-left&sealed_token=fQ4ntrxGWdrv5idgfDSeTqfSpcLkCbtJP29IdrshQkZAp_d1tJ5VPXXfWDftmXYXZ78fxvvJ5sHptgoiJPuEmLwx5W5uXjl-HSFcZU9MQ7VMCnOFEGRgdDECSWFvu1SrAIlq1RNEy_LvHBixSx3HvrVlwU7tkpuntlVmASDCM5pISchWZTUDFLrP9Ghc" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=soulxyz/xyprt_android&type=date&legend=top-left&sealed_token=fQ4ntrxGWdrv5idgfDSeTqfSpcLkCbtJP29IdrshQkZAp_d1tJ5VPXXfWDftmXYXZ78fxvvJ5sHptgoiJPuEmLwx5W5uXjl-HSFcZU9MQ7VMCnOFEGRgdDECSWFvu1SrAIlq1RNEy_LvHBixSx3HvrVlwU7tkpuntlVmASDCM5pISchWZTUDFLrP9Ghc" />
- </picture>
-</a>
-</p>
-
 <p align="center">
   <img src="https://img.shields.io/github/stars/soulxyz/xyprt_android?label=Star%20%E6%95%B0" alt="Star 数"/>
   <img src="https://img.shields.io/github/downloads/soulxyz/xyprt_android/total?label=%E6%80%BB%E4%B8%8B%E8%BD%BD%E9%87%8F" alt="总下载量"/>
   <img src="https://img.shields.io/github/downloads/soulxyz/xyprt_android/latest/total?label=%E6%9C%80%E6%96%B0%E7%89%88%E4%B8%8B%E8%BD%BD%E9%87%8F" alt="最新版下载量"/>
 </p>
+<p align="center">
+  <a href="https://www.star-history.com/?repos=soulxyz%2Fxyprt_android&type=date&legend=top-left">
+    <picture>
+      <source
+        media="(prefers-color-scheme: dark)"
+        srcset="https://raw.githubusercontent.com/soulxyz/xyprt_android/star-history/star-history-dark.svg"
+      />
+      <source
+        media="(prefers-color-scheme: light)"
+        srcset="https://raw.githubusercontent.com/soulxyz/xyprt_android/star-history/star-history-light.svg"
+      />
+      <img
+        alt="Star History Chart"
+        src="https://raw.githubusercontent.com/soulxyz/xyprt_android/star-history/star-history-light.svg"
+      />
+    </picture>
+  </a>
+</p>
+
+
 
 ## 文档
 
