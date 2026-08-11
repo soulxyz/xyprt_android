@@ -82,7 +82,6 @@ import io.github.toolicious.labler.model.LabelTemplate
 import io.github.toolicious.labler.printer.MediaType
 import io.github.toolicious.labler.render.LabelRenderer
 import io.github.toolicious.labler.ui.components.ClearButton
-import io.github.toolicious.labler.ui.components.PrinterStatusChip
 import io.github.toolicious.labler.ui.components.rememberBlePermissionState
 import io.github.toolicious.labler.ui.info.InfoDialog
 import java.text.SimpleDateFormat
@@ -98,6 +97,7 @@ fun HomeScreen(
     onQuickText: () -> Unit,
     onQuickImage: () -> Unit,
     onQuickDocument: () -> Unit,
+    onQuickCamera: () -> Unit,
     vm: HomeViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -159,14 +159,7 @@ fun HomeScreen(
                             }
                         }
                         Spacer(Modifier.width(10.dp))
-                        Column {
-                            Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "打印内容，不折腾打印机",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold)
                     }
                 },
                 actions = {
@@ -204,7 +197,7 @@ fun HomeScreen(
             }
 
             item(span = { GridItemSpan(maxLineSpan) }) {
-                SectionHeader(title = "开始打印", subtitle = "选择内容，预览后直接打印")
+                SectionHeader(title = "开始打印")
             }
             item {
                 QuickActionCard(
@@ -226,16 +219,24 @@ fun HomeScreen(
             }
             item {
                 QuickActionCard(
-                    title = "文字",
-                    subtitle = "输入几行就打印",
-                    iconRes = R.drawable.ic_quick_text,
-                    onClick = onQuickText,
+                    title = "拍照",
+                    subtitle = "拍题后裁剪打印",
+                    iconRes = R.drawable.ic_camera,
+                    onClick = onQuickCamera,
                 )
             }
             item {
                 QuickActionCard(
+                    title = "文字",
+                    subtitle = "字号、字体、行距",
+                    iconRes = R.drawable.ic_quick_text,
+                    onClick = onQuickText,
+                )
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                QuickActionWideCard(
                     title = "自由排版",
-                    subtitle = "文字、图片、二维码",
+                    subtitle = "需要组合文字、图片、二维码时使用",
                     iconRes = R.drawable.ic_quick_layout,
                     onClick = { showNewDialog = true },
                 )
@@ -368,21 +369,21 @@ private fun PrinterOverviewCard(
 ) {
     val ready = state is PrinterState.Ready
     val title = when (state) {
-        is PrinterState.Ready -> "打印机已就绪"
+        is PrinterState.Ready -> state.name.removeSuffix("_BLE")
         is PrinterState.Printing -> "正在打印"
-        is PrinterState.Connecting -> "正在连接打印机"
-        is PrinterState.Error -> "打印机需要处理"
-        is PrinterState.Disconnected -> if (savedName != null) "打印机未连接" else "连接打印机"
+        is PrinterState.Connecting -> savedName ?: "正在连接打印机"
+        is PrinterState.Error -> savedName ?: "打印机需要处理"
+        is PrinterState.Disconnected -> savedName ?: "连接打印机"
     }
     val subtitle = when (state) {
         is PrinterState.Ready -> buildString {
-            append(state.name.removeSuffix("_BLE"))
+            append("已连接")
             state.batteryPercent?.let { append(" · 电量 $it%") }
         }
         is PrinterState.Printing -> "任务进行中，请保持打印机开机"
-        is PrinterState.Connecting -> "正在尝试恢复连接"
+        is PrinterState.Connecting -> "正在连接…"
         is PrinterState.Error -> state.message
-        is PrinterState.Disconnected -> savedName?.let { "已记住 $it，可一键重连" } ?: "首次使用只需连接一次，之后会自动记住"
+        is PrinterState.Disconnected -> if (savedName != null) "未连接 · 点此重新连接" else "首次使用连接一次，之后会自动记住"
     }
 
     ElevatedCard(
@@ -392,32 +393,36 @@ private fun PrinterOverviewCard(
         ),
         onClick = onOpenSettings,
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(2.dp))
-                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Surface(
+                color = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.size(46.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painterResource(R.drawable.ic_print),
+                        contentDescription = null,
+                        modifier = Modifier.size(23.dp),
+                        tint = if (ready) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                    )
                 }
-                PrinterStatusChip(
-                    state = state,
-                    permissionMissing = permissionMissing,
-                    onClick = onOpenSettings,
-                )
+            }
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(2.dp))
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
             }
             if (!ready && state !is PrinterState.Printing) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onPrimaryAction) {
-                        Text(
-                            when {
-                                permissionMissing -> "允许蓝牙"
-                                savedName != null -> "连接"
-                                else -> "查找打印机"
-                            }
-                        )
-                    }
-                    TextButton(onClick = onOpenSettings) { Text("打印机设置") }
+                Button(onClick = onPrimaryAction) {
+                    Text(when { permissionMissing -> "允许蓝牙"; savedName != null -> "连接"; else -> "查找" })
                 }
+            } else {
+                Text("管理", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             }
         }
     }
@@ -479,6 +484,37 @@ private fun QuickActionCard(
             }
             Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun QuickActionWideCard(
+    title: String,
+    subtitle: String,
+    iconRes: Int,
+    onClick: () -> Unit,
+) {
+    OutlinedCard(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.size(42.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            }
+            Text("打开", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         }
     }
 }

@@ -42,7 +42,6 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import io.github.toolicious.labler.App
@@ -71,7 +70,7 @@ fun InfoDialog(onDismiss: () -> Unit) {
     }
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val cardColor = MaterialTheme.colorScheme.surfaceContainerLow
-    val repoUrl = stringResource(R.string.about_repo)
+    val websiteUrl = "https://xyprt.5am.top"
 
     val scope = rememberCoroutineScope()
     val backup = remember(context) { (context.applicationContext as App).container.backup }
@@ -81,10 +80,10 @@ fun InfoDialog(onDismiss: () -> Unit) {
 
     fun toast(res: Int) = Toast.makeText(context, context.getString(res), Toast.LENGTH_SHORT).show()
 
-    fun openSourcePage() {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(repoUrl)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    fun openWebsite() {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(websiteUrl)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val ok = runCatching { context.startActivity(intent) }.isSuccess
-        if (!ok) toast(R.string.about_source_unavailable)
+        if (!ok) Toast.makeText(context, "无法打开网站", Toast.LENGTH_SHORT).show()
     }
 
     fun runImport(raw: String, replace: Boolean) {
@@ -205,13 +204,12 @@ fun InfoDialog(onDismiss: () -> Unit) {
                     textAlign = TextAlign.Center
                 )
 
-                // Source code & help: entire row clickable (toolicious repo)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
                         .background(cardColor)
-                        .clickable { openSourcePage() }
+                        .clickable { openWebsite() }
                         .padding(start = 12.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -224,35 +222,17 @@ fun InfoDialog(onDismiss: () -> Unit) {
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            stringResource(R.string.about_source),
+                            "官方网站",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            repoUrl,
+                            "xyprt.5am.top",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                             maxLines = 1
                         )
                     }
-                }
-
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Text(
-                        stringResource(R.string.about_thanks),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = muted,
-                        textAlign = TextAlign.Center
-                    )
-                    Text(
-                        stringResource(R.string.about_license),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = muted,
-                        textAlign = TextAlign.Center
-                    )
                 }
             }
         },

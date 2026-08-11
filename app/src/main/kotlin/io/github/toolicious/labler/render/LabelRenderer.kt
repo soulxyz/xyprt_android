@@ -11,11 +11,6 @@ import android.text.StaticLayout
 import android.text.TextPaint
 import android.util.Base64
 import android.util.LruCache
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.EncodeHintType
-import com.google.zxing.MultiFormatWriter
-import com.google.zxing.common.BitMatrix
-import com.google.zxing.qrcode.QRCodeWriter
 import io.github.toolicious.labler.model.BarcodeElement
 import io.github.toolicious.labler.model.FrameElement
 import io.github.toolicious.labler.model.FrameStyle
@@ -46,7 +41,7 @@ object LabelRenderer {
 
     // Cache the expensive per-element results so editor redraws (drag, typing, recomposition) do not
     // recompute them every frame. Keyed by everything that affects the output; LruCache is thread-safe.
-    private val matrixCache = LruCache<String, BitMatrix>(16)
+    private val matrixCache = LruCache<String, EncodedMatrix>(16)
     private val imageCache = LruCache<String, IntArray>(8)
 
     fun render(spec: LabelSpec, elements: List<LabelElement>): Bitmap {
@@ -265,30 +260,55 @@ object LabelRenderer {
     private fun barcodeCaptionHeight(e: BarcodeElement): Float =
         if (e.symbology != Symbology.QR_CODE && e.showText) (e.heightPx * 0.26f).coerceIn(10f, 20f) else 0f
 
-    private fun barcodeMatrix(e: BarcodeElement): BitMatrix? {
+    private data class EncodedMatrix(val width: Int, val height: Int, val bits: BooleanArray) {
+        fun get(x: Int, y: Int): Boolean = bits[y * width + x]
+    }
+
+    /**
+     * ZXing is loaded reflectively on purpose. The app build injects the upstream ZXing dex after
+     * Gradle packaging; keeping those classes out of this method's signature means a missing or
+     * incompatible runtime can never crash the whole editor while the user types. In that case we
+     * simply render the neutral placeholder instead.
+     */
+    private fun barcodeMatrix(e: BarcodeElement): EncodedMatrix? {
         if (e.data.isBlank()) return null
-        // showText changes the encoded height (it reserves a caption band), so it must be in the key.
         val key = "${e.symbology}:${e.widthPx.toInt()}:${e.heightPx.toInt()}:${e.showText}:${e.data}"
         matrixCache.get(key)?.let { return it }
         val isQr = e.symbology == Symbology.QR_CODE
-        val format = when (e.symbology) {
-            Symbology.QR_CODE -> BarcodeFormat.QR_CODE
-            Symbology.CODE_128 -> BarcodeFormat.CODE_128
-            Symbology.EAN_13 -> BarcodeFormat.EAN_13
-            Symbology.UPC_A -> BarcodeFormat.UPC_A
-            Symbology.CODE_39 -> BarcodeFormat.CODE_39
-            Symbology.ITF -> BarcodeFormat.ITF
-        }
         val side = minOf(e.widthPx, e.heightPx)
         val codeW = (if (isQr) side else e.widthPx).toInt().coerceAtLeast(8)
         val codeH = (if (isQr) side else e.heightPx - barcodeCaptionHeight(e)).toInt().coerceAtLeast(8)
-        val hints = mapOf(EncodeHintType.MARGIN to if (isQr) 1 else 2)
-        val matrix = try {
-            if (isQr) QRCodeWriter().encode(e.data, format, codeW, codeH, hints)
-            else MultiFormatWriter().encode(e.data, format, codeW, codeH, hints)
-        } catch (t: Throwable) {
-            null
+        val formatName = when (e.symbology) {
+            Symbology.QR_CODE -> "QR_CODE"
+            Symbology.CODE_128 -> "CODE_128"
+            Symbology.EAN_13 -> "EAN_13"
+            Symbology.UPC_A -> "UPC_A"
+            Symbology.CODE_39 -> "CODE_39"
+            Symbology.ITF -> "ITF"
         }
+        val matrix = runCatching {
+            val formatClass = Class.forName("com.google.zxing.BarcodeFormat")
+            val format = requireNotNull(formatClass.enumConstants).first { (it as Enum<*>).name == formatName }
+            val writerClass = Class.forName(if (isQr) "com.google.zxing.qrcode.QRCodeWriter" else "com.google.zxing.MultiFormatWriter")
+            val writer = writerClass.getDeclaredConstructor().newInstance()
+            val encode = writerClass.getMethod(
+                "encode",
+                String::class.java,
+                formatClass,
+                Integer.TYPE,
+                Integer.TYPE,
+            )
+            val raw = encode.invoke(writer, e.data, format, codeW, codeH)
+            val rawClass = raw.javaClass
+            val width = rawClass.getMethod("getWidth").invoke(raw) as Int
+            val height = rawClass.getMethod("getHeight").invoke(raw) as Int
+            val get = rawClass.getMethod("get", Integer.TYPE, Integer.TYPE)
+            val bits = BooleanArray(width * height)
+            for (y in 0 until height) for (x in 0 until width) {
+                bits[y * width + x] = get.invoke(raw, x, y) as Boolean
+            }
+            EncodedMatrix(width, height, bits)
+        }.getOrNull()
         if (matrix != null) matrixCache.put(key, matrix)
         return matrix
     }

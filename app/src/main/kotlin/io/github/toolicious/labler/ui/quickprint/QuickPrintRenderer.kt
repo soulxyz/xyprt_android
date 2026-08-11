@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Matrix
 import android.graphics.Rect
+import android.graphics.Typeface
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.text.Layout
@@ -37,6 +38,16 @@ data class QuickImageAdjustments(
     val scalePercent: Int = 100,
 )
 
+enum class QuickTextFont { SANS, SERIF, MONO }
+enum class QuickTextAlign { LEFT, CENTER, RIGHT }
+
+data class QuickTextStyle(
+    val fontSizePx: Int = 30,
+    val lineSpacingPercent: Int = 115,
+    val font: QuickTextFont = QuickTextFont.SANS,
+    val align: QuickTextAlign = QuickTextAlign.LEFT,
+)
+
 /** Render arbitrary shared content into the BY-288's portrait paper coordinate system. */
 object QuickPrintRenderer {
     // Keep only a very small safety edge. 16 px/side made documents needlessly tiny.
@@ -46,16 +57,26 @@ object QuickPrintRenderer {
     private const val PDF_RENDER_WIDTH = Protocol.HEAD_DOTS * 2
     private const val PDF_PAGE_GAP = 16
 
-    fun text(text: String, fontPx: Float = 30f): Bitmap {
+    fun text(text: String, style: QuickTextStyle = QuickTextStyle()): Bitmap {
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
-            textSize = fontPx
+            textSize = style.fontSizePx.coerceIn(16, 72).toFloat()
+            typeface = when (style.font) {
+                QuickTextFont.SANS -> Typeface.SANS_SERIF
+                QuickTextFont.SERIF -> Typeface.SERIF
+                QuickTextFont.MONO -> Typeface.MONOSPACE
+            }
         }
         val body = text.ifBlank { "请输入要打印的文字" }
+        val alignment = when (style.align) {
+            QuickTextAlign.LEFT -> Layout.Alignment.ALIGN_NORMAL
+            QuickTextAlign.CENTER -> Layout.Alignment.ALIGN_CENTER
+            QuickTextAlign.RIGHT -> Layout.Alignment.ALIGN_OPPOSITE
+        }
         val layout = StaticLayout.Builder.obtain(body, 0, body.length, paint, CONTENT_WIDTH)
-            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setAlignment(alignment)
             .setIncludePad(true)
-            .setLineSpacing(2f, 1f)
+            .setLineSpacing(0f, style.lineSpacingPercent.coerceIn(80, 200) / 100f)
             .build()
         val h = (layout.height + EDGE_MARGIN * 2).coerceIn(64, MAX_HEIGHT)
         return Bitmap.createBitmap(Protocol.HEAD_DOTS, h, Bitmap.Config.ARGB_8888).also { out ->
@@ -69,16 +90,25 @@ object QuickPrintRenderer {
         }
     }
 
-    fun image(context: Context, uri: Uri, rotationDegrees: Int = 0, scalePercent: Int = 100): Bitmap =
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            BitmapFactory.decodeStream(input)
-        }?.let { src ->
-            val rotated = rotate(src, rotationDegrees)
-            if (rotated !== src) src.recycle()
-            val out = fitBitmapNoRecycle(rotated, scalePercent)
-            rotated.recycle()
-            out
-        } ?: error("无法读取图片")
+    fun previewBitmap(context: Context, uri: Uri, maxDimension: Int = 1600): Bitmap =
+        decodeSampled(context, uri, maxDimension) ?: error("无法读取图片")
+
+    fun image(
+        context: Context,
+        uri: Uri,
+        rotationDegrees: Int = 0,
+        scalePercent: Int = 100,
+        crop: CropRect = CropRect(),
+    ): Bitmap {
+        val src = decodeSampled(context, uri, 3200) ?: error("无法读取图片")
+        val cropped = cropBitmap(src, crop.normalized())
+        if (cropped !== src) src.recycle()
+        val rotated = rotate(cropped, rotationDegrees)
+        if (rotated !== cropped) cropped.recycle()
+        val out = fitBitmapNoRecycle(rotated, scalePercent)
+        rotated.recycle()
+        return out
+    }
 
     fun images(context: Context, uris: List<Uri>, rotationDegrees: Int = 0, scalePercent: Int = 100): Bitmap {
         val pages = uris.take(20).map { image(context, it, rotationDegrees, scalePercent) }
@@ -147,6 +177,28 @@ object QuickPrintRenderer {
         }
         if (scaled !== src) scaled.recycle()
         return out
+    }
+
+    private fun decodeSampled(context: Context, uri: Uri, maxDimension: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (maxOf(bounds.outWidth / sample, bounds.outHeight / sample) > maxDimension * 2) sample *= 2
+        val opts = BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        return context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+    }
+
+    private fun cropBitmap(src: Bitmap, rect: CropRect): Bitmap {
+        if (rect.isFull) return src
+        val l = (rect.left * src.width).roundToInt().coerceIn(0, src.width - 1)
+        val t = (rect.top * src.height).roundToInt().coerceIn(0, src.height - 1)
+        val r = (rect.right * src.width).roundToInt().coerceIn(l + 1, src.width)
+        val b = (rect.bottom * src.height).roundToInt().coerceIn(t + 1, src.height)
+        return Bitmap.createBitmap(src, l, t, r - l, b - t)
     }
 
     private fun rotate(src: Bitmap, degrees: Int): Bitmap {
