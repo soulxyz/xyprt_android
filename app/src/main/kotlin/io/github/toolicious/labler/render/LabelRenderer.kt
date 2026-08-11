@@ -20,6 +20,7 @@ import io.github.toolicious.labler.model.LabelElement
 import io.github.toolicious.labler.model.LabelSpec
 import io.github.toolicious.labler.model.LabelTextAlign
 import io.github.toolicious.labler.model.Symbology
+import io.github.toolicious.labler.model.TableElement
 import io.github.toolicious.labler.model.TextElement
 import io.github.toolicious.labler.printer.MonoImage
 import io.github.toolicious.labler.printer.dither.Contrast
@@ -67,6 +68,7 @@ object LabelRenderer {
         is TextElement -> textLayout(element).let { ElementSize(it.width.toFloat(), it.height.toFloat()) }
         is IconElement -> ElementSize(element.sizePx, element.sizePx)
         is FrameElement -> ElementSize(element.widthPx, element.heightPx)
+        is TableElement -> ElementSize(element.widthPx, element.heightPx)
         is BarcodeElement -> {
             // The reserved box: the code renders as large as cleanly fits and centers inside it.
             // A 1D barcode cannot shrink below 1 px per module, so let the frame grow to contain it.
@@ -119,6 +121,7 @@ object LabelRenderer {
             is TextElement -> drawText(canvas, element)
             is IconElement -> drawIcon(canvas, element)
             is FrameElement -> drawFrame(canvas, element)
+            is TableElement -> drawTable(canvas, element)
             is BarcodeElement -> drawBarcode(canvas, element)
             is ImageElement -> drawImage(canvas, element)
         }
@@ -252,6 +255,35 @@ object LabelRenderer {
                 paint.style = Paint.Style.FILL
                 canvas.drawRect(e.x, e.y, e.x + e.strokePx, e.y + e.heightPx, paint)
             }
+        }
+    }
+
+    // ----- Table -----
+
+    private fun drawTable(canvas: Canvas, e: TableElement) {
+        val rows = e.rows.coerceIn(1, 20)
+        val columns = e.columns.coerceIn(1, 12)
+        val paint = Paint().apply {
+            isAntiAlias = false
+            color = Color.BLACK
+            strokeWidth = e.strokePx.coerceIn(1f, 8f)
+            style = Paint.Style.STROKE
+        }
+        val half = paint.strokeWidth / 2f
+        val left = e.x + half
+        val top = e.y + half
+        val right = e.x + e.widthPx - half
+        val bottom = e.y + e.heightPx - half
+        canvas.drawRect(left, top, right, bottom, paint)
+        val cellW = e.widthPx / columns
+        val cellH = e.heightPx / rows
+        for (c in 1 until columns) {
+            val x = e.x + c * cellW
+            canvas.drawLine(x, e.y, x, e.y + e.heightPx, paint)
+        }
+        for (r in 1 until rows) {
+            val y = e.y + r * cellH
+            canvas.drawLine(e.x, y, e.x + e.widthPx, y, paint)
         }
     }
 

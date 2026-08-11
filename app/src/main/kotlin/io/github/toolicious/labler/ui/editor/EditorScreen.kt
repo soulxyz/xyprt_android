@@ -92,6 +92,7 @@ import io.github.toolicious.labler.model.LabelTextAlign
 import io.github.toolicious.labler.model.QrPayload
 import io.github.toolicious.labler.model.QrPayloadType
 import io.github.toolicious.labler.model.Symbology
+import io.github.toolicious.labler.model.TableElement
 import io.github.toolicious.labler.model.TextElement
 import io.github.toolicious.labler.printer.dither.DitherMode
 import io.github.toolicious.labler.printer.dither.OutlineMethod
@@ -281,6 +282,19 @@ fun EditorScreen(
                     }
                     vm.addElement(frame)
                 }
+                AddButton("表格") {
+                    vm.addElement(
+                        TableElement(
+                            id = UUID.randomUUID().toString(),
+                            x = 16f,
+                            y = 16f,
+                            rows = 3,
+                            columns = 3,
+                            widthPx = (LabelSpec.PRINT_WIDTH_PX - 32).toFloat(),
+                            heightPx = 144f,
+                        )
+                    )
+                }
                 AddButton(stringResource(R.string.add_barcode)) {
                     vm.addElement(BarcodeElement(id = UUID.randomUUID().toString(), x = 8f, y = 16f))
                 }
@@ -420,6 +434,7 @@ private fun ElementChipLabel(element: LabelElement) {
                 .size(width = 22.dp, height = 13.dp)
                 .border(1.5.dp, MaterialTheme.colorScheme.onSurfaceVariant, RoundedCornerShape(2.dp))
         )
+        is TableElement -> Text("表格 ${element.rows}×${element.columns}", maxLines = 1)
         is BarcodeElement -> Text(
             if (element.symbology == Symbology.QR_CODE) "QR" else "▊▎▊",
             maxLines = 1
@@ -440,6 +455,7 @@ private fun PropertiesPanel(
             is TextElement -> TextProperties(element, onUpdate)
             is IconElement -> IconProperties(element, onUpdate)
             is FrameElement -> FrameProperties(element, onUpdate)
+            is TableElement -> TableProperties(element, onUpdate)
             is BarcodeElement -> BarcodeProperties(element, onUpdate)
             is ImageElement -> ImageProperties(element, onUpdate)
         }
@@ -510,6 +526,7 @@ private fun LabelElement.withRotation(deg: Int): LabelElement = when (this) {
     is TextElement -> copy(rotation = deg)
     is IconElement -> copy(rotation = deg)
     is FrameElement -> copy(rotation = deg)
+    is TableElement -> copy(rotation = deg)
     is BarcodeElement -> copy(rotation = deg)
     is ImageElement -> copy(rotation = deg)
 }
@@ -529,6 +546,10 @@ private fun LabelElement.scaledToHeightPercent(pct: Int): LabelElement {
         is FrameElement -> copy(
             heightPx = target.coerceIn(2f, maxH),
             widthPx = (widthPx * factor).coerceAtLeast(2f),
+        )
+        is TableElement -> copy(
+            widthPx = target.coerceIn(48f, LabelSpec.PRINT_WIDTH_PX.toFloat()),
+            heightPx = (heightPx * factor).coerceIn(32f, maxH),
         )
         is BarcodeElement -> {
             // Scale the reserved box like an image (keep aspect); the code re-fits and centers inside.
@@ -611,6 +632,43 @@ private fun ChoiceChip(selected: Boolean, onClick: () -> Unit, label: @Composabl
             contentAlignment = Alignment.Center,
         ) {
             ProvideTextStyle(MaterialTheme.typography.labelLarge, label)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TableProperties(element: TableElement, onUpdate: (LabelElement) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        GroupLabel("表格")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Stepper(
+                label = "行 ",
+                value = element.rows.toString(),
+                onDecrease = { onUpdate(element.copy(rows = (element.rows - 1).coerceAtLeast(1))) },
+                onIncrease = { onUpdate(element.copy(rows = (element.rows + 1).coerceAtMost(20))) },
+            )
+            Stepper(
+                label = "列 ",
+                value = element.columns.toString(),
+                onDecrease = { onUpdate(element.copy(columns = (element.columns - 1).coerceAtLeast(1))) },
+                onIncrease = { onUpdate(element.copy(columns = (element.columns + 1).coerceAtMost(12))) },
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("线宽", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(48.dp))
+            Slider(
+                value = element.strokePx,
+                onValueChange = { onUpdate(element.copy(strokePx = it)) },
+                valueRange = 1f..6f,
+                steps = 4,
+                modifier = Modifier.weight(1f),
+            )
+            Text("${element.strokePx.roundToInt()}", style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

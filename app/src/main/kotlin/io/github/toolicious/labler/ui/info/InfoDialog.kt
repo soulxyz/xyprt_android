@@ -52,13 +52,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * Info/About dialog. Laid out after the model of "Collaged" (centered, wide
- * dialog: icon+name, version, description, clickable source-code line, thanks line),
- * accent via colorScheme.primary (teal, as in "Compressed"). At the bottom in one row,
- * the language switcher on the left and close on the right. The app deliberately says
- * nothing about the origin of the commands; BleWebler appears only as a thanks link.
- */
+/** About: only the information a user needs right now. */
 @Composable
 fun InfoDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current

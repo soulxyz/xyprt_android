@@ -17,6 +17,7 @@ import io.github.toolicious.labler.model.LabelSpec
 import io.github.toolicious.labler.model.LabelTemplate
 import io.github.toolicious.labler.model.LabelTextAlign
 import io.github.toolicious.labler.model.Symbology
+import io.github.toolicious.labler.model.TableElement
 import io.github.toolicious.labler.model.TextElement
 import io.github.toolicious.labler.render.LabelRenderer
 import kotlinx.coroutines.Job
@@ -325,6 +326,10 @@ class EditorViewModel(app: Application, private val templateId: String) : Androi
             is FrameElement -> el.copy(
                 widthPx = (el.widthPx + delta.x).coerceAtLeast(8f),
                 heightPx = (el.heightPx + delta.y).coerceIn(8f, (_template.value?.spec?.lengthPx ?: 800).toFloat())
+            )
+            is TableElement -> el.copy(
+                widthPx = (el.widthPx + delta.x).coerceIn(48f, LabelSpec.PRINT_WIDTH_PX.toFloat()),
+                heightPx = (el.heightPx + delta.y).coerceIn(32f, (_template.value?.spec?.lengthPx ?: 800).toFloat())
             )
             is BarcodeElement -> if (el.symbology == Symbology.QR_CODE) {
                 // QR stays square.

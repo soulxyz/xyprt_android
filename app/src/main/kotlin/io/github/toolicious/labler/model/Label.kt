@@ -117,6 +117,23 @@ data class FrameElement(
     override fun moved(dx: Float, dy: Float) = copy(x = x + dx, y = y + dy)
 }
 
+
+@Serializable
+@SerialName("table")
+data class TableElement(
+    override val id: String,
+    override val x: Float = 16f,
+    override val y: Float = 16f,
+    override val rotation: Int = 0,
+    val rows: Int = 3,
+    val columns: Int = 3,
+    val widthPx: Float = 352f,
+    val heightPx: Float = 144f,
+    val strokePx: Float = 2f,
+) : LabelElement {
+    override fun moved(dx: Float, dy: Float) = copy(x = x + dx, y = y + dy)
+}
+
 @Serializable
 @SerialName("barcode")
 data class BarcodeElement(

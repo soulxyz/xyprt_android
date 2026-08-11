@@ -94,7 +94,7 @@ fun HistoryScreen(onBack: () -> Unit, vm: HistoryViewModel = viewModel()) {
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("还没有打印记录", style = MaterialTheme.typography.titleMedium)
-                    Text("成功打印的文字、图片、PDF 和排版文档都会保存在这里。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("打印过的内容都会保存在这里。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             return@Scaffold

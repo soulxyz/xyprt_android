@@ -91,7 +91,7 @@ object QuickPrintRenderer {
     }
 
     fun previewBitmap(context: Context, uri: Uri, maxDimension: Int = 1600): Bitmap =
-        decodeSampled(context, uri, maxDimension) ?: error("无法读取图片")
+        decodeSampled(context, uri, maxDimension, Bitmap.Config.RGB_565) ?: error("无法读取图片")
 
     fun image(
         context: Context,
@@ -179,7 +179,12 @@ object QuickPrintRenderer {
         return out
     }
 
-    private fun decodeSampled(context: Context, uri: Uri, maxDimension: Int): Bitmap? {
+    private fun decodeSampled(
+        context: Context,
+        uri: Uri,
+        maxDimension: Int,
+        config: Bitmap.Config = Bitmap.Config.ARGB_8888,
+    ): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
@@ -187,7 +192,7 @@ object QuickPrintRenderer {
         while (maxOf(bounds.outWidth / sample, bounds.outHeight / sample) > maxDimension * 2) sample *= 2
         val opts = BitmapFactory.Options().apply {
             inSampleSize = sample
-            inPreferredConfig = Bitmap.Config.ARGB_8888
+            inPreferredConfig = config
         }
         return context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
     }

@@ -31,7 +31,7 @@
 
     <!-- Home -->
     <string name="home_search_hint">搜索</string>
-    <string name="home_empty">还没有保存的文档。\n可以先用上面的“文字 / 图片 / 文档”快速打印。</string>
+    <string name="home_empty">还没有文档。需要排版时再新建一个。</string>
     <string name="home_no_results">没有匹配的文档。</string>
     <string name="template_size">%1$d x %2$d mm</string>
     <string name="menu_edit">编辑</string>
@@ -62,7 +62,7 @@
     <string name="add_symbol">符号</string>
     <string name="add_frame">边框</string>
     <string name="element_frame">边框</string>
-    <string name="editor_hint">点按纸张上的元素，或从上方添加。元素可拖动、缩放和旋转。</string>
+    <string name="editor_hint">点按元素即可调整，拖动可移动。</string>
     <string name="group_format">格式</string>
     <string name="group_align">对齐</string>
     <string name="group_variables">变量</string>
@@ -151,7 +151,6 @@
     <string name="settings_experimental_hint">实验性打印机命令。仅在已连接打印机时使用；不确定就忽略。</string>
     <string name="exp_learn_gap">校准标签间隙</string>
     <string name="settings_about">关于</string>
-    <string name="about_text">错题小印 %1$s\n\n面向 BY-288 / 错题小印 X1 的离线热敏打印应用。</string>
     <string name="scan_title">查找打印机</string>
     <string name="scan_show_all">显示所有蓝牙设备</string>
     <string name="scan_empty">未找到任何设备。打印机开着吗？</string>
@@ -182,10 +181,7 @@
     <string name="err_connect_failed">连接失败</string>
     <string name="err_not_connected">未连接打印机</string>
     <string name="err_print_failed">打印失败</string>
-    <string name="about_description">错题小印是一款离线热敏打印应用，支持文字、图片、PDF、二维码、条码和自由排版，也可以从其他应用直接分享或打开内容进行打印。</string>
-    <string name="about_license">许可证：GPL-3.0-or-later</string>
-    <string name="about_source">基础项目源码</string>
-    <string name="about_thanks">本应用基于 LaBLEr 开源项目开发，并遵循 GPL-3.0-or-later 许可。</string>
+    <string name="about_description">支持文字、图片、PDF、拍照和自由排版，也可从其他应用直接分享打印。让打印更简单，也更顺手。</string>
     <string name="about_version">版本 %1$s</string>
     <string name="action_close">关闭</string>
     <string name="add_barcode">条码</string>
@@ -252,13 +248,13 @@
     <string name="home_new_layout">+ 新建文档</string>
     <string name="template_auto_length">自动长度</string>
     <string name="template_fixed_length">固定 %1$d mm</string>
-    <string name="paper_width_fixed">纸宽由打印机自动适配，无需手动填写；这里只需要决定内容长度。</string>
+    <string name="paper_width_fixed">纸宽自动适配</string>
     <string name="length_mode">页面长度</string>
     <string name="length_auto">自动长度（推荐）</string>
     <string name="length_fixed">固定长度</string>
-    <string name="length_auto_hint">编辑时使用一张竖向工作纸，打印时自动裁掉末尾空白，不需要提前猜长度。</string>
-    <string name="length_fixed_hint">仅在必须留出固定长度时设置，范围 20–500 mm。</string>
-    <string name="settings_simple_hint">普通使用只需要连接打印机即可。几何测试和“标签间隙校准”已从常用界面移除，避免误操作。</string>
+    <string name="length_auto_hint">自动长度会去除页尾白边。</string>
+    <string name="length_fixed_hint">20–500 mm</string>
+    <string name="settings_simple_hint">连接打印机后即可使用。</string>
     <string name="quick_print_title">快速打印</string>
     <string name="quick_text_hint">输入文字，可多行</string>
     <string name="quick_choose_image">选择图片</string>
@@ -266,11 +262,8 @@
     <string name="quick_image_mode">图片效果</string>
     <string name="quick_preview">打印预览</string>
     <string name="quick_no_content">请选择内容或输入文字。</string>
-    <string name="about_link">项目主页</string>
-    <string name="about_repo">https://github.com/toolicious/labler</string>
 
     <string name="about_author">作者：Soulxyz</string>
-    <string name="about_source_unavailable">没有找到可打开网页的应用</string>
     <string name="quick_processing_title">打印效果</string>
     <string name="quick_pdf_layout">PDF 页面</string>
     <string name="quick_pdf_crop">自动去白边</string>
@@ -282,7 +275,7 @@
     <string name="quick_line_width">线条粗细：%1$d</string>
     <string name="quick_invert">反色</string>
     <string name="quick_smooth">平滑</string>
-    <string name="quick_preview_info">按纸张宽度预览 · 预计长度约 %1$d mm · 长内容可上下滑动</string>
+    <string name="quick_preview_info">预计约 %1$d mm · 可上下滑动</string>
     <string name="quick_rotation">旋转</string>
     <string name="quick_zoom">缩放：%1$d%%</string>
 </resources>

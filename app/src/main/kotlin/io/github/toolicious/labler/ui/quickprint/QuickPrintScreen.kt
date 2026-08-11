@@ -55,6 +55,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -111,8 +112,8 @@ fun QuickPrintScreen(
     var showPrint by remember { mutableStateOf(false) }
     var showAdjustments by remember { mutableStateOf(false) }
     var showTextSettings by remember { mutableStateOf(false) }
-    var pickerOpened by remember { mutableStateOf(false) }
-    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+    var pickerOpened by rememberSaveable { mutableStateOf(false) }
+    var pendingCameraUriText by rememberSaveable { mutableStateOf<String?>(null) }
     var cameraCropDraft by remember { mutableStateOf(CropRect()) }
     var cameraCropApplied by remember { mutableStateOf(CropRect()) }
     var showCropEditor by remember { mutableStateOf(false) }
@@ -139,21 +140,33 @@ fun QuickPrintScreen(
         }
     }
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
-        val uri = pendingCameraUri
-        if (ok && uri != null) {
+        val uri = pendingCameraUriText?.let(Uri::parse)
+        val readable = uri?.let { cameraOutputReadable(context, it) } == true
+        pendingCameraUriText = null
+        if ((ok || readable) && uri != null) {
             sourceMode = SourceMode.CAMERA
             adjustments = defaultAdjustments(SourceMode.CAMERA)
             uris = listOf(uri)
             cameraCropDraft = CropRect()
             cameraCropApplied = CropRect()
             showCropEditor = true
+            error = null
+        } else {
+            error = "没有获取到照片，请重新拍摄"
         }
     }
     fun launchCamera() {
-        val uri = newCameraUri(context)
-        pendingCameraUri = uri
+        pickerOpened = true
+        val uri = runCatching { newCameraUri(context) }.getOrElse {
+            error = "无法打开相机"
+            return
+        }
+        pendingCameraUriText = uri.toString()
         sourceMode = SourceMode.CAMERA
-        cameraLauncher.launch(uri)
+        runCatching { cameraLauncher.launch(uri) }.onFailure {
+            pendingCameraUriText = null
+            error = "无法打开相机"
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -339,7 +352,7 @@ fun QuickPrintScreen(
                             if (uris.isEmpty()) {
                                 SelectedSourceCard(
                                     title = "拍照获取内容",
-                                    subtitle = "适合错题、笔记、书页和票据",
+                                    subtitle = "拍下要打印的内容",
                                     iconRes = R.drawable.ic_camera,
                                     action = "拍照",
                                     onAction = { launchCamera() },
@@ -347,7 +360,7 @@ fun QuickPrintScreen(
                             } else if (showCropEditor) {
                                 Text("框选要打印的内容", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.height(4.dp))
-                                Text("拖动四个圆点调整范围；拖动框内可整体移动。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("拖动四角或选框调整范围", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.height(10.dp))
                                 PhotoCropEditor(
                                     uri = uris.first(),
@@ -359,7 +372,7 @@ fun QuickPrintScreen(
                             } else {
                                 SelectedSourceCard(
                                     title = "已截取拍摄内容",
-                                    subtitle = "可继续调整黑白效果后打印",
+                                    subtitle = "已裁剪，可继续调整",
                                     iconRes = R.drawable.ic_camera,
                                     action = "重拍",
                                     onAction = { launchCamera() },
@@ -592,7 +605,7 @@ private fun EmptyPreviewCard(sourceMode: SourceMode) {
                     SourceMode.TEXT -> "输入文字后，这里会显示实际打印效果"
                     SourceMode.IMAGE -> "选择图片后，这里会显示实际打印效果"
                     SourceMode.PDF -> "选择 PDF 后，这里会显示实际打印效果"
-                    SourceMode.CAMERA -> "拍照并裁剪后，这里会显示实际打印效果"
+                    SourceMode.CAMERA -> "拍照后预览打印效果"
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -625,7 +638,6 @@ private fun QuickPrintBottomBar(
                         Text("行距 ${textStyle.lineSpacingPercent}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                     } else {
                         Text("${modeLabel(adjustments.mode)} · ${adjustmentSummary(adjustments)}", style = MaterialTheme.typography.labelLarge, maxLines = 1)
-                        Text("需要时再打开调整", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                     }
                 }
                 OutlinedButton(onClick = if (sourceMode == SourceMode.TEXT) onTextAdjust else onAdjust, enabled = enabled) {
@@ -706,6 +718,12 @@ private fun externalUris(intent: Intent?): List<Uri> {
         else -> emptyList()
     }
 }
+
+private fun cameraOutputReadable(context: Context, uri: Uri): Boolean = runCatching {
+    context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+        pfd.statSize != 0L
+    } == true
+}.getOrDefault(false)
 
 private fun newCameraUri(context: Context): Uri {
     val dir = File(context.cacheDir, "camera").apply { mkdirs() }

@@ -236,7 +236,7 @@ fun HomeScreen(
             item(span = { GridItemSpan(maxLineSpan) }) {
                 QuickActionWideCard(
                     title = "自由排版",
-                    subtitle = "需要组合文字、图片、二维码时使用",
+                    subtitle = "图文、表格、二维码",
                     iconRes = R.drawable.ic_quick_layout,
                     onClick = { showNewDialog = true },
                 )
@@ -261,7 +261,7 @@ fun HomeScreen(
             item(span = { GridItemSpan(maxLineSpan) }) {
                 SectionHeader(
                     title = "我的文档",
-                    subtitle = if (templates.isEmpty() && query.isBlank()) "需要精细排版时再用" else null,
+                    subtitle = null,
                     action = "新建",
                     onAction = { showNewDialog = true },
                 )
@@ -686,8 +686,6 @@ internal fun LabelDialog(
                     trailingIcon = { if (name.isNotEmpty()) ClearButton { name = "" } },
                 )
                 Spacer(Modifier.height(12.dp))
-                Text(stringResource(R.string.paper_width_fixed), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(10.dp))
                 Text(stringResource(R.string.length_mode), style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(

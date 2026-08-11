@@ -13,8 +13,8 @@ android {
         applicationId = "io.github.toolicious.labler.by288"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1010300
-        versionName = "1.1.3"
+        versionCode = 1010400
+        versionName = "1.1.4"
         manifestPlaceholders["appName"] = "错题小印"
     }
 

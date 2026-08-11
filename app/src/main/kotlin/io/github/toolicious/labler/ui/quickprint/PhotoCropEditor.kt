@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -50,13 +49,9 @@ fun PhotoCropEditor(
     val context = LocalContext.current
     val bitmap by produceState<Bitmap?>(initialValue = null, uri) {
         value = withContext(Dispatchers.IO) {
-            runCatching { QuickPrintRenderer.previewBitmap(context, uri, 1800) }.getOrNull()
+            runCatching { QuickPrintRenderer.previewBitmap(context, uri, 1400) }.getOrNull()
         }
     }
-    DisposableEffect(bitmap) {
-        onDispose { bitmap?.takeIf { !it.isRecycled }?.recycle() }
-    }
-
     val density = LocalDensity.current
     val hitPx = with(density) { 34.dp.toPx() }
     val handleRadius = with(density) { 7.dp.toPx() }
