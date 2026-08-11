@@ -55,8 +55,8 @@ Gradle 版本由 Wrapper 自动管理，无需手动安装。
 
 | 渠道 | 链接 |
 | :--: | :-- |
-| GitHub Releases（官方） | [下载最新版 APK](https://github.com/soulxyz/xyprt_android/releases/latest/download/错题小印.apk) |
-| 中国大陆镜像（ghfast 加速） | [下载最新版 APK](https://ghfast.top/https://github.com/soulxyz/xyprt_android/releases/latest/download/错题小印.apk) |
+| GitHub Releases（官方） | [下载最新版 APK](https://github.com/soulxyz/xyprt_android/releases/latest/download/xyprt.apk) |
+| 中国大陆镜像（ghfast 加速） | [下载最新版 APK](https://ghfast.top/https://github.com/soulxyz/xyprt_android/releases/latest/download/xyprt.apk) |
 
 ## 项目数据
 
