@@ -245,7 +245,7 @@
     <string name="qr_wifi_pw_error_wep">5 或 13 个字符</string>
     <string name="qr_wifi_pw_error_wpa">8 到 63 个字符</string>
 
-    <!-- Alpha2: document-first BY-288 workflow -->
+    <!-- Document-first BY-288 workflow -->
     <string name="home_printer">打印机</string>
     <string name="home_quick_title">快速打印</string>
     <string name="home_templates_title">我的文档</string>

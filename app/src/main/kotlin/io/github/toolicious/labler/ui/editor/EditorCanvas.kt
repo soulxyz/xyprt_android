@@ -107,14 +107,14 @@ fun EditorCanvas(
                         val sc = totalState.value
                         val lp = (pos - tlState.value) / sc
                         val sel = elementsState.value.find { it.id == selectedIdState.value }
-                        val onHandle = sel != null && run {
-                            val b = elementBounds(sel)
+                        val handleId = sel?.takeIf {
+                            val b = elementBounds(it)
                             (lp - Offset(b.right, b.bottom)).getDistance() < handleRadiusLabel
-                        }
+                        }?.id
                         when {
-                            onHandle && sel != null -> {
+                            handleId != null -> {
                                 mode = 2
-                                onResizeStart(sel.id)
+                                onResizeStart(handleId)
                             }
                             // An already selected element takes priority when dragging: if the
                             // start point is over it, it gets moved even when another element

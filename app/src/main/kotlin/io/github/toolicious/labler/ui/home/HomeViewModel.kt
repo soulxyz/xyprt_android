@@ -21,6 +21,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val container = (app as App).container
     private val repo = container.templateRepository
+    private val historyRepo = container.historyRepository
 
     val printerState = container.printerManager.state
     val savedPrinter = container.settings.savedPrinter
@@ -33,6 +34,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         if (q.isBlank()) list
         else list.filter { it.name.contains(q.trim(), ignoreCase = true) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val recentHistory = historyRepo.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun setQuery(value: String) {
         _query.value = value

@@ -13,8 +13,8 @@ android {
         applicationId = "io.github.toolicious.labler.by288"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1010100
-        versionName = "1.1.1"
+        versionCode = 1010200
+        versionName = "1.1.2"
         manifestPlaceholders["appName"] = "错题小印"
     }
 
@@ -50,6 +50,11 @@ android {
 configurations.all {
     resolutionStrategy.force("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.6.4")
     resolutionStrategy.force("com.google.guava:guava:31.1-jre")
+    // Keep Compose Foundation aligned with the 1.7.6 UI stack used by this app.
+    // Material3 1.3.1 requests 1.7.2 transitively, but the verified offline
+    // environment intentionally carries the complete 1.7.6 Foundation artifacts.
+    resolutionStrategy.force("androidx.compose.foundation:foundation:1.7.6")
+    resolutionStrategy.force("androidx.compose.foundation:foundation-layout:1.7.6")
 }
 
 dependencies {

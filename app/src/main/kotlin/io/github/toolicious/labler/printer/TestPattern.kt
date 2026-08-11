@@ -1,6 +1,6 @@
 package io.github.toolicious.labler.printer
 
-/** Internal portrait geometry pattern. Not shown in the normal alpha2 UI. */
+/** Internal portrait geometry pattern. Not shown in the normal user-facing UI. */
 object TestPattern {
     fun create(lengthDots: Int = 320): MonoImage {
         val img = MonoImage.blank(lengthDots)

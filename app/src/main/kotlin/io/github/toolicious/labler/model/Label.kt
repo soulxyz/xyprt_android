@@ -15,7 +15,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class LabelSpec(
     // Kept for backward-compatible template JSON. BY-288's printable width is hardware-fixed
-    // at 384 dots, so alpha2 no longer asks the user to configure a "tape width".
+    // at 384 dots, so the app no longer asks the user to configure a "tape width".
     val tapeWidthMm: Int = 48,
     /** Used when autoLength=false. */
     val lengthMm: Int = 80,
@@ -29,7 +29,7 @@ data class LabelSpec(
     companion object {
         /** Fixed printable width across the BY-288 head. */
         const val PRINT_WIDTH_PX = Protocol.HEAD_DOTS
-        // Compatibility alias for a few old call sites; this means printable WIDTH in alpha2.
+        // Compatibility alias for a few old call sites; this means printable WIDTH in the current document model.
         const val PRINT_HEIGHT_PX = PRINT_WIDTH_PX
         const val AUTO_CANVAS_MM = 100
         const val MIN_LENGTH_MM = 20

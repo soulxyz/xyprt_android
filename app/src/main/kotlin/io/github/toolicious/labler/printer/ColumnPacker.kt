@@ -1,7 +1,7 @@
 package io.github.toolicious.labler.printer
 
 /**
- * Historical file name retained to minimize call-site churn. Alpha2 packs normal
+ * Historical file name retained to minimize call-site churn. This build packs normal
  * GS-v-0 raster rows: 48 bytes per feed row, MSB = left-most pixel.
  */
 object ColumnPacker {

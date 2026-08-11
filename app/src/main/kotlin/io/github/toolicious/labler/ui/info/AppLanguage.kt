@@ -7,7 +7,7 @@ import java.util.Locale
 
 private const val ZH = "zh-CN"
 
-/** Alpha2 is intentionally Chinese-only. */
+/** This build is intentionally Chinese-only. */
 fun wrapWithAppLanguage(base: Context): Context {
     val locale = Locale.forLanguageTag(ZH)
     Locale.setDefault(locale)
@@ -19,7 +19,7 @@ fun wrapWithAppLanguage(base: Context): Context {
 
 fun currentAppLanguageTag(context: Context): String? = ZH
 
-/** Kept for backup compatibility; alpha2 deliberately ignores non-Chinese language requests. */
+/** Kept for backup compatibility; this build deliberately ignores non-Chinese language requests. */
 fun setAppLanguage(context: Context, tag: String?) = Unit
 
 @Composable
