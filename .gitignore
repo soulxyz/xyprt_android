@@ -1,36 +1,25 @@
+# Gradle / Android
 .gradle/
-build/
-/local.properties
 .kotlin/
+build/
+**/build/
+local.properties
 .idea/
+*.iml
 captures/
 .cxx/
-*.iml
-/.claude/
-/.kangentic/
-kangentic.json
-.kangentic/
-.claude/settings.local.json
-kangentic.local.json
 
-# Lokale README-Vorschau (nicht Teil des Repos)
-README-preview.html
-
-# Design-Originale (nur die verkleinerten docs/ kommen ins Repo)
-Design/
-
-# Signing-Geheimnisse gehoeren nie ins Repo (Keystore liegt in ../_signing)
-*.keystore
-*.jks
-keystore.properties
-/keystore/
-# Local build / signing files are intentionally not versioned
+# Local-only build environment and binary helpers
 .local-build/
 local-build/
-signing/
-*.jks
-*.keystore
 *.apk
 *.aab
+*.jks
+*.keystore
+keystore.properties
 app/libs/*.jar
 tools/*.jar
+
+# OS / editor
+.DS_Store
+Thumbs.db

@@ -2,19 +2,20 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
-    namespace = "io.github.toolicious.labler"
+    namespace = "io.github.soulxyz.xyprt"
     compileSdk = 36
     buildToolsVersion = "36.1.0"
 
     defaultConfig {
-        applicationId = "io.github.toolicious.labler.by288"
+        applicationId = "io.github.soulxyz.xyprt"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1010400
-        versionName = "1.1.4"
+        versionCode = 1010500
+        versionName = "1.1.5"
         manifestPlaceholders["appName"] = "错题小印"
     }
 
@@ -38,13 +39,6 @@ android {
     }
 
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
-
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs += listOf(
-            "-Xplugin=${rootProject.file("tools/kotlin-serialization-compiler-plugin.jar").absolutePath}"
-        )
-    }
 }
 
 configurations.all {
@@ -70,7 +64,18 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.6.3")
-    implementation(files("libs/kotlinx-serialization-json-jvm-1.6.2.jar"))
-    compileOnly(files("libs/zxing-compile-stubs.jar"))
+    val localSerializationJson = rootProject.file(".local-build/libs/kotlinx-serialization-json-jvm-1.6.2.jar")
+    if (localSerializationJson.exists()) {
+        implementation(files(localSerializationJson))
+    } else {
+        implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    }
+
+    // LabelRenderer uses ZXing through reflection. Public builds resolve it normally;
+    // the private offline build injects the runtime classes after assembleDebug.
+    val localZxingMarker = rootProject.file(".local-build/USE_INJECTED_ZXING")
+    if (!localZxingMarker.exists()) {
+        runtimeOnly("com.google.zxing:core:3.5.3")
+    }
     testImplementation("junit:junit:4.13.2")
 }

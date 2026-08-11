@@ -27,8 +27,8 @@
 }
 
 # Additionally secure our serializable model types explicitly (templates, elements).
--keep @kotlinx.serialization.Serializable class io.github.toolicious.labler.** { *; }
--keepclassmembers class io.github.toolicious.labler.** {
+-keep @kotlinx.serialization.Serializable class io.github.soulxyz.xyprt.** { *; }
+-keepclassmembers class io.github.soulxyz.xyprt.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
 

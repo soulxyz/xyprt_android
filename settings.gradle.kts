@@ -17,5 +17,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "LaBLEr-BY288"
+rootProject.name = "xyprt"
 include(":app")
