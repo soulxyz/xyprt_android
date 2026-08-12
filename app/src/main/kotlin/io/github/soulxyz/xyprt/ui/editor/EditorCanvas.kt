@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.material3.MaterialTheme
 import io.github.soulxyz.xyprt.model.FrameElement
 import io.github.soulxyz.xyprt.model.FrameStyle
 import io.github.soulxyz.xyprt.model.LabelElement
@@ -33,8 +34,10 @@ import io.github.soulxyz.xyprt.model.TextElement
 import io.github.soulxyz.xyprt.printer.MediaType
 import io.github.soulxyz.xyprt.render.LabelRenderer
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /** Axis-aligned bounding box of an element rotated by an arbitrary angle. */
@@ -51,9 +54,9 @@ private fun elementBounds(el: LabelElement): Rect {
 }
 
 /**
- * Static label area (no zoom/pan): the label is fitted to the width and the
- * border is dark gray. Tapping selects an element, dragging moves it, and the
- * round handle at the bottom right scales it. Element coordinates are label pixels.
+ * Canvas-first editor surface. The paper is rendered at print proportions and every object can be
+ * selected and manipulated directly: drag to move, top-right to rotate and bottom-right to resize.
+ * The top-left handle deletes the selected object. All coordinates are printer dots.
  */
 @Composable
 fun EditorCanvas(
@@ -62,64 +65,77 @@ fun EditorCanvas(
     selectedId: String?,
     guides: SnapGuides,
     onSelect: (String?) -> Unit,
+    onDoubleTap: (String) -> Unit,
+    onDeleteSelected: () -> Unit,
     onDragStart: (String) -> Unit,
     onDragBy: (Offset) -> Unit,
     onDragEnd: () -> Unit,
     onResizeStart: (String) -> Unit,
     onResizeBy: (Offset) -> Unit,
     onResizeEnd: () -> Unit,
+    onRotateStart: (String) -> Unit,
+    onRotateTo: (Int) -> Unit,
+    onRotateEnd: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
 
     val labelW = LabelSpec.PRINT_WIDTH_PX.toFloat()
     val labelH = spec.lengthPx.toFloat()
-    // Fixed size (die-cut label) = rounded corners, continuous = hard corners.
     val isDieCut = spec.media == MediaType.DIE_CUT
-    val cornerR = 12f // label pixels (~1.5 mm)
+    val cornerR = 12f
     val total = if (boxSize.width > 0 && boxSize.height > 0) {
-        min(boxSize.width / labelW, boxSize.height / labelH) * 0.96f
+        min(boxSize.width / labelW, boxSize.height / labelH) * 0.94f
     } else 1f
     val contentTL = Offset(
         (boxSize.width - labelW * total) / 2f,
         (boxSize.height - labelH * total) / 2f,
     )
 
-    // Current values for the gestures, without restarting the detector on every change.
     val elementsState = rememberUpdatedState(elements)
     val selectedIdState = rememberUpdatedState(selectedId)
     val totalState = rememberUpdatedState(total)
     val tlState = rememberUpdatedState(contentTL)
 
-    val background = Color(0xFF3A3A3A)
-    val selectionColor = Color(0xFFE53935)
-    val guideColor = Color(0xFF2979FF)
-    val handleRadiusLabel = 18f
+    val background = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+    val selectionColor = MaterialTheme.colorScheme.primary
+    val deleteColor = MaterialTheme.colorScheme.error
+    val guideColor = MaterialTheme.colorScheme.tertiary
+    val outlineColor = MaterialTheme.colorScheme.outlineVariant
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val handleRadiusLabel = 20f
 
     Box(
         modifier
             .clipToBounds()
             .onSizeChanged { boxSize = it }
             .pointerInput(Unit) {
-                var mode = 0 // 0 = nothing, 1 = move, 2 = scale
+                var mode = 0 // 0 nothing, 1 move, 2 resize, 3 rotate
+                var rotateCenter = Offset.Zero
+                var rotateStartTouch = 0f
+                var rotateStartDegrees = 0
+
                 detectDragGestures(
                     onDragStart = { pos ->
-                        val sc = totalState.value
+                        val sc = totalState.value.coerceAtLeast(0.001f)
                         val lp = (pos - tlState.value) / sc
                         val sel = elementsState.value.find { it.id == selectedIdState.value }
-                        val handleId = sel?.takeIf {
-                            val b = elementBounds(it)
-                            (lp - Offset(b.right, b.bottom)).getDistance() < handleRadiusLabel
-                        }?.id
+                        val b = sel?.let(::elementBounds)
+                        val resizeHit = b != null && (lp - Offset(b.right, b.bottom)).getDistance() < handleRadiusLabel
+                        val rotateHit = b != null && (lp - Offset(b.right, b.top)).getDistance() < handleRadiusLabel
+
                         when {
-                            handleId != null -> {
-                                mode = 2
-                                onResizeStart(handleId)
+                            sel != null && rotateHit -> {
+                                mode = 3
+                                rotateCenter = b!!.center
+                                rotateStartTouch = angleDegrees(lp, rotateCenter)
+                                rotateStartDegrees = sel.rotation
+                                onRotateStart(sel.id)
                             }
-                            // An already selected element takes priority when dragging: if the
-                            // start point is over it, it gets moved even when another element
-                            // lies on top. This lets a background element chosen via chip be
-                            // moved. (Tapping still selects the topmost element.)
+                            sel != null && resizeHit -> {
+                                mode = 2
+                                onResizeStart(sel.id)
+                            }
                             sel != null && hitTest(lp, sel) -> {
                                 mode = 1
                                 onDragStart(sel.id)
@@ -138,38 +154,94 @@ fun EditorCanvas(
                     },
                     onDrag = { change, amount ->
                         change.consume()
-                        val d = amount / totalState.value
+                        val sc = totalState.value.coerceAtLeast(0.001f)
                         when (mode) {
-                            1 -> onDragBy(d)
-                            2 -> onResizeBy(d)
+                            1 -> onDragBy(amount / sc)
+                            2 -> onResizeBy(amount / sc)
+                            3 -> {
+                                val lp = (change.position - tlState.value) / sc
+                                val delta = normalizeDelta(angleDegrees(lp, rotateCenter) - rotateStartTouch)
+                                val raw = normalizeDegrees(rotateStartDegrees + delta.roundToInt())
+                                // Gentle 15° magnetic snapping without making free rotation impossible.
+                                val nearest = ((raw + 7) / 15) * 15 % 360
+                                val snapped = if (angularDistance(raw, nearest) <= 3) nearest else raw
+                                onRotateTo(snapped)
+                            }
                         }
                     },
                     onDragEnd = {
-                        if (mode == 1) onDragEnd() else if (mode == 2) onResizeEnd()
+                        when (mode) {
+                            1 -> onDragEnd()
+                            2 -> onResizeEnd()
+                            3 -> onRotateEnd()
+                        }
                         mode = 0
                     },
                     onDragCancel = {
-                        if (mode == 1) onDragEnd() else if (mode == 2) onResizeEnd()
+                        when (mode) {
+                            1 -> onDragEnd()
+                            2 -> onResizeEnd()
+                            3 -> onRotateEnd()
+                        }
                         mode = 0
                     },
                 )
             }
             .pointerInput(Unit) {
-                detectTapGestures { pos ->
-                    val lp = (pos - tlState.value) / totalState.value
-                    onSelect(elementsState.value.lastOrNull { hitTest(lp, it) }?.id)
-                }
+                detectTapGestures(
+                    onDoubleTap = { pos ->
+                        val sc = totalState.value.coerceAtLeast(0.001f)
+                        val lp = (pos - tlState.value) / sc
+                        val hit = elementsState.value.lastOrNull { hitTest(lp, it) }
+                        if (hit != null) {
+                            onSelect(hit.id)
+                            onDoubleTap(hit.id)
+                        }
+                    },
+                    onTap = { pos ->
+                        val sc = totalState.value.coerceAtLeast(0.001f)
+                        val lp = (pos - tlState.value) / sc
+                        val sel = elementsState.value.find { it.id == selectedIdState.value }
+                        val deleteHit = sel?.let {
+                            val b = elementBounds(it)
+                            (lp - Offset(b.left, b.top)).getDistance() < handleRadiusLabel
+                        } == true
+                        if (deleteHit) {
+                            onDeleteSelected()
+                        } else {
+                            onSelect(elementsState.value.lastOrNull { hitTest(lp, it) }?.id)
+                        }
+                    }
+                )
             }
     ) {
         Canvas(Modifier.matchParentSize()) {
             drawRect(background)
+
+            // A restrained paper shadow makes the printable area read as a real sheet without
+            // turning the editor into a decorative card UI.
+            val paperTopLeft = contentTL
+            val paperSize = Size(labelW * total, labelH * total)
+            if (isDieCut) {
+                drawRoundRect(
+                    color = Color.Black.copy(alpha = 0.10f),
+                    topLeft = paperTopLeft + Offset(0f, 4f),
+                    size = paperSize,
+                    cornerRadius = CornerRadius(cornerR * total, cornerR * total),
+                )
+            } else {
+                drawRect(
+                    color = Color.Black.copy(alpha = 0.10f),
+                    topLeft = paperTopLeft + Offset(0f, 4f),
+                    size = paperSize,
+                )
+            }
+
             drawIntoCanvas { c ->
                 val nc = c.nativeCanvas
                 val save = nc.save()
                 nc.translate(contentTL.x, contentTL.y)
                 nc.scale(total, total)
-                // Without a clip, LabelRenderer.drawInto (drawColor WHITE) fills the whole
-                // canvas white and covers the gray border; therefore limit it to the label.
                 if (isDieCut) {
                     val path = android.graphics.Path().apply {
                         addRoundRect(0f, 0f, labelW, labelH, cornerR, cornerR, android.graphics.Path.Direction.CW)
@@ -181,52 +253,48 @@ fun EditorCanvas(
                 LabelRenderer.drawInto(nc, spec, elements)
                 nc.restoreToCount(save)
             }
-            // Frame around the label: fixed size rounded, continuous hard.
+
             if (isDieCut) {
                 drawRoundRect(
-                    color = Color(0xFFB0B0B0),
+                    color = outlineColor,
                     topLeft = contentTL,
-                    size = Size(labelW * total, labelH * total),
+                    size = paperSize,
                     cornerRadius = CornerRadius(cornerR * total, cornerR * total),
                     style = Stroke(width = 1f),
                 )
             } else {
                 drawRect(
-                    color = Color(0xFFB0B0B0),
+                    color = outlineColor,
                     topLeft = contentTL,
-                    size = Size(labelW * total, labelH * total),
+                    size = paperSize,
                     style = Stroke(width = 1f),
                 )
             }
 
             fun toScreen(lx: Float, ly: Float) = contentTL + Offset(lx * total, ly * total)
 
-            // Snap guide lines
             val dash = PathEffect.dashPathEffect(floatArrayOf(9f, 6f))
             guides.xLine?.let { gx ->
-                drawLine(
-                    guideColor, toScreen(gx, 0f), toScreen(gx, labelH),
-                    strokeWidth = 2f, pathEffect = dash
-                )
+                drawLine(guideColor, toScreen(gx, 0f), toScreen(gx, labelH), strokeWidth = 2f, pathEffect = dash)
             }
             guides.yLine?.let { gy ->
-                drawLine(
-                    guideColor, toScreen(0f, gy), toScreen(labelW, gy),
-                    strokeWidth = 2f, pathEffect = dash
-                )
+                drawLine(guideColor, toScreen(0f, gy), toScreen(labelW, gy), strokeWidth = 2f, pathEffect = dash)
             }
 
-            // Selection frame and scale handle
             val sel = elements.find { it.id == selectedId }
             if (sel != null) {
                 val b = elementBounds(sel)
+                val topLeft = toScreen(b.left, b.top)
+                val topRight = toScreen(b.right, b.top)
+                val bottomRight = toScreen(b.right, b.bottom)
                 drawRect(
                     color = selectionColor,
-                    topLeft = toScreen(b.left, b.top),
+                    topLeft = topLeft,
                     size = Size(b.width * total, b.height * total),
-                    style = Stroke(width = 3f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f))),
+                    style = Stroke(width = 2.5f),
                 )
-                // Green anchor line shows the text alignment (growth direction).
+
+                // Alignment anchor for text remains visible, but subtle.
                 if (sel is TextElement) {
                     val ax = when (sel.align) {
                         LabelTextAlign.LEFT -> b.left
@@ -234,26 +302,55 @@ fun EditorCanvas(
                         LabelTextAlign.RIGHT -> b.right
                     }
                     drawLine(
-                        color = Color(0xFF2ECC71),
+                        color = selectionColor.copy(alpha = 0.45f),
                         start = toScreen(ax, b.top),
                         end = toScreen(ax, b.bottom),
-                        strokeWidth = 3f,
+                        strokeWidth = 2f,
                     )
                 }
-                val handle = toScreen(b.right, b.bottom)
-                drawCircle(Color.White, radius = 13f, center = handle)
-                drawCircle(selectionColor, radius = 13f, center = handle, style = Stroke(width = 2.5f))
-                drawCircle(selectionColor, radius = 4.5f, center = handle)
+
+                // Delete handle.
+                drawCircle(deleteColor, radius = 13f, center = topLeft)
+                drawLine(Color.White, topLeft + Offset(-4.5f, -4.5f), topLeft + Offset(4.5f, 4.5f), 2.2f)
+                drawLine(Color.White, topLeft + Offset(4.5f, -4.5f), topLeft + Offset(-4.5f, 4.5f), 2.2f)
+
+                // Rotate handle.
+                drawCircle(surfaceColor, radius = 13f, center = topRight)
+                drawCircle(selectionColor, radius = 13f, center = topRight, style = Stroke(width = 2.5f))
+                drawCircle(selectionColor, radius = 5f, center = topRight, style = Stroke(width = 2f))
+                drawLine(selectionColor, topRight + Offset(3f, -5f), topRight + Offset(7f, -3f), 2f)
+
+                // Resize handle.
+                drawCircle(surfaceColor, radius = 13f, center = bottomRight)
+                drawCircle(selectionColor, radius = 13f, center = bottomRight, style = Stroke(width = 2.5f))
+                drawLine(selectionColor, bottomRight + Offset(-5f, 5f), bottomRight + Offset(5f, -5f), 2f)
+                drawLine(selectionColor, bottomRight + Offset(0f, 5f), bottomRight + Offset(5f, 0f), 2f)
             }
         }
     }
+}
+
+private fun angleDegrees(point: Offset, center: Offset): Float =
+    Math.toDegrees(atan2((point.y - center.y).toDouble(), (point.x - center.x).toDouble())).toFloat()
+
+private fun normalizeDegrees(value: Int): Int = ((value % 360) + 360) % 360
+
+private fun normalizeDelta(value: Float): Float {
+    var result = value
+    while (result > 180f) result -= 360f
+    while (result < -180f) result += 360f
+    return result
+}
+
+private fun angularDistance(a: Int, b: Int): Int {
+    val d = abs(a - b) % 360
+    return minOf(d, 360 - d)
 }
 
 private fun hitTest(lp: Offset, el: LabelElement): Boolean {
     val s = LabelRenderer.measure(el)
     val cx = el.x + s.width / 2f
     val cy = el.y + s.height / 2f
-    // Rotate the tap point back into the element's local (unrotated) frame, then check exactly.
     val rad = Math.toRadians(-el.rotation.toDouble())
     val cs = cos(rad).toFloat()
     val sn = sin(rad).toFloat()
@@ -263,8 +360,6 @@ private fun hitTest(lp: Offset, el: LabelElement): Boolean {
     val b = Rect(el.x, el.y, el.x + s.width, el.y + s.height)
     val pad = 6f
     if (el is FrameElement && (el.style == FrameStyle.RECT || el.style == FrameStyle.ROUND_RECT)) {
-        // Only the frame stroke is clickable; the empty interior lets clicks
-        // pass through to underlying elements.
         val outer = b.inflate(pad)
         val inner = b.deflate(el.strokePx + pad)
         val insideInner = inner.width > 0f && inner.height > 0f && inner.contains(local)

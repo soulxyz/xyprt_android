@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.soulxyz.xyprt"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1010500
-        versionName = "1.1.5"
+        versionCode = 1010600
+        versionName = "1.1.6"
         manifestPlaceholders["appName"] = "错题小印"
     }
 
@@ -64,7 +64,7 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.6.3")
-    val localSerializationJson = rootProject.file(".local-build/libs/kotlinx-serialization-json-jvm-1.6.2.jar")
+    val localSerializationJson = rootProject.file(".local-build/jars/kotlinx-serialization-json-jvm-1.6.2.jar")
     if (localSerializationJson.exists()) {
         implementation(files(localSerializationJson))
     } else {

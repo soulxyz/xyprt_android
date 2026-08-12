@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.max
+import java.util.UUID
 
 /** Active snap guide lines during dragging, as label coordinates (null = no guide on that axis). */
 data class SnapGuides(val xLine: Float? = null, val yLine: Float? = null)
@@ -180,6 +181,40 @@ class EditorViewModel(app: Application, private val templateId: String) : Androi
         _selectedId.value = null
     }
 
+    /** Duplicate the selected object and offset it slightly so the copy is immediately visible. */
+    fun duplicateSelected() {
+        val current = selectedElement.value ?: return
+        val copy = current.copyWithNewId(UUID.randomUUID().toString()).moved(12f, 12f)
+        mutate(null) { t -> t.copy(elements = t.elements + copy) }
+        _selectedId.value = copy.id
+    }
+
+    /** Element order is the z-order: the last item is drawn on top. */
+    fun bringSelectedToFront() {
+        val id = _selectedId.value ?: return
+        mutate(null) { t ->
+            val item = t.elements.find { it.id == id } ?: return@mutate t
+            t.copy(elements = t.elements.filterNot { it.id == id } + item)
+        }
+    }
+
+    fun sendSelectedToBack() {
+        val id = _selectedId.value ?: return
+        mutate(null) { t ->
+            val item = t.elements.find { it.id == id } ?: return@mutate t
+            t.copy(elements = listOf(item) + t.elements.filterNot { it.id == id })
+        }
+    }
+
+    private fun LabelElement.copyWithNewId(newId: String): LabelElement = when (this) {
+        is TextElement -> copy(id = newId)
+        is IconElement -> copy(id = newId)
+        is FrameElement -> copy(id = newId)
+        is TableElement -> copy(id = newId)
+        is BarcodeElement -> copy(id = newId)
+        is ImageElement -> copy(id = newId)
+    }
+
     fun updateSpec(spec: LabelSpec) = mutate(null) { it.copy(spec = spec) }
 
     /** Updates name and dimensions together (from the editor title), applied immediately. */
@@ -295,6 +330,7 @@ class EditorViewModel(app: Application, private val templateId: String) : Androi
     }
 
     private var resizeId: String? = null
+    private var rotateId: String? = null
 
     fun beginResize(id: String) {
         _template.value?.elements?.find { it.id == id } ?: return
@@ -305,6 +341,32 @@ class EditorViewModel(app: Application, private val templateId: String) : Androi
 
     fun endResize() {
         resizeId = null
+    }
+
+    fun beginRotate(id: String) {
+        _template.value?.elements?.find { it.id == id } ?: return
+        _selectedId.value = id
+        pushHistory(null)
+        rotateId = id
+    }
+
+    fun rotateSelectedTo(degrees: Int) {
+        val id = rotateId ?: return
+        val el = _template.value?.elements?.find { it.id == id } ?: return
+        applyWithoutHistory(el.withRotation(((degrees % 360) + 360) % 360))
+    }
+
+    fun endRotate() {
+        rotateId = null
+    }
+
+    private fun LabelElement.withRotation(degrees: Int): LabelElement = when (this) {
+        is TextElement -> copy(rotation = degrees)
+        is IconElement -> copy(rotation = degrees)
+        is FrameElement -> copy(rotation = degrees)
+        is TableElement -> copy(rotation = degrees)
+        is BarcodeElement -> copy(rotation = degrees)
+        is ImageElement -> copy(rotation = degrees)
     }
 
     fun resizeSelectedBy(delta: Offset) {

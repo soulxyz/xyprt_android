@@ -3,7 +3,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg" alt="License: GPL v3"/></a>
   <a href="https://github.com/soulxyz/xyprt_android"><img src="https://img.shields.io/badge/Platform-Android%208.0%2B-green.svg" alt="Platform"/></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-1.1.5-orange.svg" alt="Version"/></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-1.1.6-orange.svg" alt="Version"/></a>
 </p>
 
 <p align="center">

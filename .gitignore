@@ -23,3 +23,12 @@ tools/*.jar
 # OS / editor
 .DS_Store
 Thumbs.db
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+*.hprof
+.env
+.env.*
+signing/

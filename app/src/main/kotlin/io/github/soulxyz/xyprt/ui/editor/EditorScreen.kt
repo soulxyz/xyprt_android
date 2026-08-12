@@ -5,12 +5,14 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,6 +48,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ProvideTextStyle
@@ -53,6 +57,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -71,6 +76,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
@@ -123,15 +129,64 @@ fun EditorScreen(
     val guides by vm.guides.collectAsState()
     val canUndo by vm.canUndo.collectAsState()
     val canRedo by vm.canRedo.collectAsState()
+
     var showPrintSheet by remember { mutableStateOf(false) }
     var showMetaDialog by remember { mutableStateOf(false) }
+    var showAddSheet by remember { mutableStateOf(false) }
+    var showPropertiesSheet by remember { mutableStateOf(false) }
+    var showLayersSheet by remember { mutableStateOf(false) }
     var showAddTextDialog by remember { mutableStateOf(false) }
     var pendingText by remember { mutableStateOf("") }
-    val withBlePermissions = rememberBlePermissionRunner()
+    var editingTextId by remember { mutableStateOf<String?>(null) }
+    var editingTextValue by remember { mutableStateOf("") }
 
+    val withBlePermissions = rememberBlePermissionRunner()
     val t = template
     val context = LocalContext.current
     val importScope = rememberCoroutineScope()
+
+    fun addFrame(style: FrameStyle) {
+        val id = UUID.randomUUID().toString()
+        val sel = selected
+        val frame = if (style == FrameStyle.LINE_H) {
+            FrameElement(
+                id = id,
+                x = 48f,
+                y = 64f,
+                style = FrameStyle.LINE_H,
+                widthPx = 288f,
+                heightPx = 8f,
+                strokePx = 2f,
+            )
+        } else if (sel != null) {
+            val size = LabelRenderer.measure(sel)
+            val rotated = sel.rotation % 180 != 0
+            val w = if (rotated) size.height else size.width
+            val h = if (rotated) size.width else size.height
+            val cx = sel.x + size.width / 2f
+            val cy = sel.y + size.height / 2f
+            val pad = 8f
+            FrameElement(
+                id = id,
+                x = cx - w / 2f - pad,
+                y = cy - h / 2f - pad,
+                style = style,
+                widthPx = w + 2 * pad,
+                heightPx = h + 2 * pad,
+            )
+        } else {
+            FrameElement(
+                id = id,
+                x = 20f,
+                y = 24f,
+                style = style,
+                widthPx = (LabelSpec.PRINT_WIDTH_PX - 40).toFloat(),
+                heightPx = 120f,
+            )
+        }
+        vm.addElement(frame)
+    }
+
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) importScope.launch {
             val loaded = withContext(Dispatchers.IO) { ImageImport.load(context, uri) }
@@ -142,23 +197,35 @@ fun EditorScreen(
                         pngBase64 = loaded.pngBase64,
                         srcWidth = loaded.width,
                         srcHeight = loaded.height,
-                        // Portrait BY-288 page: default images nearly fill the printable 384-dot width.
                         widthPx = (LabelSpec.PRINT_WIDTH_PX - 32).toFloat(),
+                        x = 16f,
+                        y = 24f,
                     )
                 )
             }
         }
     }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    // Tapping the name opens the edit dialog (name + size, applied immediately).
-                    Text(
-                        t?.name ?: stringResource(R.string.app_name),
-                        maxLines = 1,
-                        modifier = if (t != null) Modifier.clickable { showMetaDialog = true } else Modifier,
-                    )
+                    Column(
+                        modifier = if (t != null) Modifier.clickable { showMetaDialog = true } else Modifier
+                    ) {
+                        Text(
+                            t?.name ?: stringResource(R.string.app_name),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (t != null) {
+                            Text(
+                                if (t.spec.autoLength) "自动长度" else "${t.spec.lengthMm} mm",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -172,164 +239,243 @@ fun EditorScreen(
                     IconButton(onClick = vm::redo, enabled = canRedo) {
                         Text("↷", style = MaterialTheme.typography.titleLarge)
                     }
-                    Button(
+                    IconButton(
                         onClick = { withBlePermissions { showPrintSheet = true } },
                         enabled = t != null,
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp),
-                        modifier = Modifier.padding(end = 4.dp)
                     ) {
                         Icon(
                             painterResource(R.drawable.ic_print),
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            contentDescription = stringResource(R.string.action_print),
+                            modifier = Modifier.size(22.dp),
                         )
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.action_print))
                     }
-                }
+                },
             )
-        }
+        },
+        bottomBar = {
+            if (t != null) {
+                EditorDock(
+                    selected = selected,
+                    onAdd = { showAddSheet = true },
+                    onPage = { showMetaDialog = true },
+                    onLayers = { showLayersSheet = true },
+                    onPreview = { withBlePermissions { showPrintSheet = true } },
+                    onEdit = { showPropertiesSheet = true },
+                    onDuplicate = vm::duplicateSelected,
+                    onFront = vm::bringSelectedToFront,
+                    onBack = vm::sendSelectedToBack,
+                    onDelete = vm::deleteSelected,
+                )
+            }
+        },
     ) { padding ->
         if (t == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
+            Box(
+                Modifier.padding(padding).fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) { CircularProgressIndicator() }
             return@Scaffold
         }
 
+        // The paper itself is the editor. Long continuous documents keep their real aspect ratio
+        // and scroll vertically instead of being squeezed into a short fixed preview.
         Column(
             Modifier
                 .padding(padding)
-                .padding(horizontal = 12.dp)
                 .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f))
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                if (t.spec.autoLength) "自动长度 · 打印时去除页尾白边" else "固定长度 · ${t.spec.lengthMm} mm",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            )
             EditorCanvas(
                 spec = t.spec,
                 elements = t.elements,
                 selectedId = selectedId,
                 guides = guides,
                 onSelect = vm::select,
+                onDoubleTap = { id ->
+                    val element = t.elements.find { it.id == id }
+                    if (element is TextElement) {
+                        editingTextId = element.id
+                        editingTextValue = element.text
+                    } else {
+                        showPropertiesSheet = true
+                    }
+                },
+                onDeleteSelected = vm::deleteSelected,
                 onDragStart = vm::beginDrag,
                 onDragBy = vm::dragBy,
                 onDragEnd = vm::endDrag,
                 onResizeStart = vm::beginResize,
                 onResizeBy = vm::resizeSelectedBy,
                 onResizeEnd = vm::endResize,
+                onRotateStart = vm::beginRotate,
+                onRotateTo = vm::rotateSelectedTo,
+                onRotateEnd = vm::endRotate,
                 modifier = Modifier
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
                     .fillMaxWidth()
-                    .height(320.dp)
+                    .aspectRatio(LabelSpec.PRINT_WIDTH_PX.toFloat() / t.spec.lengthPx.toFloat()),
             )
-            // Only the label (canvas) stays fixed; everything below it scrolls. imePadding must come
-            // BEFORE verticalScroll so it shrinks the scroll viewport to the keyboard edge (not just
-            // the content); otherwise, with edge-to-edge, the viewport reaches behind the keyboard and
-            // the focused field auto-scrolls behind it instead of above it.
+            Text(
+                if (selected == null) "点一下选择 · 拖动移动" else "拖动移动 · 右上旋转 · 右下缩放",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 14.dp),
+            )
+        }
+    }
+
+    if (showAddSheet && t != null) {
+        ModalBottomSheet(onDismissRequest = { showAddSheet = false }) {
             Column(
                 Modifier
-                    .weight(1f)
-                    .imePadding()
-                    .verticalScroll(rememberScrollState())
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 18.dp),
             ) {
-            Text(
-                if (t.spec.autoLength) stringResource(R.string.template_auto_length)
-                else stringResource(R.string.template_fixed_length, t.spec.lengthMm),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .align(Alignment.End)
-                    .padding(top = 4.dp),
-            )
-
-            GroupLabel(stringResource(R.string.group_add))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                AddButton(stringResource(R.string.add_text)) {
-                    pendingText = ""
-                    showAddTextDialog = true
-                }
-                AddButton(stringResource(R.string.add_symbol)) {
-                    vm.addElement(IconElement(id = UUID.randomUUID().toString(), x = 8f, y = 24f))
-                }
-                AddButton(stringResource(R.string.add_image)) {
-                    imagePicker.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                }
-                AddButton(stringResource(R.string.add_frame)) {
-                    val id = UUID.randomUUID().toString()
-                    val sel = selected
-                    val frame = if (sel != null) {
-                        // Fit the frame snugly around the selected element.
-                        val s = LabelRenderer.measure(sel)
-                        val rotated = sel.rotation % 180 != 0
-                        val w = if (rotated) s.height else s.width
-                        val h = if (rotated) s.width else s.height
-                        val cx = sel.x + s.width / 2f
-                        val cy = sel.y + s.height / 2f
-                        val pad = 6f
-                        FrameElement(
-                            id = id,
-                            x = cx - w / 2f - pad,
-                            y = cy - h / 2f - pad,
-                            widthPx = w + 2 * pad,
-                            heightPx = h + 2 * pad
-                        )
-                    } else {
-                        FrameElement(
-                            id = id,
-                            x = 16f, y = 16f,
-                            widthPx = (LabelSpec.PRINT_WIDTH_PX - 32).toFloat(),
-                            heightPx = 120f
-                        )
-                    }
-                    vm.addElement(frame)
-                }
-                AddButton("表格") {
-                    vm.addElement(
-                        TableElement(
-                            id = UUID.randomUUID().toString(),
-                            x = 16f,
-                            y = 16f,
-                            rows = 3,
-                            columns = 3,
-                            widthPx = (LabelSpec.PRINT_WIDTH_PX - 32).toFloat(),
-                            heightPx = 144f,
-                        )
-                    )
-                }
-                AddButton(stringResource(R.string.add_barcode)) {
-                    vm.addElement(BarcodeElement(id = UUID.randomUUID().toString(), x = 8f, y = 16f))
-                }
-            }
-
-            if (t.elements.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                GroupLabel(stringResource(R.string.group_elements))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    t.elements.forEach { element ->
-                        ChoiceChip(
-                            selected = element.id == selectedId,
-                            onClick = { vm.select(if (element.id == selectedId) null else element.id) },
-                            label = { ElementChipLabel(element) }
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(8.dp))
-
-            selected?.let { element ->
-                    PropertiesPanel(
-                        element = element,
-                        onUpdate = vm::updateElement,
-                        onDelete = vm::deleteSelected
-                    )
-                } ?: Text(
-                    stringResource(R.string.editor_hint),
+                Text("添加到纸上", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "选择内容，添加后可直接在纸上移动和调整。",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
                 )
-                Spacer(Modifier.height(24.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    AddTile("文字", "双击可修改") {
+                        showAddSheet = false
+                        pendingText = ""
+                        showAddTextDialog = true
+                    }
+                    AddTile("图片", "从相册选择") {
+                        showAddSheet = false
+                        imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }
+                    AddTile("二维码", "网址、文本等") {
+                        showAddSheet = false
+                        vm.addElement(BarcodeElement(id = UUID.randomUUID().toString(), x = 40f, y = 32f, symbology = Symbology.QR_CODE))
+                        showPropertiesSheet = true
+                    }
+                    AddTile("条码", "Code 128 等") {
+                        showAddSheet = false
+                        vm.addElement(
+                            BarcodeElement(
+                                id = UUID.randomUUID().toString(),
+                                x = 24f,
+                                y = 32f,
+                                symbology = Symbology.CODE_128,
+                                widthPx = 260f,
+                                heightPx = 72f,
+                            )
+                        )
+                        showPropertiesSheet = true
+                    }
+                    AddTile("表格", "清单、打卡表") {
+                        showAddSheet = false
+                        vm.addElement(
+                            TableElement(
+                                id = UUID.randomUUID().toString(),
+                                x = 16f,
+                                y = 24f,
+                                rows = 3,
+                                columns = 3,
+                                widthPx = (LabelSpec.PRINT_WIDTH_PX - 32).toFloat(),
+                                heightPx = 144f,
+                            )
+                        )
+                    }
+                    AddTile("符号", "图标与 Emoji") {
+                        showAddSheet = false
+                        vm.addElement(IconElement(id = UUID.randomUUID().toString(), x = 24f, y = 32f))
+                        showPropertiesSheet = true
+                    }
+                    AddTile("边框", "框住重点内容") {
+                        showAddSheet = false
+                        addFrame(FrameStyle.RECT)
+                    }
+                    AddTile("线条", "分隔内容") {
+                        showAddSheet = false
+                        addFrame(FrameStyle.LINE_H)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showPropertiesSheet && selected != null) {
+        ModalBottomSheet(onDismissRequest = { showPropertiesSheet = false }) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .imePadding()
+                    .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 24.dp),
+            ) {
+                Text(
+                    "编辑${elementKind(selected!!)}",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+                PropertiesPanel(
+                    element = selected!!,
+                    onUpdate = vm::updateElement,
+                    onDelete = {
+                        vm.deleteSelected()
+                        showPropertiesSheet = false
+                    },
+                )
+            }
+        }
+    }
+
+    if (showLayersSheet && t != null) {
+        ModalBottomSheet(onDismissRequest = { showLayersSheet = false }) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 24.dp),
+            ) {
+                Text("图层", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "上面的元素会盖住下面的元素。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+                )
+                if (t.elements.isEmpty()) {
+                    Text("纸上还没有内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        t.elements.asReversed().forEachIndexed { index, element ->
+                            LayerRow(
+                                number = t.elements.size - index,
+                                element = element,
+                                selected = element.id == selectedId,
+                                onClick = {
+                                    vm.select(element.id)
+                                    showLayersSheet = false
+                                },
+                            )
+                            if (index != t.elements.lastIndex) HorizontalDivider()
+                        }
+                    }
+                }
             }
         }
     }
@@ -338,13 +484,13 @@ fun EditorScreen(
         TemplatePrintSheet(
             template = t,
             onDismiss = { showPrintSheet = false },
-            onOpenSettings = onOpenSettings
+            onOpenSettings = onOpenSettings,
         )
     }
 
     if (showMetaDialog && t != null) {
         LabelDialog(
-            title = stringResource(R.string.dialog_edit_title),
+            title = "页面设置",
             initialName = t.name,
             initialSpec = t.spec,
             onDismiss = { showMetaDialog = false },
@@ -364,7 +510,7 @@ fun EditorScreen(
                 OutlinedTextField(
                     value = pendingText,
                     onValueChange = { pendingText = it },
-                    label = { Text("输入要放到纸上的文字") },
+                    label = { Text("输入文字") },
                     minLines = 2,
                     maxLines = 6,
                     modifier = Modifier.fillMaxWidth(),
@@ -373,9 +519,7 @@ fun EditorScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val maxBottom = t.elements.maxOfOrNull { e ->
-                            e.y + LabelRenderer.measure(e).height
-                        } ?: 16f
+                        val maxBottom = t.elements.maxOfOrNull { e -> e.y + LabelRenderer.measure(e).height } ?: 16f
                         val y = (maxBottom + 12f).coerceAtMost((t.spec.lengthPx - 48).toFloat())
                         vm.addElement(
                             TextElement(
@@ -391,11 +535,177 @@ fun EditorScreen(
                     enabled = pendingText.isNotBlank(),
                 ) { Text("添加") }
             },
-            dismissButton = {
-                OutlinedButton(onClick = { showAddTextDialog = false }) { Text("取消") }
-            },
+            dismissButton = { TextButton(onClick = { showAddTextDialog = false }) { Text("取消") } },
         )
     }
+
+    val editingText = t?.elements?.find { it.id == editingTextId } as? TextElement
+    if (editingText != null) {
+        AlertDialog(
+            onDismissRequest = { editingTextId = null },
+            title = { Text("编辑文字") },
+            text = {
+                OutlinedTextField(
+                    value = editingTextValue,
+                    onValueChange = { editingTextValue = it },
+                    minLines = 2,
+                    maxLines = 8,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        vm.updateElement(editingText.copy(text = editingTextValue))
+                        editingTextId = null
+                    },
+                    enabled = editingTextValue.isNotBlank(),
+                ) { Text("完成") }
+            },
+            dismissButton = { TextButton(onClick = { editingTextId = null }) { Text("取消") } },
+        )
+    }
+}
+
+@Composable
+private fun EditorDock(
+    selected: LabelElement?,
+    onAdd: () -> Unit,
+    onPage: () -> Unit,
+    onLayers: () -> Unit,
+    onPreview: () -> Unit,
+    onEdit: () -> Unit,
+    onDuplicate: () -> Unit,
+    onFront: () -> Unit,
+    onBack: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (selected == null) {
+                DockAction("＋", "添加", onAdd, primary = true)
+                DockAction("▱", "页面", onPage)
+                DockAction("▤", "图层", onLayers)
+                DockAction("◉", "预览", onPreview)
+            } else {
+                DockAction("✎", "编辑", onEdit, primary = true)
+                DockAction("▣", "复制", onDuplicate)
+                DockAction("↑", "置顶", onFront)
+                DockAction("↓", "置底", onBack)
+                DockAction("×", "删除", onDelete, destructive = true)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DockAction(
+    glyph: String,
+    label: String,
+    onClick: () -> Unit,
+    primary: Boolean = false,
+    destructive: Boolean = false,
+) {
+    val contentColor = when {
+        destructive -> MaterialTheme.colorScheme.error
+        primary -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        color = if (primary) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f) else Color.Transparent,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(glyph, style = MaterialTheme.typography.titleMedium, color = contentColor)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = contentColor)
+        }
+    }
+}
+
+@Composable
+private fun AddTile(title: String, subtitle: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        modifier = Modifier.width(154.dp),
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 13.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LayerRow(
+    number: Int,
+    element: LabelElement,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else Color.Transparent,
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("$number", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(elementKind(element), style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    elementSummary(element),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (selected) Text("已选择", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+private fun elementKind(element: LabelElement): String = when (element) {
+    is TextElement -> "文字"
+    is ImageElement -> "图片"
+    is BarcodeElement -> if (element.symbology == Symbology.QR_CODE) "二维码" else "条码"
+    is TableElement -> "表格"
+    is IconElement -> "符号"
+    is FrameElement -> when (element.style) {
+        FrameStyle.LINE_H, FrameStyle.LINE_V -> "线条"
+        else -> "边框"
+    }
+}
+
+private fun elementSummary(element: LabelElement): String = when (element) {
+    is TextElement -> element.text.replace('\n', ' ').ifBlank { "空文字" }
+    is ImageElement -> "${element.srcWidth} × ${element.srcHeight}"
+    is BarcodeElement -> element.data.ifBlank { "尚未填写内容" }
+    is TableElement -> "${element.rows} × ${element.columns}"
+    is IconElement -> element.glyph
+    is FrameElement -> "${element.widthPx.toInt()} × ${element.heightPx.toInt()}"
 }
 
 @Composable
