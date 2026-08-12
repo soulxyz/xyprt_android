@@ -3,7 +3,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg" alt="License: GPL v3"/></a>
   <a href="https://github.com/soulxyz/xyprt_android"><img src="https://img.shields.io/badge/Platform-Android%208.0%2B-green.svg" alt="Platform"/></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-1.1.6-orange.svg" alt="Version"/></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Version-1.2.0-orange.svg" alt="Version"/></a>
 </p>
 
 <p align="center">
@@ -16,13 +16,15 @@
 
 ## 功能特性
 
-- **蓝牙打印**：Bluetooth Classic SPP 协议稳定连接，自动重连，实时显示打印机状态与电量
+- **蓝牙打印**：自动兼容 Classic SPP 与 BLE，不需要用户选择通信方式；支持自动重连、状态与电量读取
 - **多格式打印**：文字、图片、PDF，支持旋转、缩放、自动长度与 PDF 去白边
 - **拍照打印**：拍摄后裁剪所需区域，一键输出
-- **自由排版**：文字、图片、表格、二维码、条码、边框与符号，所见即所得
+- **文档收藏**：PDF 可保存到应用，之后直接再次打开打印
+- **自由排版**：文字、图片、表格、二维码、条码、自由涂画、边框与符号，所见即所得
 - **多种打印效果**：线稿、黑白、细腻、清晰
-- **高效工作流**：最近打印、历史重打、模板收藏、备份与恢复
+- **高效工作流**：最近打印、历史重打、模板收藏、可调打印留白与便携 `.xyprt` 备份
 - **系统分享集成**：从微信、相册等应用直接分享或打开内容打印
+- **更新提示**：关于页自动检查新版本，支持 GitHub 与镜像下载
 
 ## 界面预览
 

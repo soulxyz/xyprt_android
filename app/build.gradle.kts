@@ -2,8 +2,18 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("org.jetbrains.kotlin.plugin.serialization")
 }
+
+val localSerializationCompiler = rootProject.file(".local-build/jars/kotlin-serialization-compiler-plugin.jar")
+if (localSerializationCompiler.exists()) {
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        @Suppress("DEPRECATION")
+        kotlinOptions.freeCompilerArgs += "-Xplugin=${localSerializationCompiler.absolutePath}"
+    }
+} else {
+    apply(plugin = "org.jetbrains.kotlin.plugin.serialization")
+}
+
 
 android {
     namespace = "io.github.soulxyz.xyprt"
@@ -14,8 +24,8 @@ android {
         applicationId = "io.github.soulxyz.xyprt"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1010600
-        versionName = "1.1.6"
+        versionCode = 1020000
+        versionName = "1.2.0"
         manifestPlaceholders["appName"] = "错题小印"
     }
 

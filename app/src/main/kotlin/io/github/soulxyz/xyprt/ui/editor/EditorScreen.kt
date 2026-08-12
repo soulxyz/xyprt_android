@@ -135,6 +135,7 @@ fun EditorScreen(
     var showAddSheet by remember { mutableStateOf(false) }
     var showPropertiesSheet by remember { mutableStateOf(false) }
     var showLayersSheet by remember { mutableStateOf(false) }
+    var showSketchSheet by remember { mutableStateOf(false) }
     var showAddTextDialog by remember { mutableStateOf(false) }
     var pendingText by remember { mutableStateOf("") }
     var editingTextId by remember { mutableStateOf<String?>(null) }
@@ -362,6 +363,10 @@ fun EditorScreen(
                         showAddSheet = false
                         imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                     }
+                    AddTile("涂画", "手写、圈画") {
+                        showAddSheet = false
+                        showSketchSheet = true
+                    }
                     AddTile("二维码", "网址、文本等") {
                         showAddSheet = false
                         vm.addElement(BarcodeElement(id = UUID.randomUUID().toString(), x = 40f, y = 32f, symbology = Symbology.QR_CODE))
@@ -410,6 +415,30 @@ fun EditorScreen(
                     }
                 }
             }
+        }
+    }
+
+    if (showSketchSheet && t != null) {
+        ModalBottomSheet(onDismissRequest = { showSketchSheet = false }) {
+            SketchPadSheet(
+                onDone = { loaded ->
+                    vm.addElement(
+                        ImageElement(
+                            id = UUID.randomUUID().toString(),
+                            pngBase64 = loaded.pngBase64,
+                            srcWidth = loaded.width,
+                            srcHeight = loaded.height,
+                            widthPx = (LabelSpec.PRINT_WIDTH_PX - 32).toFloat(),
+                            x = 16f,
+                            y = 24f,
+                            dither = io.github.soulxyz.xyprt.printer.dither.DitherMode.THRESHOLD,
+                            threshold = 200,
+                        )
+                    )
+                    showSketchSheet = false
+                },
+                onCancel = { showSketchSheet = false },
+            )
         }
     }
 

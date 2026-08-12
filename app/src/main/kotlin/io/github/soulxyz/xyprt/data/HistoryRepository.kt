@@ -12,9 +12,12 @@ import java.util.zip.GZIPOutputStream
 import kotlin.math.ceil
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+@Serializable
 data class PrintHistoryEntry(
     val id: Long,
     val templateId: String?,
@@ -77,6 +80,31 @@ class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json
                 rasterHeight = image.height,
             )
         )
+        dao.prune()
+    }
+
+    suspend fun getAll(): List<PrintHistoryEntry> = dao.observeAll().map { list -> list.map { it.toDomain() } }.first()
+
+    suspend fun importEntries(entries: List<PrintHistoryEntry>, replace: Boolean) {
+        if (replace) dao.clear()
+        entries.sortedBy { it.printedAt }.forEach { e ->
+            dao.insert(
+                PrintHistoryEntity(
+                    id = if (replace) e.id else 0L,
+                    templateId = e.templateId,
+                    templateName = e.templateName,
+                    tapeWidthMm = e.spec.tapeWidthMm,
+                    lengthMm = e.spec.lengthMm,
+                    media = e.spec.media.name,
+                    autoLength = e.spec.autoLength,
+                    elementsJson = json.encodeToString(e.elements),
+                    copies = e.copies,
+                    printedAt = e.printedAt,
+                    rasterBase64 = e.rasterBase64,
+                    rasterHeight = e.rasterHeight,
+                )
+            )
+        }
         dao.prune()
     }
 

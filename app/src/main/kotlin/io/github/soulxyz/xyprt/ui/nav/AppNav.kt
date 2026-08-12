@@ -18,7 +18,6 @@ import io.github.soulxyz.xyprt.ui.history.HistoryScreen
 import io.github.soulxyz.xyprt.ui.quickprint.QuickPrintScreen
 import io.github.soulxyz.xyprt.ui.home.HomeScreen
 import io.github.soulxyz.xyprt.ui.settings.SettingsScreen
-import io.github.soulxyz.xyprt.ui.testprint.TestPrintScreen
 
 // Material 3 predictive-back motion (adopted from the Textary app). Values taken 1:1
 // from the M3 pattern "Full-screen surface transitions": the previous page peeks out
@@ -103,13 +102,7 @@ fun AppNav() {
             )
         }
         composable("settings") {
-            SettingsScreen(
-                onBack = { nav.popBackStack() },
-                onOpenTestPrint = { nav.navigate("testprint") }
-            )
-        }
-        composable("testprint") {
-            TestPrintScreen(onOpenSettings = { nav.popBackStack() })
+            SettingsScreen(onBack = { nav.popBackStack() })
         }
     }
 }

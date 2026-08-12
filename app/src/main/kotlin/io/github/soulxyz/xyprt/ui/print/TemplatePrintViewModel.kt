@@ -25,6 +25,8 @@ class TemplatePrintViewModel(app: Application) : AndroidViewModel(app) {
 
     val printerState = manager.state
     val savedPrinter = container.settings.savedPrinter
+    val feedBeforeDots = container.settings.printFeedBeforeDots
+    val feedAfterDots = container.settings.printFeedAfterDots
 
     fun connect() = manager.connectSavedActive()
 
@@ -39,7 +41,14 @@ class TemplatePrintViewModel(app: Application) : AndroidViewModel(app) {
     private val _done = MutableStateFlow(false)
     val done = _done.asStateFlow()
 
-    fun print(template: LabelTemplate, media: MediaType, copies: Int, answers: Map<String, String>) {
+    fun print(
+        template: LabelTemplate,
+        media: MediaType,
+        copies: Int,
+        answers: Map<String, String>,
+        feedBeforeDots: Int,
+        feedAfterDots: Int,
+    ) {
         if (_working.value) return
         _working.value = true
         _error.value = null
@@ -48,8 +57,8 @@ class TemplatePrintViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val hasCounter = Placeholders.containsCounter(template.elements)
                 val now = Date()
-                val dateText = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(now)
-                val timeText = SimpleDateFormat("HH:mm", Locale.GERMANY).format(now)
+                val dateText = SimpleDateFormat("yyyy-MM-dd", Locale.SIMPLIFIED_CHINESE).format(now)
+                val timeText = SimpleDateFormat("HH:mm", Locale.SIMPLIFIED_CHINESE).format(now)
 
                 val resolvedPerCopy = List(copies) { index ->
                     Placeholders.resolve(
@@ -65,7 +74,8 @@ class TemplatePrintViewModel(app: Application) : AndroidViewModel(app) {
                 val reanchored = resolvedPerCopy.map { LabelRenderer.reanchor(template.elements, it) }
                 val images = reanchored.map { LabelRenderer.renderMono(template.spec, it) }
 
-                manager.printJobs(images, media)
+                container.settings.savePrintSpacing(feedBeforeDots, feedAfterDots)
+                manager.printJobs(images, media, feedBeforeDots, feedAfterDots)
 
                 if (hasCounter) {
                     templateRepo.setCounter(template.id, template.counterValue + copies)

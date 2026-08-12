@@ -6,8 +6,10 @@ import io.github.soulxyz.xyprt.data.LocalDatabase
 import io.github.soulxyz.xyprt.data.BackupRepository
 import io.github.soulxyz.xyprt.data.HistoryRepository
 import io.github.soulxyz.xyprt.data.SettingsRepository
+import io.github.soulxyz.xyprt.data.SavedDocumentRepository
 import io.github.soulxyz.xyprt.data.TemplateJson
 import io.github.soulxyz.xyprt.data.TemplateRepository
+import io.github.soulxyz.xyprt.data.UpdateRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,7 +34,9 @@ class AppContainer(context: Context) {
     val settings = SettingsRepository(context)
     val templateRepository = TemplateRepository(database.templateDao, json)
     val historyRepository = HistoryRepository(database.printHistoryDao, json)
+    val savedDocuments = SavedDocumentRepository(context, json)
+    val updates = UpdateRepository(context, settings, json, applicationScope)
     val templateJson = TemplateJson(json)
-    val backup = BackupRepository(templateRepository, settings, json)
+    val backup = BackupRepository(templateRepository, historyRepository, settings, savedDocuments, json)
     val printerManager = PrinterManager(context, settings, applicationScope)
 }

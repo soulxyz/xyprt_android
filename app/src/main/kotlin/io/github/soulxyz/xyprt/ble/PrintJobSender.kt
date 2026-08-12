@@ -17,7 +17,7 @@ object PrintJobSender {
             if (index > 0) delay(Protocol.COPY_DELAY_MS)
             for (chunk in Chunker.chunk(payload, connection.chunkSize)) {
                 connection.write(chunk)
-                delay(Protocol.CHUNK_DELAY_MS)
+                if (connection.chunkDelayMs > 0) delay(connection.chunkDelayMs)
                 sent += chunk.size
                 onProgress(sent.toFloat() / totalBytes, index + 1)
             }

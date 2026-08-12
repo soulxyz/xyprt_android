@@ -7,6 +7,8 @@ import io.github.soulxyz.xyprt.App
 import io.github.soulxyz.xyprt.ble.FoundPrinter
 import io.github.soulxyz.xyprt.ble.PrinterScanner
 import io.github.soulxyz.xyprt.printer.Protocol
+import io.github.soulxyz.xyprt.printer.MediaType
+import io.github.soulxyz.xyprt.render.PrinterTestPage
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -41,7 +44,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     /** Found devices, filtered to known printer prefixes by default. */
     val visibleResults = combine(_scanResults, _showAll) { list, all ->
         if (all) list
-        else list.filter { f -> Protocol.DEVICE_NAME_PREFIXES.any { f.name.startsWith(it) } }
+        else list.filter { f -> Protocol.DEVICE_NAME_PREFIXES.any { f.name.startsWith(it, ignoreCase = true) } }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private var scanJob: Job? = null
@@ -60,9 +63,8 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                 withTimeoutOrNull(15_000) {
                     PrinterScanner(getApplication()).scan().collect { found ->
                         val current = _scanResults.value
-                        if (current.none { it.device.address == found.device.address }) {
-                            _scanResults.value = (current + found).sortedByDescending { it.rssi }
-                        }
+                        _scanResults.value = (current.filterNot { it.key == found.key } + found)
+                            .sortedByDescending { it.rssi }
                     }
                 }
             } catch (c: CancellationException) {
@@ -84,7 +86,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun connectTo(found: FoundPrinter) {
         stopScan()
         viewModelScope.launch {
-            runCatching { manager.connect(found.device, found.name) }
+            runCatching { manager.connect(found) }
         }
     }
 
@@ -107,6 +109,24 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             }.fold(
                 onSuccess = { "Teach command sent. The printer may feed a few labels." },
                 onFailure = { "Error: ${it.message}" },
+            )
+        }
+    }
+
+
+    fun printTest() {
+        viewModelScope.launch {
+            _commandFeedback.value = runCatching {
+                manager.print(
+                    image = PrinterTestPage.render(),
+                    media = MediaType.CONTINUOUS,
+                    copies = 1,
+                    feedBeforeDots = container.settings.printFeedBeforeDots.first(),
+                    feedAfterDots = container.settings.printFeedAfterDots.first(),
+                )
+            }.fold(
+                onSuccess = { "测试页已打印" },
+                onFailure = { "打印失败：${it.message ?: "请重试"}" },
             )
         }
     }

@@ -63,17 +63,21 @@ fun TemplatePrintSheet(
     val done by vm.done.collectAsState()
     val printerState by vm.printerState.collectAsState()
     val savedPrinter by vm.savedPrinter.collectAsState(initial = null)
+    val savedBefore by vm.feedBeforeDots.collectAsState(initial = io.github.soulxyz.xyprt.printer.Protocol.PRE_FEED_DOTS)
+    val savedAfter by vm.feedAfterDots.collectAsState(initial = io.github.soulxyz.xyprt.printer.Protocol.CONTINUOUS_FEED_DOTS)
 
     val questions = remember(template.id) { Placeholders.questions(template.elements) }
     var answers by remember(template.id) { mutableStateOf(questions.associateWith { "" }) }
     var copies by remember { mutableIntStateOf(1) }
+    var feedBefore by remember(savedBefore) { mutableIntStateOf(savedBefore) }
+    var feedAfter by remember(savedAfter) { mutableIntStateOf(savedAfter) }
     val media = MediaType.CONTINUOUS // BY-288 uses continuous paper in the normal UI.
 
     val previewImage = remember(template, answers) {
         val now = Date()
         val context = Placeholders.Context(
-            dateText = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(now),
-            timeText = SimpleDateFormat("HH:mm", Locale.GERMANY).format(now),
+            dateText = SimpleDateFormat("yyyy-MM-dd", Locale.SIMPLIFIED_CHINESE).format(now),
+            timeText = SimpleDateFormat("HH:mm", Locale.SIMPLIFIED_CHINESE).format(now),
             counter = template.counterValue,
             answers = answers,
         )
@@ -155,6 +159,14 @@ fun TemplatePrintSheet(
                     )
                 }
             }
+            Spacer(Modifier.height(4.dp))
+            PrintSpacingControls(
+                beforeDots = feedBefore,
+                afterDots = feedAfter,
+                enabled = !working,
+                onBeforeDots = { feedBefore = it },
+                onAfterDots = { feedAfter = it },
+            )
             Spacer(Modifier.height(8.dp))
 
             if (printerState !is PrinterState.Printing) {
@@ -187,7 +199,7 @@ fun TemplatePrintSheet(
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
-                    onClick = { vm.print(template, media, copies, answers) },
+                    onClick = { vm.print(template, media, copies, answers, feedBefore, feedAfter) },
                     enabled = !working && printerState is PrinterState.Ready
                 ) { Text(stringResource(R.string.action_print)) }
                 OutlinedButton(onClick = onDismiss, enabled = !working) { Text(stringResource(R.string.action_cancel)) }

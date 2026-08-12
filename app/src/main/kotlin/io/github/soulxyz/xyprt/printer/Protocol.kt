@@ -3,8 +3,8 @@ package io.github.soulxyz.xyprt.printer
 /**
  * Beeprt BY-288 / 错题小印 X1 protocol.
  *
- * The Android transport is Bluetooth Classic RFCOMM/SPP. This pure JVM module only
- * describes the byte protocol and geometry.
+ * The same byte protocol is transported over Bluetooth Classic SPP or BLE GATT, depending on
+ * the printer revision. This module only describes the protocol and geometry.
  */
 object Protocol {
     const val SPP_UUID = "00001101-0000-1000-8000-00805F9B34FB"
@@ -18,7 +18,6 @@ object Protocol {
     const val BYTES_PER_COLUMN = HEAD_DOTS / 8
 
     // Commands recovered from the original BYPrintPort path.
-    val INIT = byteArrayOf(0x10, 0xFF.toByte(), 0x40) // status query; kept for diagnostics
     val PRINT_START = byteArrayOf(0x10, 0xFF.toByte(), 0xF1.toByte(), 0x02)
     val PRINT_ENABLE_2 = byteArrayOf(0x1F, 0xB2.toByte(), 0x10)
     val PRINT_END = byteArrayOf(0x10, 0xFF.toByte(), 0xF1.toByte(), 0x45)
@@ -39,7 +38,6 @@ object Protocol {
 
     // Queries.
     val QUERY_STATUS = byteArrayOf(0x10, 0xFF.toByte(), 0x40)
-    val QUERY_ALL_INFO = byteArrayOf(0x10, 0xFF.toByte(), 0x70)
     val QUERY_BATTERY = byteArrayOf(0x10, 0xFF.toByte(), 0x50, 0xF1.toByte())
     val QUERY_MODEL = byteArrayOf(0x10, 0xFF.toByte(), 0x20, 0xF0.toByte())
     val QUERY_FIRMWARE = byteArrayOf(0x10, 0xFF.toByte(), 0x20, 0xF1.toByte())
@@ -51,8 +49,8 @@ object Protocol {
     val LEARN_GAP = byteArrayOf(0x10, 0xFF.toByte(), 0x03)
 
     // Safe transfer pacing for the printer's small serial receive buffer.
-    const val CHUNK_SIZE = 2048
-    const val CHUNK_DELAY_MS = 8L
+    const val SPP_CHUNK_SIZE = 2048
+    const val SPP_CHUNK_DELAY_MS = 8L
     const val COPY_DELAY_MS = 500L
     const val QUERY_GAP_MS = 30L
 

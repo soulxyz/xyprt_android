@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** App-wide BY-288 Classic Bluetooth connection / print manager. */
+/** App-wide X1 printer manager. Classic SPP remains preferred; BLE is transparent fallback/support. */
 @SuppressLint("MissingPermission")
 class PrinterManager(
     private val context: Context,
@@ -49,7 +49,7 @@ class PrinterManager(
     private fun adapter(): BluetoothAdapter? =
         (context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
 
-    /** SPP has no BLE autoConnect; use a low-duty retry loop for the remembered printer. */
+    /** Low-duty reconnect for the remembered endpoint. Old 1.1.x saves default to SPP first. */
     @Synchronized
     fun startBackgroundReconnect() {
         val s = _state.value
@@ -65,8 +65,16 @@ class PrinterManager(
                     attempt++
                     val device = runCatching { a.getRemoteDevice(saved.address) }.getOrNull()
                     if (device != null) {
+                        val preferred = PrinterTransport.fromSaved(saved.transport) ?: PrinterTransport.CLASSIC
+                        val order = listOf(preferred) + PrinterTransport.entries.filterNot { it == preferred }
                         val ok = runCatching {
-                            connectInternal(device, saved.name, retries = 1, showConnecting = false)
+                            connectByTransports(
+                                device = device,
+                                name = saved.name,
+                                transports = order,
+                                showConnecting = false,
+                                persist = true,
+                            )
                         }.isSuccess
                         if (ok) return@launch
                     }
@@ -85,7 +93,17 @@ class PrinterManager(
             if (a == null || !a.isEnabled) {
                 showTransientError(context.getString(R.string.err_bt_off)); return@launch
             }
-            runCatching { connect(a.getRemoteDevice(saved.address), saved.name) }
+            val preferred = PrinterTransport.fromSaved(saved.transport) ?: PrinterTransport.CLASSIC
+            val order = listOf(preferred) + PrinterTransport.entries.filterNot { it == preferred }
+            runCatching {
+                connectByTransports(
+                    device = a.getRemoteDevice(saved.address),
+                    name = saved.name,
+                    transports = order,
+                    showConnecting = true,
+                    persist = true,
+                )
+            }
         }
     }
 
@@ -94,31 +112,62 @@ class PrinterManager(
         if (_state.value is PrinterState.Connecting) _state.value = PrinterState.Disconnected
     }
 
-    suspend fun connect(device: BluetoothDevice, name: String) {
+    /** Connect a scan result without asking the user which radio transport the printer uses. */
+    suspend fun connect(found: FoundPrinter) {
         reconnectJob?.cancelAndJoin()
-        connectInternal(device, name, retries = 2, showConnecting = true)
+        var lastError: Throwable? = null
+        val endpoints = found.preferredEndpoints()
+        for ((index, endpoint) in endpoints.withIndex()) {
+            _state.value = PrinterState.Connecting(index + 1)
+            try {
+                connectByTransports(
+                    device = endpoint.device,
+                    name = found.name,
+                    transports = listOf(endpoint.transport),
+                    showConnecting = false,
+                    persist = true,
+                )
+                return
+            } catch (c: CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                lastError = t
+            }
+        }
+        showTransientError(lastError?.message ?: context.getString(R.string.err_connect_failed))
+        throw lastError ?: IllegalStateException(context.getString(R.string.err_connect_failed))
     }
 
-    private suspend fun connectInternal(
+    /** Kept for internal callers/tests that already know the endpoint type. */
+    suspend fun connect(device: BluetoothDevice, name: String, transport: PrinterTransport = PrinterTransport.CLASSIC) {
+        reconnectJob?.cancelAndJoin()
+        connectByTransports(device, name, listOf(transport), showConnecting = true, persist = true)
+    }
+
+    private suspend fun connectByTransports(
         device: BluetoothDevice,
         name: String,
-        retries: Int,
+        transports: List<PrinterTransport>,
         showConnecting: Boolean,
+        persist: Boolean,
     ) {
         var lastError: Throwable? = null
-        for (attempt in 1..retries) {
-            if (showConnecting) _state.value = PrinterState.Connecting(attempt)
+        for ((index, transport) in transports.distinct().withIndex()) {
+            if (showConnecting) _state.value = PrinterState.Connecting(index + 1)
             try {
                 disconnectInternal()
-                val conn = PrinterConnection.open(context, device, log = ::bleLog)
+                val conn = when (transport) {
+                    PrinterTransport.CLASSIC -> SppPrinterConnection.open(context, device, ::bleLog)
+                    PrinterTransport.BLE -> BlePrinterConnection.open(context, device, ::bleLog)
+                }
                 connection = conn
                 val sc = StatusClient(conn)
                 statusClient = if (sc.initialize()) sc else null
-                settings.savePrinter(device.address, name)
-                _state.value = PrinterState.Ready(name, device.address, null)
+                if (persist) settings.savePrinter(device.address, normalizePrinterName(name), transport.savedValue)
+                _state.value = PrinterState.Ready(normalizePrinterName(name), device.address, null, transport)
                 startBatteryPolling()
                 fetchStatusOnce()
-                bleLog("BY-288 ready: $name / ${device.address}")
+                bleLog("X1 ready via ${transport.savedValue}: ${normalizePrinterName(name)} / ${device.address}")
                 return
             } catch (c: CancellationException) {
                 disconnectInternal()
@@ -126,8 +175,9 @@ class PrinterManager(
                 throw c
             } catch (t: Throwable) {
                 lastError = t
+                bleLog("${transport.savedValue} connect failed: ${t.message}")
                 disconnectInternal()
-                if (attempt < retries) delay(700L * attempt)
+                if (index < transports.lastIndex) delay(450)
             }
         }
         if (showConnecting) showTransientError(lastError?.message ?: context.getString(R.string.err_connect_failed))
@@ -142,15 +192,27 @@ class PrinterManager(
 
     suspend fun forget() { settings.forgetPrinter(); disconnect() }
 
-    suspend fun print(image: MonoImage, media: MediaType, copies: Int) =
-        printJobs(List(copies) { image }, media)
+    suspend fun print(
+        image: MonoImage,
+        media: MediaType,
+        copies: Int,
+        feedBeforeDots: Int = io.github.soulxyz.xyprt.printer.Protocol.PRE_FEED_DOTS,
+        feedAfterDots: Int = io.github.soulxyz.xyprt.printer.Protocol.CONTINUOUS_FEED_DOTS,
+    ) = printJobs(List(copies) { image }, media, feedBeforeDots, feedAfterDots)
 
-    suspend fun printJobs(images: List<MonoImage>, media: MediaType) {
+    suspend fun printJobs(
+        images: List<MonoImage>,
+        media: MediaType,
+        feedBeforeDots: Int = io.github.soulxyz.xyprt.printer.Protocol.PRE_FEED_DOTS,
+        feedAfterDots: Int = io.github.soulxyz.xyprt.printer.Protocol.CONTINUOUS_FEED_DOTS,
+    ) {
         val job = scope.async {
             val ready = _state.value as? PrinterState.Ready ?: error(context.getString(R.string.err_not_connected))
             val conn = connection ?: error(context.getString(R.string.err_not_connected))
             try {
-                val payloads = images.map { PrintJobBuilder.buildJob(it, media) }
+                val payloads = images.map {
+                    PrintJobBuilder.buildJob(it, media, feedBeforeDots = feedBeforeDots, feedAfterDots = feedAfterDots)
+                }
                 _state.value = PrinterState.Printing(0f, 1, payloads.size)
                 ioExclusive.withLock {
                     PrintJobSender.sendAll(conn, payloads) { progress, jobIndex ->

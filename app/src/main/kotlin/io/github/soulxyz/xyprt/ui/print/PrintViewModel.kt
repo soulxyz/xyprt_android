@@ -18,6 +18,8 @@ class PrintViewModel(app: Application) : AndroidViewModel(app) {
 
     val printerState = manager.state
     val savedPrinter = container.settings.savedPrinter
+    val feedBeforeDots = container.settings.printFeedBeforeDots
+    val feedAfterDots = container.settings.printFeedAfterDots
 
     fun connect() = manager.connectSavedActive()
 
@@ -30,14 +32,15 @@ class PrintViewModel(app: Application) : AndroidViewModel(app) {
     private val _done = MutableStateFlow(false)
     val done = _done.asStateFlow()
 
-    fun print(image: MonoImage, media: MediaType, copies: Int) {
+    fun print(image: MonoImage, media: MediaType, copies: Int, feedBeforeDots: Int, feedAfterDots: Int) {
         if (_working.value) return
         _working.value = true
         _error.value = null
         _done.value = false
         viewModelScope.launch {
             try {
-                manager.print(image, media, copies)
+                container.settings.savePrintSpacing(feedBeforeDots, feedAfterDots)
+                manager.print(image, media, copies, feedBeforeDots, feedAfterDots)
                 _done.value = true
             } catch (c: CancellationException) {
                 throw c

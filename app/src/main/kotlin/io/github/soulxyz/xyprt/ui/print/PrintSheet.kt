@@ -53,8 +53,12 @@ fun PrintSheet(
     val done by vm.done.collectAsState()
     val printerState by vm.printerState.collectAsState()
     val savedPrinter by vm.savedPrinter.collectAsState(initial = null)
+    val savedBefore by vm.feedBeforeDots.collectAsState(initial = io.github.soulxyz.xyprt.printer.Protocol.PRE_FEED_DOTS)
+    val savedAfter by vm.feedAfterDots.collectAsState(initial = io.github.soulxyz.xyprt.printer.Protocol.CONTINUOUS_FEED_DOTS)
 
     var copies by remember { mutableIntStateOf(1) }
+    var feedBefore by remember(savedBefore) { mutableIntStateOf(savedBefore) }
+    var feedAfter by remember(savedAfter) { mutableIntStateOf(savedAfter) }
     val media = MediaType.CONTINUOUS // BY-288 normal workflow: continuous roll; no gap calibration needed.
 
     val view = LocalView.current
@@ -103,6 +107,14 @@ fun PrintSheet(
                     enabled = !working && copies < 100
                 ) { Text("+", style = MaterialTheme.typography.titleLarge) }
             }
+            Spacer(Modifier.height(4.dp))
+            PrintSpacingControls(
+                beforeDots = feedBefore,
+                afterDots = feedAfter,
+                enabled = !working,
+                onBeforeDots = { feedBefore = it },
+                onAfterDots = { feedAfter = it },
+            )
             Spacer(Modifier.height(8.dp))
 
             if (printerState !is PrinterState.Printing) {
@@ -138,7 +150,7 @@ fun PrintSheet(
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
-                    onClick = { vm.print(image, media, copies) },
+                    onClick = { vm.print(image, media, copies, feedBefore, feedAfter) },
                     enabled = !working && printerState is PrinterState.Ready
                 ) { Text(stringResource(R.string.action_print)) }
                 OutlinedButton(onClick = onDismiss, enabled = !working) { Text(stringResource(R.string.action_cancel)) }

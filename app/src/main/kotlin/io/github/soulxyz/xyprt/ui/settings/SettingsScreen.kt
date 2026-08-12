@@ -58,13 +58,13 @@ import io.github.soulxyz.xyprt.ble.PrinterState
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
-    onOpenTestPrint: () -> Unit = {},
     vm: SettingsViewModel = viewModel(),
 ) {
     val context = LocalContext.current
     val state by vm.printerState.collectAsState()
     val info by vm.printerInfo.collectAsState()
     val saved by vm.savedPrinter.collectAsState()
+    val commandFeedback by vm.commandFeedback.collectAsState()
     var showScanSheet by remember { mutableStateOf(false) }
     var showForgetConfirm by remember { mutableStateOf(false) }
     var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -168,13 +168,9 @@ fun SettingsScreen(
                                 }
                             }
                             state is PrinterState.Ready -> {
-                                // Connected: nothing needs to be emphasized.
-                                OutlinedButton(onClick = { withPermissions { showScanSheet = true } }) {
-                                    Text(stringResource(R.string.scan_title))
-                                }
-                                OutlinedButton(onClick = { vm.disconnect() }) {
-                                    Text(stringResource(R.string.action_disconnect))
-                                }
+                                OutlinedButton(onClick = { vm.printTest() }) { Text("打印测试") }
+                                OutlinedButton(onClick = { withPermissions { showScanSheet = true } }) { Text(stringResource(R.string.scan_title)) }
+                                OutlinedButton(onClick = { vm.disconnect() }) { Text(stringResource(R.string.action_disconnect)) }
                             }
                             else -> {
                                 // No saved printer (or connecting): scanning is the primary action.
@@ -184,6 +180,10 @@ fun SettingsScreen(
                                 ) { Text(stringResource(R.string.scan_title)) }
                             }
                         }
+                    }
+                    commandFeedback?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -259,10 +259,10 @@ private fun ScanSheet(vm: SettingsViewModel, onDismiss: () -> Unit) {
                 Text(stringResource(R.string.scan_empty), style = MaterialTheme.typography.bodyMedium)
             }
             LazyColumn {
-                items(results, key = { it.device.address }) { found ->
+                items(results, key = { it.key }) { found ->
                     ListItem(
                         headlineContent = { Text(found.name) },
-                        supportingContent = { Text(stringResource(R.string.scan_device_line, found.device.address, found.rssi)) },
+                        supportingContent = { Text(found.primaryAddress) },
                         modifier = Modifier.fillMaxWidth(),
                         trailingContent = {
                             TextButton(onClick = {

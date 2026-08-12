@@ -36,4 +36,10 @@ object ImageImport {
         decoded.recycle()
         Loaded(Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP), w, h)
     }.getOrNull()
+    fun fromBitmap(bitmap: Bitmap): Loaded {
+        val baos = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
+        return Loaded(Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP), bitmap.width, bitmap.height)
+    }
+
 }

@@ -13,7 +13,6 @@ data class PrinterInfo(
 /** Best-effort BY-288 status client over the same RFCOMM input/output stream. */
 class StatusClient(private val connection: PrinterConnection) {
     suspend fun initialize(): Boolean = true
-    suspend fun drainInitialPush() { /* SPP has no BLE notification subscription push. */ }
 
     suspend fun batteryPercent(): Int? {
         val r = query(Protocol.QUERY_BATTERY) ?: return null
@@ -34,11 +33,13 @@ class StatusClient(private val connection: PrinterConnection) {
         hardware = queryText(Protocol.QUERY_HARDWARE),
     )
 
-    private suspend fun queryText(cmd: ByteArray): String? = query(cmd)
-        ?.toString(Charsets.UTF_8)
-        ?.filter { it.code in 32..126 }
-        ?.trim()
-        ?.takeIf { it.isNotEmpty() }
+    private suspend fun queryText(cmd: ByteArray): String? = query(cmd)?.let { bytes ->
+        val text = runCatching { bytes.toString(java.nio.charset.Charset.forName("GB18030")) }
+            .getOrElse { bytes.toString(Charsets.UTF_8) }
+            .replace("\u0000", "")
+            .trim()
+        text.takeIf { it.isNotEmpty() }
+    }
 
     private suspend fun query(cmd: ByteArray): ByteArray? {
         val r = runCatching { connection.query(cmd) }.getOrNull()?.takeIf { it.isNotEmpty() }

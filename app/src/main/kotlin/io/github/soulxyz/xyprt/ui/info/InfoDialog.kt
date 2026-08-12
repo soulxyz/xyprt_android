@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,13 +21,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,21 +44,25 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import io.github.soulxyz.xyprt.App
-import io.github.soulxyz.xyprt.ui.components.rememberBlePermissionRunner
 import io.github.soulxyz.xyprt.R
+import io.github.soulxyz.xyprt.data.UpdateState
+import io.github.soulxyz.xyprt.ui.components.rememberBlePermissionRunner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** About: only the information a user needs right now. */
+/** About + update status + portable backup. */
 @Composable
 fun InfoDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
+    val app = context.applicationContext as App
+    val container = app.container
     val version = remember {
         runCatching {
             @Suppress("DEPRECATION")
@@ -64,89 +71,75 @@ fun InfoDialog(onDismiss: () -> Unit) {
     }
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val cardColor = MaterialTheme.colorScheme.surfaceContainerLow
-    val websiteUrl = "https://github.com/soulxyz/xyprt/"
+    val websiteUrl = "https://github.com/soulxyz/xyprt_android"
     val upstreamUrl = "https://github.com/toolicious/labler"
+    val updateState by container.updates.state.collectAsState()
 
     val scope = rememberCoroutineScope()
-    val backup = remember(context) { (context.applicationContext as App).container.backup }
+    val backup = container.backup
     val requestPermissions = rememberBlePermissionRunner()
     var showBackupMenu by remember { mutableStateOf(false) }
-    var pendingImport by remember { mutableStateOf<String?>(null) }
+    var pendingImport by remember { mutableStateOf<ByteArray?>(null) }
+
+    LaunchedEffect(Unit) { container.updates.check() }
 
     fun toast(res: Int) = Toast.makeText(context, context.getString(res), Toast.LENGTH_SHORT).show()
-
     fun openUrl(url: String) {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val ok = runCatching { context.startActivity(intent) }.isSuccess
+        val ok = runCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.isSuccess
         if (!ok) Toast.makeText(context, "无法打开链接", Toast.LENGTH_SHORT).show()
     }
 
-    fun runImport(raw: String, replace: Boolean) {
+    fun runImport(bytes: ByteArray, replace: Boolean) {
         scope.launch {
-            val ok = runCatching { backup.import(raw, replace) }.isSuccess
+            val ok = runCatching { backup.importPackage(bytes, replace) }.isSuccess
             toast(if (ok) R.string.backup_ok else R.string.backup_failed)
             if (ok) {
-                val lang = backup.peekLanguage(raw)
-                if (lang != currentAppLanguageTag(context)) setAppLanguage(context, lang)
-                // A restored backup may set the remembered printer. Ensure the Bluetooth permission is
-                // in place (request it if the user only imported and never scanned) and then start the
-                // auto-reconnect so the printer connects right away instead of only after a restart.
-                val app = context.applicationContext as App
-                if (app.container.settings.savedPrinter.first() != null) {
-                    requestPermissions { app.container.printerManager.startBackgroundReconnect() }
-                } else {
-                    app.container.printerManager.startBackgroundReconnect()
-                }
+                val lang = backup.peekLanguage(bytes)
+                if (lang != null && lang != currentAppLanguageTag(context)) setAppLanguage(context, lang)
+                if (container.settings.savedPrinter.first() != null) {
+                    requestPermissions { container.printerManager.startBackgroundReconnect() }
+                } else container.printerManager.startBackgroundReconnect()
             }
         }
     }
 
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
-    ) { uri ->
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) scope.launch {
             val ok = withContext(Dispatchers.IO) {
                 runCatching {
-                    val text = backup.export(currentAppLanguageTag(context))
-                    (context.contentResolver.openOutputStream(uri) ?: error("no stream"))
-                        .use { it.write(text.toByteArray()) }
+                    val bytes = backup.exportPackage(currentAppLanguageTag(context))
+                    (context.contentResolver.openOutputStream(uri) ?: error("no stream")).use { it.write(bytes) }
                 }.isSuccess
             }
             toast(if (ok) R.string.backup_ok else R.string.backup_failed)
         }
     }
 
-    val importLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
-            val text = withContext(Dispatchers.IO) {
-                runCatching {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() }
-                }.getOrNull()
+            val bytes = withContext(Dispatchers.IO) {
+                runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
             }
-            if (text == null) {
-                toast(R.string.backup_failed)
-            } else if (backup.hasTemplates()) {
-                pendingImport = text
-            } else {
-                runImport(text, replace = false)
-            }
+            if (bytes == null) toast(R.string.backup_failed)
+            else if (backup.hasContent()) pendingImport = bytes
+            else runImport(bytes, replace = false)
         }
     }
 
-    pendingImport?.let { raw ->
+    pendingImport?.let { bytes ->
         AlertDialog(
             onDismissRequest = { pendingImport = null },
             title = { Text(stringResource(R.string.backup_replace_title)) },
             text = { Text(stringResource(R.string.backup_replace_message)) },
             confirmButton = {
-                TextButton(onClick = { pendingImport = null; runImport(raw, replace = true) }) {
+                TextButton(onClick = { pendingImport = null; runImport(bytes, replace = true) }) {
                     Text(stringResource(R.string.backup_replace))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingImport = null; runImport(raw, replace = false) }) {
+                TextButton(onClick = { pendingImport = null; runImport(bytes, replace = false) }) {
                     Text(stringResource(R.string.backup_add))
                 }
             },
@@ -158,121 +151,118 @@ fun InfoDialog(onDismiss: () -> Unit) {
         modifier = Modifier.fillMaxWidth(0.92f),
         properties = DialogProperties(usePlatformDefaultWidth = false),
         icon = {
-            // Logo large and colored like the app icon (teal circle + two-color logo), on top of everything.
             Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .clip(CircleShape)
-                    .background(colorResource(R.color.ic_launcher_background)),
-                contentAlignment = Alignment.Center
+                modifier = Modifier.size(72.dp).clip(CircleShape).background(colorResource(R.color.ic_launcher_background)),
+                contentAlignment = Alignment.Center,
             ) {
-                Image(
-                    painterResource(R.drawable.ic_logo_color),
-                    contentDescription = null,
-                    modifier = Modifier.size(width = 36.dp, height = 44.dp)
-                )
+                Image(painterResource(R.drawable.ic_logo_color), null, modifier = Modifier.size(width = 36.dp, height = 44.dp))
             }
         },
-        title = {
-            Text(stringResource(R.string.app_name))
-        },
+        title = { Text(stringResource(R.string.app_name)) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                verticalArrangement = Arrangement.spacedBy(13.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                Text("版本 $version · Soulxyz", style = MaterialTheme.typography.labelMedium, color = muted)
                 Text(
-                    stringResource(R.string.about_version, version),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = muted
-                )
-                Text(
-                    stringResource(R.string.about_author),
+                    "支持文字、图片、PDF、拍照和自由排版，也可从其他应用直接分享打印。让打印更简单，也更顺手。",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
+                    textAlign = TextAlign.Center,
                 )
-                Text(
-                    stringResource(R.string.about_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    textAlign = TextAlign.Center
+
+                UpdateCard(
+                    state = updateState,
+                    onCheck = { container.updates.check(force = true) },
+                    onDownload = { info -> openUrl(info.mirrorApkUrl ?: info.sourceApkUrl ?: info.releaseUrl) },
+                    onSource = { info -> openUrl(info.sourceApkUrl ?: info.releaseUrl) },
                 )
 
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(cardColor)
-                        .clickable { openUrl(websiteUrl) }
-                        .padding(start = 12.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cardColor)
+                        .clickable { openUrl(websiteUrl) }.padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Icon(
-                        painterResource(R.drawable.ic_link),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "项目主页",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            "github.com/soulxyz/xyprt",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1
-                        )
+                    Icon(painterResource(R.drawable.ic_link), null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+                    Column(Modifier.weight(1f)) {
+                        Text("项目主页", style = MaterialTheme.typography.bodyLarge)
+                        Text("github.com/soulxyz/xyprt_android", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                     }
                 }
                 Text(
                     "基于 LaBLEr · toolicious",
                     style = MaterialTheme.typography.labelSmall,
                     color = muted,
-                    modifier = Modifier.clickable { openUrl(upstreamUrl) }
+                    modifier = Modifier.clickable { openUrl(upstreamUrl) },
                 )
             }
         },
         confirmButton = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Box {
-                    TextButton(onClick = { showBackupMenu = true }) {
-                        Text(stringResource(R.string.backup))
-                    }
-                    DropdownMenu(
-                        expanded = showBackupMenu,
-                        onDismissRequest = { showBackupMenu = false }
-                    ) {
+                    TextButton(onClick = { showBackupMenu = true }) { Text("备份与迁移") }
+                    DropdownMenu(expanded = showBackupMenu, onDismissRequest = { showBackupMenu = false }) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.backup_export)) },
+                            text = { Text("导出到设备") },
                             onClick = {
                                 showBackupMenu = false
-                                val stamp = java.time.LocalDateTime.now()
-                                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"))
-                                exportLauncher.launch("xyprt-backup-$stamp.json")
-                            }
+                                val stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"))
+                                exportLauncher.launch("xyprt-backup-$stamp.xyprt")
+                            },
                         )
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.backup_import)) },
+                            text = { Text("从备份恢复") },
                             onClick = {
                                 showBackupMenu = false
-                                importLauncher.launch(arrayOf("application/json"))
-                            }
+                                importLauncher.launch(arrayOf("application/zip", "application/octet-stream", "application/json"))
+                            },
                         )
                     }
                 }
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.action_close))
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+            }
+        },
+    )
+}
+
+@Composable
+private fun UpdateCard(
+    state: UpdateState,
+    onCheck: () -> Unit,
+    onDownload: (io.github.soulxyz.xyprt.data.UpdateInfo) -> Unit,
+    onSource: (io.github.soulxyz.xyprt.data.UpdateInfo) -> Unit,
+) {
+    val bg = MaterialTheme.colorScheme.surfaceContainerLow
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(bg).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        when (state) {
+            UpdateState.Idle, UpdateState.Checking -> {
+                Text(if (state is UpdateState.Checking) "正在检查更新…" else "检查更新", fontWeight = FontWeight.SemiBold)
+                if (state is UpdateState.Idle) TextButton(onClick = onCheck) { Text("检查") }
+            }
+            is UpdateState.Current -> {
+                Text("已是最新版本", fontWeight = FontWeight.SemiBold)
+                TextButton(onClick = onCheck) { Text("重新检查") }
+            }
+            is UpdateState.Error -> {
+                Text("暂时无法检查更新", fontWeight = FontWeight.SemiBold)
+                Text(state.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = onCheck) { Text("重试") }
+            }
+            is UpdateState.Available -> {
+                val info = state.info
+                Text("发现 ${info.versionName}", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                if (info.notes.isNotBlank()) Text(info.notes, style = MaterialTheme.typography.bodySmall, maxLines = 5)
+                Text("更新信息来自${info.checkedVia}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { onDownload(info) }) { Text("下载更新") }
+                    OutlinedButton(onClick = { onSource(info) }) { Text("源站") }
                 }
             }
         }
-    )
+    }
 }

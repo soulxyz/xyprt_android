@@ -7,12 +7,14 @@ import androidx.lifecycle.viewModelScope
 import io.github.soulxyz.xyprt.App
 import io.github.soulxyz.xyprt.R
 import io.github.soulxyz.xyprt.model.LabelSpec
+import io.github.soulxyz.xyprt.data.UpdateState
 import io.github.soulxyz.xyprt.model.LabelTemplate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -26,6 +28,19 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     val printerState = container.printerManager.state
     val savedPrinter = container.settings.savedPrinter
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val updateState = container.updates.state
+    val updateUnseen = combine(container.updates.state, container.settings.lastSeenUpdateCode) { state, seen ->
+        val info = (state as? UpdateState.Available)?.info
+        info != null && info.versionCode > seen
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    init { container.updates.check() }
+
+    fun markCurrentUpdateSeen() {
+        val info = (container.updates.state.value as? UpdateState.Available)?.info ?: return
+        viewModelScope.launch { container.settings.markUpdateSeen(info.versionCode) }
+    }
 
     private val _query = MutableStateFlow("")
     val query = _query.asStateFlow()
@@ -76,36 +91,33 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.setFavorite(template.id, !template.favorite) }
     }
 
-    /** Writes the template as JSON to the chosen SAF Uri. */
+    /** Writes a portable .xyprt document package, including embedded image assets. */
     fun exportTo(uri: Uri, template: LabelTemplate, onResult: (String?) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             val app = getApplication<Application>()
-            // Determine success/failure from the result, not from the (possibly null) exception message.
             val error = runCatching {
-                val payload = container.templateJson.encode(template)
+                val payload = container.backup.exportTemplatePackage(template)
                 app.contentResolver.openOutputStream(uri)
-                    ?.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+                    ?.use { it.write(payload) }
                     ?: error("output stream unavailable")
             }.fold(onSuccess = { null }, onFailure = { app.getString(R.string.err_file_not_writable) })
             withContext(Dispatchers.Main) { onResult(error) }
         }
     }
 
-    /** Reads an exported template and creates it as a new template. */
+    /** Reads a portable .xyprt package. Old JSON template exports remain supported. */
     fun importFrom(uri: Uri, defaultName: String, onResult: (error: String?, newId: String?) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             val app = getApplication<Application>()
             val raw = runCatching {
-                app.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                app.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             }.getOrNull()
-            val newId = raw?.let {
+            val newId = raw?.let { bytes ->
                 runCatching {
-                    val export = container.templateJson.decode(it)
+                    val export = container.backup.importTemplatePackage(bytes)
                     repo.createFrom(export.name, export.spec, export.elements, defaultName).id
                 }.getOrNull()
             }
-            // Return the failure reason as a short detail; the UI prepends "Import fehlgeschlagen: %1$s"
-            // in front of it, so do NOT return the full message here (would be duplicated).
             withContext(Dispatchers.Main) {
                 when {
                     raw == null -> onResult(app.getString(R.string.err_file_not_readable), null)
@@ -115,4 +127,5 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
+
 }

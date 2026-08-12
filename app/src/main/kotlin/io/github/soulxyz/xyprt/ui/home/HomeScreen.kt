@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -106,6 +107,7 @@ fun HomeScreen(
     val query by vm.query.collectAsState()
     val printerState by vm.printerState.collectAsState()
     val savedPrinter by vm.savedPrinter.collectAsState()
+    val updateUnseen by vm.updateUnseen.collectAsState()
     val blePermission = rememberBlePermissionState()
     var showNewDialog by rememberSaveable { mutableStateOf(false) }
     var editTarget by remember { mutableStateOf<LabelTemplate?>(null) }
@@ -115,7 +117,7 @@ fun HomeScreen(
     val defaultName = stringResource(R.string.default_label_name)
 
     val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
+        ActivityResultContracts.CreateDocument("application/zip")
     ) { uri ->
         val target = exportTarget
         exportTarget = null
@@ -166,8 +168,17 @@ fun HomeScreen(
                     IconButton(onClick = onOpenHistory) {
                         Icon(painterResource(R.drawable.ic_history), contentDescription = stringResource(R.string.cd_history))
                     }
-                    IconButton(onClick = { showInfoDialog = true }) {
-                        Icon(painterResource(R.drawable.ic_info), contentDescription = stringResource(R.string.cd_info))
+                    Box {
+                        IconButton(onClick = { showInfoDialog = true }) {
+                            Icon(painterResource(R.drawable.ic_info), contentDescription = stringResource(R.string.cd_info))
+                        }
+                        if (updateUnseen) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.error,
+                                shape = RoundedCornerShape(50),
+                                modifier = Modifier.size(8.dp).align(Alignment.TopEnd).offset(x = (-7).dp, y = 7.dp),
+                            ) {}
+                        }
                     }
                 },
             )
@@ -302,7 +313,7 @@ fun HomeScreen(
                         onDelete = { deleteTarget = template },
                         onExport = {
                             exportTarget = template
-                            exportLauncher.launch("${template.name}.labler.json")
+                            exportLauncher.launch("${template.name}.xyprt")
                         },
                     )
                 }
@@ -312,7 +323,7 @@ fun HomeScreen(
         }
     }
 
-    if (showInfoDialog) InfoDialog(onDismiss = { showInfoDialog = false })
+    if (showInfoDialog) InfoDialog(onDismiss = { vm.markCurrentUpdateSeen(); showInfoDialog = false })
 
     if (showNewDialog) {
         LabelDialog(
@@ -326,7 +337,7 @@ fun HomeScreen(
             },
             onImport = {
                 showNewDialog = false
-                importLauncher.launch(arrayOf("application/json"))
+                importLauncher.launch(arrayOf("application/zip", "application/octet-stream", "application/json"))
             },
             autofocusName = true,
         )

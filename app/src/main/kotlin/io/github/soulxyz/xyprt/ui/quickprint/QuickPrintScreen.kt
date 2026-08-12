@@ -19,12 +19,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -52,6 +55,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.soulxyz.xyprt.R
+import io.github.soulxyz.xyprt.data.SavedDocument
 import io.github.soulxyz.xyprt.printer.MediaType
 import io.github.soulxyz.xyprt.printer.MonoImage
 import io.github.soulxyz.xyprt.printer.dither.DitherMode
@@ -99,6 +104,7 @@ fun QuickPrintScreen(
     vm: QuickPrintViewModel = viewModel(),
 ) {
     val context = LocalContext.current
+    val savedDocuments by vm.documents.collectAsState()
     val inferred = remember(mode, externalIntent) { inferMode(mode, externalIntent) }
     var sourceMode by remember { mutableStateOf(inferred) }
     var text by remember { mutableStateOf(externalText(context, externalIntent).orEmpty()) }
@@ -112,6 +118,8 @@ fun QuickPrintScreen(
     var showPrint by remember { mutableStateOf(false) }
     var showAdjustments by remember { mutableStateOf(false) }
     var showTextSettings by remember { mutableStateOf(false) }
+    var showSavedDocuments by remember { mutableStateOf(false) }
+    var savingDocument by remember { mutableStateOf(false) }
     var pickerOpened by rememberSaveable { mutableStateOf(false) }
     var pendingCameraUriText by rememberSaveable { mutableStateOf<String?>(null) }
     var cameraCropDraft by remember { mutableStateOf(CropRect()) }
@@ -347,6 +355,32 @@ fun QuickPrintScreen(
                                 FilterChip(selected = pdfAutoCrop, onClick = { pdfAutoCrop = true }, label = { Text("去白边") })
                                 FilterChip(selected = !pdfAutoCrop, onClick = { pdfAutoCrop = false }, label = { Text("保留整页") })
                             }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (uris.isNotEmpty()) {
+                                    TextButton(
+                                        enabled = !savingDocument,
+                                        onClick = {
+                                            val uri = uris.first()
+                                            savingDocument = true
+                                            vm.savePdf(uri, displayName(context, uri)) { result ->
+                                                savingDocument = false
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    if (result.isSuccess) "已保存到应用" else "保存失败",
+                                                    android.widget.Toast.LENGTH_SHORT,
+                                                ).show()
+                                            }
+                                        },
+                                    ) { Text(if (savingDocument) "保存中…" else "保存到应用") }
+                                }
+                                TextButton(onClick = { showSavedDocuments = true }) {
+                                    Text(if (savedDocuments.isEmpty()) "已保存" else "已保存 ${savedDocuments.size}")
+                                }
+                            }
                         }
                         SourceMode.CAMERA -> {
                             if (uris.isEmpty()) {
@@ -462,6 +496,36 @@ fun QuickPrintScreen(
         }
     }
 
+    if (showSavedDocuments) {
+        ModalBottomSheet(onDismissRequest = { showSavedDocuments = false }) {
+            Column(
+                Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 20.dp),
+            ) {
+                Text("已保存的文档", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text("保存后可随时再次打开。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(10.dp))
+                if (savedDocuments.isEmpty()) {
+                    Text("还没有保存文档", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 24.dp))
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+                        items(savedDocuments, key = { it.id }) { doc ->
+                            SavedDocumentRow(
+                                document = doc,
+                                onOpen = {
+                                    uris = listOf(vm.uriFor(doc))
+                                    sourceMode = SourceMode.PDF
+                                    adjustments = defaultAdjustments(SourceMode.PDF)
+                                    showSavedDocuments = false
+                                },
+                                onDelete = { vm.deleteDocument(doc.id) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if (showTextSettings) {
         TextFormattingSheet(
             style = textStyle,
@@ -480,6 +544,22 @@ fun QuickPrintScreen(
                 vm.recordPrinted(title = quickHistoryTitle(context, sourceMode, text, uris), image = image, copies = copies)
             },
         )
+    }
+}
+
+@Composable
+private fun SavedDocumentRow(document: SavedDocument, onOpen: () -> Unit, onDelete: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(document.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+            Text("${(document.sizeBytes / 1024).coerceAtLeast(1)} KB", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        TextButton(onClick = onOpen) { Text("打开") }
+        TextButton(onClick = onDelete) { Text("删除") }
     }
 }
 

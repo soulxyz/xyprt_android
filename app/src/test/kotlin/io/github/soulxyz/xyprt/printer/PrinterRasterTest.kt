@@ -33,4 +33,16 @@ class PrinterRasterTest {
         assertTrue(trimmed.isBlack(20, 75))
         assertFalse(trimmed.isBlack(0, 99))
     }
+    @Test
+    fun `custom pre and post feed are encoded without changing raster`() {
+        val image = MonoImage.blank(64).also { it.setBlack(10, 10) }
+        val job = PrintJobBuilder.buildJob(image, MediaType.CONTINUOUS, feedBeforeDots = 17, feedAfterDots = 33)
+        fun hasSequence(vararg seq: Int): Boolean {
+            val b = seq.map { it.toByte() }
+            return (0..job.size - b.size).any { off -> b.indices.all { i -> job[off + i] == b[i] } }
+        }
+        assertTrue(hasSequence(0x1B, 0x4A, 17))
+        assertTrue(hasSequence(0x1B, 0x4A, 33))
+    }
+
 }
