@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  另外WEB版已上线！支持Windows、安卓端，甚至是IOS！<a href="https://github.com/soulxyz/xyprt_web">[开源地址]</a>  在线测试：<a href="https://xyprt.5am.top">[错题小印WEB版]</a>  
+  另外WEB版已上线！支持Windows、安卓端. <a href="https://github.com/soulxyz/xyprt_web">[开源地址]</a>  在线测试：<a href="https://xyprt.5am.top">[错题小印WEB版]</a>  
 </p>
 
 ## 功能特性
