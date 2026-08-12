@@ -180,6 +180,30 @@ data class ImageElement(
 }
 
 @Serializable
+data class DrawPoint(val x: Float, val y: Float)
+
+@Serializable
+data class DrawStroke(
+    val points: List<DrawPoint> = emptyList(),
+    val widthPx: Float = 3f,
+)
+
+@Serializable
+@SerialName("drawing")
+data class DrawingElement(
+    override val id: String,
+    override val x: Float = 16f,
+    override val y: Float = 24f,
+    override val rotation: Int = 0,
+    val widthPx: Float = 352f,
+    val heightPx: Float = 220f,
+    /** Vector strokes in local printer-dot coordinates. */
+    val strokes: List<DrawStroke> = emptyList(),
+) : LabelElement {
+    override fun moved(dx: Float, dy: Float) = copy(x = x + dx, y = y + dy)
+}
+
+@Serializable
 data class LabelTemplate(
     val id: String,
     val name: String,

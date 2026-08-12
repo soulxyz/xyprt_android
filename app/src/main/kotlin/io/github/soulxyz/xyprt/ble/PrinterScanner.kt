@@ -88,10 +88,22 @@ class PrinterScanner(private val context: Context) {
             trySend(next)
         }
 
-        // Existing SPP users see their remembered/paired printer immediately, exactly as before.
+        // Existing SPP users still appear immediately, but a newly bonded *_BLE / LE-only
+        // identity must not be misreported as a Classic endpoint.
         runCatching {
             adapter.bondedDevices.forEach { d ->
-                emitEndpoint(d, runCatching { d.name }.getOrNull(), 0, PrinterTransport.CLASSIC)
+                val n = runCatching { d.name }.getOrNull()
+                val bleNamed = n?.endsWith("_BLE", ignoreCase = true) == true ||
+                    n?.endsWith("-BLE", ignoreCase = true) == true
+                when {
+                    bleNamed || d.type == BluetoothDevice.DEVICE_TYPE_LE ->
+                        emitEndpoint(d, n, 0, PrinterTransport.BLE)
+                    d.type == BluetoothDevice.DEVICE_TYPE_DUAL -> {
+                        emitEndpoint(d, n, 0, PrinterTransport.CLASSIC)
+                        emitEndpoint(d, n, 0, PrinterTransport.BLE)
+                    }
+                    else -> emitEndpoint(d, n, 0, PrinterTransport.CLASSIC)
+                }
             }
         }
 
@@ -103,7 +115,11 @@ class PrinterScanner(private val context: Context) {
                 else @Suppress("DEPRECATION") intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
                 device ?: return
                 val rssi = intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, Short.MIN_VALUE).toInt()
-                emitEndpoint(device, runCatching { device.name }.getOrNull(), rssi, PrinterTransport.CLASSIC)
+                val n = runCatching { device.name }.getOrNull()
+                val isBleIdentity = n?.endsWith("_BLE", ignoreCase = true) == true ||
+                    n?.endsWith("-BLE", ignoreCase = true) == true ||
+                    device.type == BluetoothDevice.DEVICE_TYPE_LE
+                emitEndpoint(device, n, rssi, if (isBleIdentity) PrinterTransport.BLE else PrinterTransport.CLASSIC)
             }
         }
         val classicFilter = IntentFilter(BluetoothDevice.ACTION_FOUND)
@@ -148,4 +164,13 @@ class PrinterScanner(private val context: Context) {
     suspend fun findFirstPrinter(timeoutMs: Long = 15_000): FoundPrinter? = withTimeoutOrNull(timeoutMs) {
         scan().first { found -> Protocol.DEVICE_NAME_PREFIXES.any { found.name.startsWith(it, ignoreCase = true) } }
     }
+
+    /** Short post-bond Classic lookup for dual-mode Qring modules that reveal SPP only after bonding. */
+    suspend fun findClassicEndpoint(name: String, timeoutMs: Long = 4_000): PrinterEndpoint? =
+        withTimeoutOrNull(timeoutMs) {
+            scan().first { found ->
+                normalizePrinterName(found.name).equals(normalizePrinterName(name), ignoreCase = true) &&
+                    found.endpoints.any { it.transport == PrinterTransport.CLASSIC }
+            }.preferredEndpoints().firstOrNull { it.transport == PrinterTransport.CLASSIC }
+        }
 }

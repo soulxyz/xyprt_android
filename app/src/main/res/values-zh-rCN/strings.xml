@@ -179,6 +179,7 @@
     <string name="err_bt_off">蓝牙已关闭</string>
     <string name="err_no_printer_found">未找到打印机。它是否已开机并在范围内？</string>
     <string name="err_connect_failed">连接失败</string>
+    <string name="err_printer_no_response">打印机没有响应，请重试</string>
     <string name="err_not_connected">未连接打印机</string>
     <string name="err_print_failed">打印失败</string>
     <string name="about_description">支持文字、图片、PDF、拍照和自由排版，也可从其他应用直接分享打印。让打印更简单，也更顺手。</string>

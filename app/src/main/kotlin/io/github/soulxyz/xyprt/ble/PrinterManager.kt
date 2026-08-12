@@ -156,18 +156,40 @@ class PrinterManager(
             if (showConnecting) _state.value = PrinterState.Connecting(index + 1)
             try {
                 disconnectInternal()
-                val conn = when (transport) {
-                    PrinterTransport.CLASSIC -> SppPrinterConnection.open(context, device, ::bleLog)
-                    PrinterTransport.BLE -> BlePrinterConnection.open(context, device, ::bleLog)
+                var actualTransport = transport
+                var actualDevice = device
+
+                if (transport == PrinterTransport.BLE) {
+                    // Pair only on the BLE fallback path. Existing SPP users are not disturbed.
+                    val wasBonded = device.bondState == BluetoothDevice.BOND_BONDED
+                    val bonded = if (wasBonded) true else BluetoothBonding.ensureBonded(context, device, log = ::bleLog)
+                    if (!wasBonded) {
+                        bleLog(if (bonded) "BLE paired" else "BLE pairing unavailable; continuing with GATT")
+                    }
+                    if (!wasBonded && bonded) {
+                        bleLog("Checking whether BLE pairing exposed Classic/SPP…")
+                        val classic = PrinterScanner(context).findClassicEndpoint(name)
+                        if (classic != null) {
+                            actualTransport = PrinterTransport.CLASSIC
+                            actualDevice = classic.device
+                            bleLog("Classic/SPP appeared after pairing; preferring SPP")
+                        }
+                    }
+                }
+
+                val conn = when (actualTransport) {
+                    PrinterTransport.CLASSIC -> SppPrinterConnection.open(context, actualDevice, ::bleLog)
+                    PrinterTransport.BLE -> BlePrinterConnection.open(context, actualDevice, ::bleLog)
                 }
                 connection = conn
                 val sc = StatusClient(conn)
-                statusClient = if (sc.initialize()) sc else null
-                if (persist) settings.savePrinter(device.address, normalizePrinterName(name), transport.savedValue)
-                _state.value = PrinterState.Ready(normalizePrinterName(name), device.address, null, transport)
+                check(sc.initialize()) { context.getString(R.string.err_printer_no_response) }
+                statusClient = sc
+                if (persist) settings.savePrinter(actualDevice.address, normalizePrinterName(name), actualTransport.savedValue)
+                _state.value = PrinterState.Ready(normalizePrinterName(name), actualDevice.address, null, actualTransport)
                 startBatteryPolling()
                 fetchStatusOnce()
-                bleLog("X1 ready via ${transport.savedValue}: ${normalizePrinterName(name)} / ${device.address}")
+                bleLog("X1 ready via ${actualTransport.savedValue}: ${normalizePrinterName(name)} / ${actualDevice.address}")
                 return
             } catch (c: CancellationException) {
                 disconnectInternal()
@@ -223,8 +245,15 @@ class PrinterManager(
             } catch (c: CancellationException) {
                 throw c
             } catch (t: Throwable) {
-                disconnectInternal()
-                showTransientError(t.message ?: context.getString(R.string.err_print_failed))
+                // A rejected write does not necessarily mean the radio link died. Keep a live
+                // connection ready so a BLE status-13 retry does not turn into a forced reconnect.
+                if (conn.isConnected) {
+                    runCatching { ioExclusive.withLock { conn.write(io.github.soulxyz.xyprt.printer.Protocol.PRINT_END) } }
+                    _state.value = ready.copy(batteryPercent = lastBattery ?: ready.batteryPercent)
+                } else {
+                    disconnectInternal()
+                    showTransientError(t.message ?: context.getString(R.string.err_print_failed))
+                }
                 throw t
             }
         }

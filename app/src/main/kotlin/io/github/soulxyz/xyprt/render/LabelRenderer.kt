@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Typeface
 import android.text.Layout
 import android.text.StaticLayout
@@ -12,6 +13,7 @@ import android.text.TextPaint
 import android.util.Base64
 import android.util.LruCache
 import io.github.soulxyz.xyprt.model.BarcodeElement
+import io.github.soulxyz.xyprt.model.DrawingElement
 import io.github.soulxyz.xyprt.model.FrameElement
 import io.github.soulxyz.xyprt.model.FrameStyle
 import io.github.soulxyz.xyprt.model.IconElement
@@ -69,6 +71,7 @@ object LabelRenderer {
         is IconElement -> ElementSize(element.sizePx, element.sizePx)
         is FrameElement -> ElementSize(element.widthPx, element.heightPx)
         is TableElement -> ElementSize(element.widthPx, element.heightPx)
+        is DrawingElement -> ElementSize(element.widthPx, element.heightPx)
         is BarcodeElement -> {
             // The reserved box: the code renders as large as cleanly fits and centers inside it.
             // A 1D barcode cannot shrink below 1 px per module, so let the frame grow to contain it.
@@ -122,6 +125,7 @@ object LabelRenderer {
             is IconElement -> drawIcon(canvas, element)
             is FrameElement -> drawFrame(canvas, element)
             is TableElement -> drawTable(canvas, element)
+            is DrawingElement -> drawDrawing(canvas, element)
             is BarcodeElement -> drawBarcode(canvas, element)
             is ImageElement -> drawImage(canvas, element)
         }
@@ -284,6 +288,42 @@ object LabelRenderer {
         for (r in 1 until rows) {
             val y = e.y + r * cellH
             canvas.drawLine(e.x, y, e.x + e.widthPx, y, paint)
+        }
+    }
+
+    // ----- Vector freehand drawing -----
+
+    private fun drawDrawing(canvas: Canvas, e: DrawingElement) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+        e.strokes.forEach { stroke ->
+            val pts = stroke.points
+            if (pts.isEmpty()) return@forEach
+            paint.strokeWidth = stroke.widthPx.coerceAtLeast(0.75f)
+            if (pts.size == 1) {
+                paint.style = Paint.Style.FILL
+                canvas.drawCircle(e.x + pts[0].x, e.y + pts[0].y, paint.strokeWidth / 2f, paint)
+                paint.style = Paint.Style.STROKE
+            } else {
+                val path = Path().apply {
+                    moveTo(e.x + pts[0].x, e.y + pts[0].y)
+                    for (i in 1 until pts.size) {
+                        val a = pts[i - 1]
+                        val b = pts[i]
+                        quadTo(
+                            e.x + a.x, e.y + a.y,
+                            e.x + (a.x + b.x) / 2f, e.y + (a.y + b.y) / 2f,
+                        )
+                    }
+                    val last = pts.last()
+                    lineTo(e.x + last.x, e.y + last.y)
+                }
+                canvas.drawPath(path, paint)
+            }
         }
     }
 

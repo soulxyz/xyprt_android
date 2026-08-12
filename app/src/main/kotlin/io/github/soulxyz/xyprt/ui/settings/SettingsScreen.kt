@@ -168,9 +168,12 @@ fun SettingsScreen(
                                 }
                             }
                             state is PrinterState.Ready -> {
-                                OutlinedButton(onClick = { vm.printTest() }) { Text("打印测试") }
-                                OutlinedButton(onClick = { withPermissions { showScanSheet = true } }) { Text(stringResource(R.string.scan_title)) }
-                                OutlinedButton(onClick = { vm.disconnect() }) { Text(stringResource(R.string.action_disconnect)) }
+                                OutlinedButton(onClick = { withPermissions { showScanSheet = true } }) {
+                                    Text(stringResource(R.string.scan_title))
+                                }
+                                OutlinedButton(onClick = { vm.disconnect() }) {
+                                    Text(stringResource(R.string.action_disconnect))
+                                }
                             }
                             else -> {
                                 // No saved printer (or connecting): scanning is the primary action.
@@ -180,6 +183,13 @@ fun SettingsScreen(
                                 ) { Text(stringResource(R.string.scan_title)) }
                             }
                         }
+                    }
+                    if (state is PrinterState.Ready) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { vm.printTest() },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("打印测试") }
                     }
                     commandFeedback?.let {
                         Spacer(Modifier.height(8.dp))

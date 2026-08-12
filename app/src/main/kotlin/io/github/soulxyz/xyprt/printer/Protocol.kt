@@ -51,6 +51,17 @@ object Protocol {
     // Safe transfer pacing for the printer's small serial receive buffer.
     const val SPP_CHUNK_SIZE = 2048
     const val SPP_CHUNK_DELAY_MS = 8L
+    /** Android BLE starts at the default ATT-safe payload instead of requesting a larger MTU. */
+    const val BLE_INITIAL_CHUNK_SIZE = 20
+    const val BLE_MIN_CHUNK_SIZE = 8
+
+    /** Retry ladder used only after GATT_INVALID_ATTRIBUTE_LENGTH (13). */
+    fun nextBleChunkSize(current: Int): Int = when {
+        current > 20 -> 20
+        current > 16 -> 16
+        current > 12 -> 12
+        else -> BLE_MIN_CHUNK_SIZE
+    }
     const val COPY_DELAY_MS = 500L
     const val QUERY_GAP_MS = 30L
 

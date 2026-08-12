@@ -1,5 +1,8 @@
 package io.github.soulxyz.xyprt.ui.print
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,9 +29,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -41,6 +46,9 @@ import io.github.soulxyz.xyprt.printer.MediaType
 import io.github.soulxyz.xyprt.render.LabelRenderer
 import io.github.soulxyz.xyprt.ui.components.ClearButton
 import io.github.soulxyz.xyprt.ui.components.MonoPaperPreview
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -73,17 +81,43 @@ fun TemplatePrintSheet(
     var feedAfter by remember(savedAfter) { mutableIntStateOf(savedAfter) }
     val media = MediaType.CONTINUOUS // BY-288 uses continuous paper in the normal UI.
 
-    val previewImage = remember(template, answers) {
+    val resolvedElements = remember(template, answers) {
         val now = Date()
-        val context = Placeholders.Context(
+        val placeholderContext = Placeholders.Context(
             dateText = SimpleDateFormat("yyyy-MM-dd", Locale.SIMPLIFIED_CHINESE).format(now),
             timeText = SimpleDateFormat("HH:mm", Locale.SIMPLIFIED_CHINESE).format(now),
             counter = template.counterValue,
             answers = answers,
         )
-        val resolved = Placeholders.resolve(template.elements, context)
-        val rendered = LabelRenderer.renderMono(template.spec, LabelRenderer.reanchor(template.elements, resolved))
+        Placeholders.resolve(template.elements, placeholderContext)
+    }
+    val previewImage = remember(template, resolvedElements) {
+        val rendered = LabelRenderer.renderMono(
+            template.spec,
+            LabelRenderer.reanchor(template.elements, resolvedElements),
+        )
         if (template.spec.autoLength) rendered.trimTrailingWhite() else rendered
+    }
+
+    val context = LocalContext.current
+    val exportScope = rememberCoroutineScope()
+    val saveImageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("image/png")
+    ) { uri ->
+        if (uri != null) exportScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val bitmap = DocumentImageExporter.render(template, resolvedElements, previewImage.height)
+                    try { DocumentImageExporter.saveToUri(context, uri, bitmap) }
+                    finally { bitmap.recycle() }
+                }
+            }
+            Toast.makeText(
+                context,
+                if (result.isSuccess) "图片已保存" else "保存失败：${result.exceptionOrNull()?.message.orEmpty()}",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
     }
 
     val view = LocalView.current
@@ -167,6 +201,35 @@ fun TemplatePrintSheet(
                 onBeforeDots = { feedBefore = it },
                 onAfterDots = { feedAfter = it },
             )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = { saveImageLauncher.launch("${template.name.ifBlank { "错题小印" }}.png") },
+                    enabled = !working,
+                    modifier = Modifier.weight(1f),
+                ) { Text("保存图片") }
+                OutlinedButton(
+                    onClick = {
+                        exportScope.launch {
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    DocumentImageExporter.render(template, resolvedElements, previewImage.height)
+                                }.also { bitmap ->
+                                    try { DocumentImageExporter.share(context, bitmap, template.name) }
+                                    finally { bitmap.recycle() }
+                                }
+                            }.onFailure {
+                                Toast.makeText(context, "分享失败：${it.message.orEmpty()}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    enabled = !working,
+                    modifier = Modifier.weight(1f),
+                ) { Text("分享") }
+            }
             Spacer(Modifier.height(8.dp))
 
             if (printerState !is PrinterState.Printing) {

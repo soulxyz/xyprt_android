@@ -12,7 +12,8 @@ data class PrinterInfo(
 
 /** Best-effort BY-288 status client over the same RFCOMM input/output stream. */
 class StatusClient(private val connection: PrinterConnection) {
-    suspend fun initialize(): Boolean = true
+    /** Ready means the printer protocol answered, not merely that RFCOMM/GATT opened. */
+    suspend fun initialize(): Boolean = query(Protocol.QUERY_STATUS)?.isNotEmpty() == true
 
     suspend fun batteryPercent(): Int? {
         val r = query(Protocol.QUERY_BATTERY) ?: return null

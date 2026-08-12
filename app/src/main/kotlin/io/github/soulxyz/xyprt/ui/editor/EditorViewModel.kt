@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.soulxyz.xyprt.App
 import io.github.soulxyz.xyprt.model.BarcodeElement
+import io.github.soulxyz.xyprt.model.DrawingElement
 import io.github.soulxyz.xyprt.model.FrameElement
 import io.github.soulxyz.xyprt.model.IconElement
 import io.github.soulxyz.xyprt.model.ImageElement
@@ -213,6 +214,7 @@ class EditorViewModel(app: Application, private val templateId: String) : Androi
         is TableElement -> copy(id = newId)
         is BarcodeElement -> copy(id = newId)
         is ImageElement -> copy(id = newId)
+        is DrawingElement -> copy(id = newId)
     }
 
     fun updateSpec(spec: LabelSpec) = mutate(null) { it.copy(spec = spec) }
@@ -367,6 +369,7 @@ class EditorViewModel(app: Application, private val templateId: String) : Androi
         is TableElement -> copy(rotation = degrees)
         is BarcodeElement -> copy(rotation = degrees)
         is ImageElement -> copy(rotation = degrees)
+        is DrawingElement -> copy(rotation = degrees)
     }
 
     fun resizeSelectedBy(delta: Offset) {
@@ -408,6 +411,24 @@ class EditorViewModel(app: Application, private val templateId: String) : Androi
                 // Width scales, height follows via the aspect ratio.
                 widthPx = (el.widthPx + max(delta.x, delta.y)).coerceIn(16f, LabelSpec.PRINT_WIDTH_PX.toFloat())
             )
+            is DrawingElement -> {
+                val oldW = el.widthPx.coerceAtLeast(1f)
+                val oldH = el.heightPx.coerceAtLeast(1f)
+                val newW = (oldW + delta.x).coerceIn(16f, LabelSpec.PRINT_WIDTH_PX.toFloat())
+                val newH = (oldH + delta.y).coerceIn(16f, (_template.value?.spec?.lengthPx ?: 800).toFloat())
+                val sx = newW / oldW
+                val sy = newH / oldH
+                el.copy(
+                    widthPx = newW,
+                    heightPx = newH,
+                    strokes = el.strokes.map { stroke ->
+                        stroke.copy(
+                            widthPx = stroke.widthPx * ((sx + sy) / 2f),
+                            points = stroke.points.map { pt -> pt.copy(x = pt.x * sx, y = pt.y * sy) },
+                        )
+                    },
+                )
+            }
         }
         applyWithoutHistory(updated)
     }

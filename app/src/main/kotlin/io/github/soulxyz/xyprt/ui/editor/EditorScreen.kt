@@ -87,6 +87,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.soulxyz.xyprt.R
 import io.github.soulxyz.xyprt.model.BarcodeElement
+import io.github.soulxyz.xyprt.model.DrawingElement
 import io.github.soulxyz.xyprt.model.FrameElement
 import io.github.soulxyz.xyprt.model.FrameStyle
 import io.github.soulxyz.xyprt.model.IconElement
@@ -421,20 +422,8 @@ fun EditorScreen(
     if (showSketchSheet && t != null) {
         ModalBottomSheet(onDismissRequest = { showSketchSheet = false }) {
             SketchPadSheet(
-                onDone = { loaded ->
-                    vm.addElement(
-                        ImageElement(
-                            id = UUID.randomUUID().toString(),
-                            pngBase64 = loaded.pngBase64,
-                            srcWidth = loaded.width,
-                            srcHeight = loaded.height,
-                            widthPx = (LabelSpec.PRINT_WIDTH_PX - 32).toFloat(),
-                            x = 16f,
-                            y = 24f,
-                            dither = io.github.soulxyz.xyprt.printer.dither.DitherMode.THRESHOLD,
-                            threshold = 200,
-                        )
-                    )
+                onDone = { drawing ->
+                    vm.addElement(drawing.copy(x = 16f, y = 24f))
                     showSketchSheet = false
                 },
                 onCancel = { showSketchSheet = false },
@@ -719,6 +708,7 @@ private fun LayerRow(
 private fun elementKind(element: LabelElement): String = when (element) {
     is TextElement -> "文字"
     is ImageElement -> "图片"
+    is DrawingElement -> "涂画"
     is BarcodeElement -> if (element.symbology == Symbology.QR_CODE) "二维码" else "条码"
     is TableElement -> "表格"
     is IconElement -> "符号"
@@ -731,6 +721,7 @@ private fun elementKind(element: LabelElement): String = when (element) {
 private fun elementSummary(element: LabelElement): String = when (element) {
     is TextElement -> element.text.replace('\n', ' ').ifBlank { "空文字" }
     is ImageElement -> "${element.srcWidth} × ${element.srcHeight}"
+    is DrawingElement -> "${element.strokes.size} 笔"
     is BarcodeElement -> element.data.ifBlank { "尚未填写内容" }
     is TableElement -> "${element.rows} × ${element.columns}"
     is IconElement -> element.glyph
@@ -779,6 +770,7 @@ private fun ElementChipLabel(element: LabelElement) {
             maxLines = 1
         )
         is ImageElement -> Text(stringResource(R.string.add_image), maxLines = 1)
+        is DrawingElement -> Text("涂画", maxLines = 1)
     }
 }
 
@@ -797,6 +789,7 @@ private fun PropertiesPanel(
             is TableElement -> TableProperties(element, onUpdate)
             is BarcodeElement -> BarcodeProperties(element, onUpdate)
             is ImageElement -> ImageProperties(element, onUpdate)
+            is DrawingElement -> Unit
         }
         Spacer(Modifier.height(8.dp))
         FlowRow(
@@ -868,6 +861,7 @@ private fun LabelElement.withRotation(deg: Int): LabelElement = when (this) {
     is TableElement -> copy(rotation = deg)
     is BarcodeElement -> copy(rotation = deg)
     is ImageElement -> copy(rotation = deg)
+    is DrawingElement -> copy(rotation = deg)
 }
 
 /** Scales the element relative to the fixed 384-dot printable paper width. */
@@ -898,6 +892,20 @@ private fun LabelElement.scaledToHeightPercent(pct: Int): LabelElement {
             copy(widthPx = w, heightPx = (heightPx * f).coerceAtLeast(16f))
         }
         is ImageElement -> copy(widthPx = (widthPx * factor).coerceAtLeast(8f))
+        is DrawingElement -> {
+            val newW = target.coerceIn(16f, LabelSpec.PRINT_WIDTH_PX.toFloat())
+            val f = if (widthPx > 0.1f) newW / widthPx else 1f
+            copy(
+                widthPx = newW,
+                heightPx = (heightPx * f).coerceAtLeast(16f),
+                strokes = strokes.map { stroke ->
+                    stroke.copy(
+                        widthPx = stroke.widthPx * f,
+                        points = stroke.points.map { it.copy(x = it.x * f, y = it.y * f) },
+                    )
+                },
+            )
+        }
     }
 }
 

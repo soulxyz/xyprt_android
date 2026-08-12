@@ -1,10 +1,5 @@
 package io.github.soulxyz.xyprt.ui.editor
 
-import android.graphics.Bitmap
-import android.graphics.Canvas as AndroidCanvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Path as AndroidPath
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -16,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
@@ -30,7 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -38,26 +32,41 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import io.github.soulxyz.xyprt.model.DrawPoint
+import io.github.soulxyz.xyprt.model.DrawStroke
+import io.github.soulxyz.xyprt.model.DrawingElement
+import java.util.UUID
+import kotlin.math.max
 
-private data class SketchStroke(val points: List<Offset>, val width: Float)
+private data class UiStroke(val points: List<Offset>, val width: Float)
+private const val LOGICAL_WIDTH = 352f
+private const val LOGICAL_HEIGHT = 220f
 
-/** Simple freehand pad. The result becomes a normal ImageElement, so all existing image tools work. */
+/** Freehand pad that keeps strokes as vectors until the final printer/export renderer. */
 @Composable
 fun SketchPadSheet(
-    onDone: (ImageImport.Loaded) -> Unit,
+    onDone: (DrawingElement) -> Unit,
     onCancel: () -> Unit,
 ) {
-    var strokes by remember { mutableStateOf<List<SketchStroke>>(emptyList()) }
+    var strokes by remember { mutableStateOf<List<UiStroke>>(emptyList()) }
     var active by remember { mutableStateOf<List<Offset>>(emptyList()) }
     var penWidth by remember { mutableStateOf(4f) }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+
+    fun toLogical(p: Offset): Offset {
+        if (canvasSize.width <= 0 || canvasSize.height <= 0) return Offset.Zero
+        return Offset(
+            p.x / canvasSize.width * LOGICAL_WIDTH,
+            p.y / canvasSize.height * LOGICAL_HEIGHT,
+        )
+    }
 
     Column(
         Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text("自由涂画", style = MaterialTheme.typography.headlineSmall)
-        Text("用手指写写画画，完成后还能继续缩放和旋转。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("笔迹会以矢量保存，放大、旋转或分享时不会先变成低清图片。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(2f to "细", 4f to "中", 7f to "粗").forEach { (w, label) ->
                 FilterChip(selected = penWidth == w, onClick = { penWidth = w }, label = { Text(label) })
@@ -71,72 +80,76 @@ fun SketchPadSheet(
             Modifier.fillMaxWidth().height(260.dp)
                 .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(14.dp))
                 .onSizeChanged { canvasSize = it }
-                .pointerInput(penWidth) {
+                .pointerInput(penWidth, canvasSize) {
                     detectDragGestures(
-                        onDragStart = { p -> active = listOf(p) },
-                        onDrag = { change, _ -> change.consume(); active = active + change.position },
+                        onDragStart = { p -> active = listOf(toLogical(p)) },
+                        onDrag = { change, _ -> change.consume(); active = active + toLogical(change.position) },
                         onDragEnd = {
-                            if (active.isNotEmpty()) strokes = strokes + SketchStroke(active, penWidth)
+                            if (active.isNotEmpty()) strokes = strokes + UiStroke(active, penWidth)
                             active = emptyList()
                         },
                         onDragCancel = { active = emptyList() },
                     )
                 },
         ) {
-            fun drawStroke(stroke: SketchStroke) {
-                if (stroke.points.size == 1) {
-                    drawCircle(ComposeColor.Black, radius = stroke.width / 2f, center = stroke.points.first())
-                } else if (stroke.points.size > 1) {
+            val sx = size.width / LOGICAL_WIDTH
+            val sy = size.height / LOGICAL_HEIGHT
+            fun drawStroke(stroke: UiStroke) {
+                val pts = stroke.points
+                if (pts.size == 1) {
+                    drawCircle(Color.Black, radius = stroke.width * (sx + sy) / 4f, center = Offset(pts[0].x * sx, pts[0].y * sy))
+                } else if (pts.size > 1) {
                     val path = Path().apply {
-                        moveTo(stroke.points.first().x, stroke.points.first().y)
-                        stroke.points.drop(1).forEach { lineTo(it.x, it.y) }
+                        moveTo(pts[0].x * sx, pts[0].y * sy)
+                        for (i in 1 until pts.size) {
+                            val a = pts[i - 1]
+                            val b = pts[i]
+                            quadraticBezierTo(a.x * sx, a.y * sy, (a.x + b.x) / 2f * sx, (a.y + b.y) / 2f * sy)
+                        }
+                        lineTo(pts.last().x * sx, pts.last().y * sy)
                     }
-                    drawPath(path, ComposeColor.Black, style = Stroke(width = stroke.width, cap = StrokeCap.Round))
+                    drawPath(path, Color.Black, style = Stroke(width = stroke.width * (sx + sy) / 2f, cap = StrokeCap.Round))
                 }
             }
             strokes.forEach(::drawStroke)
-            if (active.isNotEmpty()) drawStroke(SketchStroke(active, penWidth))
+            if (active.isNotEmpty()) drawStroke(UiStroke(active, penWidth))
         }
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("取消") }
             Button(
                 onClick = {
-                    if (canvasSize.width <= 0 || canvasSize.height <= 0) return@Button
-                    val sourceW = canvasSize.width.toFloat()
-                    val sourceH = canvasSize.height.toFloat()
-                    val targetW = 384
-                    val targetH = (targetW * sourceH / sourceW).toInt().coerceAtLeast(1)
-                    val scale = targetW / sourceW
-                    val bitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
-                    val c = AndroidCanvas(bitmap).apply { drawColor(Color.WHITE) }
-                    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                        color = Color.BLACK
-                        style = Paint.Style.STROKE
-                        strokeCap = Paint.Cap.ROUND
-                        strokeJoin = Paint.Join.ROUND
-                    }
-                    strokes.forEach { stroke ->
-                        paint.strokeWidth = stroke.width * scale
-                        if (stroke.points.size == 1) {
-                            paint.style = Paint.Style.FILL
-                            val p = stroke.points.first()
-                            c.drawCircle(p.x * scale, p.y * scale, paint.strokeWidth / 2f, paint)
-                            paint.style = Paint.Style.STROKE
-                        } else if (stroke.points.size > 1) {
-                            val path = AndroidPath().apply {
-                                val first = stroke.points.first(); moveTo(first.x * scale, first.y * scale)
-                                stroke.points.drop(1).forEach { lineTo(it.x * scale, it.y * scale) }
-                            }
-                            c.drawPath(path, paint)
-                        }
-                    }
-                    onDone(ImageImport.fromBitmap(bitmap))
-                    bitmap.recycle()
+                    val vector = cropDrawing(
+                        DrawingElement(
+                            id = UUID.randomUUID().toString(),
+                            strokes = strokes.map { stroke ->
+                                DrawStroke(stroke.points.map { DrawPoint(it.x, it.y) }, stroke.width)
+                            },
+                        )
+                    )
+                    onDone(vector)
                 },
                 enabled = strokes.isNotEmpty(),
                 modifier = Modifier.weight(2f),
             ) { Text("添加到纸上") }
         }
     }
+}
+
+private fun cropDrawing(element: DrawingElement): DrawingElement {
+    val points = element.strokes.flatMap { it.points }
+    if (points.isEmpty()) return element
+    val maxStroke = element.strokes.maxOfOrNull { it.widthPx } ?: 3f
+    val pad = max(5f, maxStroke * 2f)
+    val minX = (points.minOf { it.x } - pad).coerceAtLeast(0f)
+    val minY = (points.minOf { it.y } - pad).coerceAtLeast(0f)
+    val maxX = (points.maxOf { it.x } + pad).coerceAtMost(LOGICAL_WIDTH)
+    val maxY = (points.maxOf { it.y } + pad).coerceAtMost(LOGICAL_HEIGHT)
+    return element.copy(
+        widthPx = max(12f, maxX - minX),
+        heightPx = max(12f, maxY - minY),
+        strokes = element.strokes.map { stroke ->
+            stroke.copy(points = stroke.points.map { it.copy(x = it.x - minX, y = it.y - minY) })
+        },
+    )
 }
