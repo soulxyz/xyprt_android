@@ -14,6 +14,10 @@
   通过蓝牙连接打印机，支持文字、图片、PDF、拍照裁剪与自由排版打印，还可以直接接收来自其他应用（微信等）的分享内容进行快速打印。
 </p>
 
+<p align="center">
+  另外WEB版已上线！支持Windows、安卓端，甚至是IOS！<a href="https://github.com/soulxyz/xyprt_web">[开源地址]</a>  在线测试：<a href="https://xyprt.5am.top">[错题小印WEB版]</a>  
+</p>
+
 ## 功能特性
 
 - **蓝牙打印**：Bluetooth Classic SPP 协议稳定连接，自动重连，实时显示打印机状态与电量
