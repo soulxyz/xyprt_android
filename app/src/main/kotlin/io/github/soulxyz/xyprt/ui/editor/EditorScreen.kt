@@ -69,6 +69,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -293,8 +294,12 @@ fun EditorScreen(
             Text(
                 if (t.spec.autoLength) "自动长度 · 打印时去除页尾白边" else "固定长度 · ${t.spec.lengthMm} mm",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 2.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClickLabel = stringResource(R.string.dialog_edit_title)) { showMetaDialog = true }
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
             )
             EditorCanvas(
                 spec = t.spec,
@@ -327,7 +332,7 @@ fun EditorScreen(
                     .aspectRatio(LabelSpec.PRINT_WIDTH_PX.toFloat() / t.spec.lengthPx.toFloat()),
             )
             Text(
-                if (selected == null) "点一下选择 · 拖动移动" else "拖动移动 · 右上旋转 · 右下缩放",
+                if (selected == null) "点一下选择 · 拖动移动" else "拖动移动 · 双击按住可精细移动 · 右上旋转 · 右下缩放",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 14.dp),
