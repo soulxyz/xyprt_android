@@ -1284,6 +1284,10 @@ private fun ImageProperties(element: ImageElement, onUpdate: (LabelElement) -> U
         onOutlineThickness = { onUpdate(element.copy(outlineThickness = it)) },
         onOutlineMethod = { onUpdate(element.copy(outlineMethod = it)) },
         onOutlineSmooth = { onUpdate(element.copy(outlineSmooth = it)) },
+        removeRedInk = element.removeRedInk,
+        removeBlueInk = element.removeBlueInk,
+        onRemoveRedInk = { onUpdate(element.copy(removeRedInk = it)) },
+        onRemoveBlueInk = { onUpdate(element.copy(removeBlueInk = it)) },
     )
 }
 

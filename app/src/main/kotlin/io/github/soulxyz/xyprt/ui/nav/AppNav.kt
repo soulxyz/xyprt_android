@@ -83,6 +83,7 @@ fun AppNav() {
                 onQuickImage = { nav.navigate("quick/image") },
                 onQuickDocument = { nav.navigate("quick/pdf") },
                 onQuickCamera = { nav.navigate("quick/camera") },
+                onQuickTodo = { nav.navigate("quick/todo") },
             )
         }
         composable("history") {

@@ -21,6 +21,7 @@ import io.github.soulxyz.xyprt.printer.dither.Contrast
 import io.github.soulxyz.xyprt.printer.dither.DitherMode
 import io.github.soulxyz.xyprt.printer.dither.Ditherer
 import io.github.soulxyz.xyprt.printer.dither.Outline
+import io.github.soulxyz.xyprt.printer.dither.InkRemoval
 import io.github.soulxyz.xyprt.printer.dither.OutlineMethod
 import kotlin.math.roundToInt
 
@@ -36,6 +37,8 @@ data class QuickImageAdjustments(
     val outlineSmooth: Boolean = false,
     val rotationDegrees: Int = 0,
     val scalePercent: Int = 100,
+    val removeRedInk: Boolean = false,
+    val removeBlueInk: Boolean = false,
 )
 
 enum class QuickTextFont { SANS, SERIF, MONO }
@@ -88,6 +91,76 @@ object QuickPrintRenderer {
                 restore()
             }
         }
+    }
+
+    fun todo(title: String, itemsText: String): Bitmap {
+        val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            textSize = 34f
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val itemPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            textSize = 29f
+            typeface = Typeface.SANS_SERIF
+        }
+        val items = itemsText.lineSequence().map { it.trim().removePrefix("- ").removePrefix("• ") }
+            .filter { it.isNotBlank() }.take(40).toList()
+        val safeTitle = title.trim().ifBlank { "今日待办" }
+        val contentW = CONTENT_WIDTH
+        val itemTextW = (contentW - 38).coerceAtLeast(80)
+        val titleLayout = StaticLayout.Builder.obtain(safeTitle, 0, safeTitle.length, titlePaint, contentW)
+            .setIncludePad(true).build()
+        val itemLayouts = items.map { item ->
+            StaticLayout.Builder.obtain(item, 0, item.length, itemPaint, itemTextW)
+                .setIncludePad(true).setLineSpacing(1f, 1.08f).build()
+        }
+        val gap = 12
+        val emptyHint = if (items.isEmpty()) 54 else 0
+        val h = (EDGE_MARGIN * 2 + titleLayout.height + 18 + itemLayouts.sumOf { maxOf(it.height, 34) + gap } + emptyHint)
+            .coerceIn(80, MAX_HEIGHT)
+        return Bitmap.createBitmap(Protocol.HEAD_DOTS, h, Bitmap.Config.ARGB_8888).also { out ->
+            val c = Canvas(out)
+            c.drawColor(Color.WHITE)
+            c.save()
+            c.translate(EDGE_MARGIN.toFloat(), EDGE_MARGIN.toFloat())
+            titleLayout.draw(c)
+            var y = titleLayout.height + 18f
+            if (items.isEmpty()) {
+                itemPaint.color = Color.GRAY
+                c.drawText("添加待办事项后即可打印", 0f, y + 32f, itemPaint)
+            } else {
+                itemLayouts.forEach { layout ->
+                    val boxTop = y + 4f
+                    val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = Color.BLACK
+                        style = Paint.Style.STROKE
+                        strokeWidth = 2.2f
+                    }
+                    c.drawRect(2f, boxTop, 25f, boxTop + 23f, boxPaint)
+                    c.save()
+                    c.translate(38f, y)
+                    layout.draw(c)
+                    c.restore()
+                    y += maxOf(layout.height, 34) + gap
+                }
+            }
+            c.restore()
+        }
+    }
+
+    /** Raw color crop used when a camera draft is saved into the free-layout editor. */
+    fun editorImage(context: Context, uri: Uri, crop: CropRect, maxSide: Int = 1200): Bitmap {
+        val src = decodeSampled(context, uri, 3200) ?: error("无法读取图片")
+        val cropped = cropBitmap(src, crop.normalized())
+        if (cropped !== src) src.recycle()
+        val scale = minOf(1f, maxSide.toFloat() / maxOf(cropped.width, cropped.height).coerceAtLeast(1))
+        if (scale >= 0.999f) return cropped
+        val w = (cropped.width * scale).roundToInt().coerceAtLeast(1)
+        val h = (cropped.height * scale).roundToInt().coerceAtLeast(1)
+        val out = Bitmap.createScaledBitmap(cropped, w, h, true)
+        cropped.recycle()
+        return out
     }
 
     fun previewBitmap(context: Context, uri: Uri, maxDimension: Int = 1600): Bitmap =
@@ -277,8 +350,9 @@ object QuickPrintRenderer {
         require(bitmap.width == Protocol.HEAD_DOTS)
         val w = bitmap.width
         val h = bitmap.height
-        val px = IntArray(w * h)
-        bitmap.getPixels(px, 0, w, 0, 0, w, h)
+        val rawPx = IntArray(w * h)
+        bitmap.getPixels(rawPx, 0, w, 0, 0, w, h)
+        val px = InkRemoval.apply(rawPx, a.removeRedInk, a.removeBlueInk)
         val opaque = BooleanArray(px.size) { (px[it] ushr 24) >= 128 }
         val black = if (a.mode == DitherMode.OUTLINE) {
             val edge = when (a.outlineMethod) {

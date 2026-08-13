@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -57,6 +58,9 @@ fun PhotoCropEditor(
     val handleRadius = with(density) { 7.dp.toPx() }
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
     var active by remember { mutableStateOf<CropHandle?>(null) }
+    var dragStartRect by remember { mutableStateOf(crop) }
+    var dragStartPos by remember { mutableStateOf(Offset.Zero) }
+    val latestCrop by rememberUpdatedState(crop)
     val primary = MaterialTheme.colorScheme.primary
     val cropBackground = MaterialTheme.colorScheme.surfaceContainerHighest
 
@@ -94,40 +98,40 @@ fun PhotoCropEditor(
                 CropHandle.BOTTOM_LEFT to point(r.left, r.bottom),
                 CropHandle.BOTTOM_RIGHT to point(r.right, r.bottom),
             )
-            fun chooseHandle(pos: Offset): CropHandle? {
-                val nearest = corners(crop).minByOrNull { (_, p) -> (p - pos).getDistance() }
+            fun chooseHandle(pos: Offset, rect: CropRect): CropHandle? {
+                val nearest = corners(rect).minByOrNull { (_, p) -> (p - pos).getDistance() }
                 if (nearest != null && (nearest.second - pos).getDistance() <= hitPx) return nearest.first
-                val tl = point(crop.left, crop.top)
-                val br = point(crop.right, crop.bottom)
+                val tl = point(rect.left, rect.top)
+                val br = point(rect.right, rect.bottom)
                 return if (pos.x in tl.x..br.x && pos.y in tl.y..br.y) CropHandle.MOVE else null
             }
-            fun updateFor(handle: CropHandle, pos: Offset, drag: Offset): CropRect {
+            fun updateFor(handle: CropHandle, pos: Offset, start: CropRect, totalDrag: Offset): CropRect {
                 val n = normalized(pos)
                 val minSize = 0.06f
                 return when (handle) {
-                    CropHandle.TOP_LEFT -> crop.copy(
-                        left = n.x.coerceAtMost(crop.right - minSize),
-                        top = n.y.coerceAtMost(crop.bottom - minSize),
+                    CropHandle.TOP_LEFT -> start.copy(
+                        left = n.x.coerceAtMost(start.right - minSize),
+                        top = n.y.coerceAtMost(start.bottom - minSize),
                     )
-                    CropHandle.TOP_RIGHT -> crop.copy(
-                        right = n.x.coerceAtLeast(crop.left + minSize),
-                        top = n.y.coerceAtMost(crop.bottom - minSize),
+                    CropHandle.TOP_RIGHT -> start.copy(
+                        right = n.x.coerceAtLeast(start.left + minSize),
+                        top = n.y.coerceAtMost(start.bottom - minSize),
                     )
-                    CropHandle.BOTTOM_LEFT -> crop.copy(
-                        left = n.x.coerceAtMost(crop.right - minSize),
-                        bottom = n.y.coerceAtLeast(crop.top + minSize),
+                    CropHandle.BOTTOM_LEFT -> start.copy(
+                        left = n.x.coerceAtMost(start.right - minSize),
+                        bottom = n.y.coerceAtLeast(start.top + minSize),
                     )
-                    CropHandle.BOTTOM_RIGHT -> crop.copy(
-                        right = n.x.coerceAtLeast(crop.left + minSize),
-                        bottom = n.y.coerceAtLeast(crop.top + minSize),
+                    CropHandle.BOTTOM_RIGHT -> start.copy(
+                        right = n.x.coerceAtLeast(start.left + minSize),
+                        bottom = n.y.coerceAtLeast(start.top + minSize),
                     )
                     CropHandle.MOVE -> {
-                        val dx = drag.x / drawW
-                        val dy = drag.y / drawH
-                        val w = crop.right - crop.left
-                        val h = crop.bottom - crop.top
-                        val left = (crop.left + dx).coerceIn(0f, 1f - w)
-                        val top = (crop.top + dy).coerceIn(0f, 1f - h)
+                        val dx = totalDrag.x / drawW
+                        val dy = totalDrag.y / drawH
+                        val w = start.right - start.left
+                        val h = start.bottom - start.top
+                        val left = (start.left + dx).coerceIn(0f, 1f - w)
+                        val top = (start.top + dy).coerceIn(0f, 1f - h)
                         CropRect(left, top, left + w, top + h)
                     }
                 }.normalized(minSize)
@@ -136,15 +140,19 @@ fun PhotoCropEditor(
             Canvas(
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(uri, crop, boxSize) {
+                    .pointerInput(uri, boxSize) {
                         detectDragGestures(
-                            onDragStart = { active = chooseHandle(it) },
+                            onDragStart = {
+                                dragStartRect = latestCrop
+                                dragStartPos = it
+                                active = chooseHandle(it, latestCrop)
+                            },
                             onDragEnd = { active = null },
                             onDragCancel = { active = null },
-                            onDrag = { change, dragAmount ->
+                            onDrag = { change, _ ->
                                 val h = active ?: return@detectDragGestures
                                 change.consume()
-                                onCropChange(updateFor(h, change.position, dragAmount))
+                                onCropChange(updateFor(h, change.position, dragStartRect, change.position - dragStartPos))
                             },
                         )
                     }

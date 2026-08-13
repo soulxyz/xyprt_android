@@ -44,6 +44,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -176,7 +179,7 @@ fun InfoDialog(onDismiss: () -> Unit) {
                     state = updateState,
                     onCheck = { container.updates.check(force = true) },
                     onDownload = { info -> openUrl(info.mirrorApkUrl ?: info.sourceApkUrl ?: info.releaseUrl) },
-                    onSource = { info -> openUrl(info.sourceApkUrl ?: info.releaseUrl) },
+                    onSource = { info -> openUrl(info.releaseUrl) },
                 )
 
                 Row(
@@ -246,6 +249,11 @@ private fun UpdateCard(
             }
             is UpdateState.Current -> {
                 Text("已是最新版本", fontWeight = FontWeight.SemiBold)
+                state.latest?.let { info ->
+                    Text("最新版本 ${info.versionName}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    if (info.notes.isNotBlank()) ReleaseNotes(info.notes)
+                    Text("更新信息来自${info.checkedVia}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 TextButton(onClick = onCheck) { Text("重新检查") }
             }
             is UpdateState.Error -> {
@@ -256,7 +264,7 @@ private fun UpdateCard(
             is UpdateState.Available -> {
                 val info = state.info
                 Text("发现 ${info.versionName}", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
-                if (info.notes.isNotBlank()) Text(info.notes, style = MaterialTheme.typography.bodySmall, maxLines = 5)
+                if (info.notes.isNotBlank()) ReleaseNotes(info.notes)
                 Text("更新信息来自${info.checkedVia}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { onDownload(info) }) { Text("下载更新") }
@@ -265,4 +273,28 @@ private fun UpdateCard(
             }
         }
     }
+}
+
+
+@Composable
+private fun ReleaseNotes(markdown: String) {
+    Text(
+        text = simpleMarkdown(markdown),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface,
+    )
+}
+
+/** Minimal release-note Markdown: keep line breaks/bullets and support **bold** without a WebView. */
+private fun simpleMarkdown(markdown: String): AnnotatedString = buildAnnotatedString {
+    var cursor = 0
+    val bold = Regex("\\*\\*(.+?)\\*\\*")
+    bold.findAll(markdown).forEach { match ->
+        append(markdown.substring(cursor, match.range.first))
+        pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+        append(match.groupValues[1])
+        pop()
+        cursor = match.range.last + 1
+    }
+    if (cursor < markdown.length) append(markdown.substring(cursor))
 }
