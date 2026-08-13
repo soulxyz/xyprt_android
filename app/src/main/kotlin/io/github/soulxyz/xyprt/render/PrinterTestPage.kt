@@ -13,7 +13,7 @@ object PrinterTestPage {
         val spec = LabelSpec(lengthMm = 58, autoLength = false)
         val elements = listOf(
             TextElement(
-                id = "title", x = 12f, y = 14f, text = "错题小印", fontSizePx = 38f,
+                id = "title", x = 12f, y = 14f, text = "口袋小印", fontSizePx = 38f,
                 bold = true, align = LabelTextAlign.CENTER, boxWidthPx = 360f,
             ),
             TextElement(

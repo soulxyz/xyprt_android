@@ -1,7 +1,7 @@
 {
   "version": "1.2.0",
   "versionCode": "1020000",
-  "title": "错题小印 1.2.0",
+  "title": "口袋小印 1.2.0",
   "notes": "兼容 BLE 打印机，并完善文档保存、便携备份、自由涂画与打印留白。",
   "release": "https://github.com/soulxyz/xyprt_android/releases/tag/v1.2.0",
   "apk": "https://github.com/soulxyz/xyprt_android/releases/latest/download/xyprt.apk",

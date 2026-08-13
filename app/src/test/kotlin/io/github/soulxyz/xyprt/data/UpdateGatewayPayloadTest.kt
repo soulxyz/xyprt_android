@@ -16,12 +16,12 @@ class UpdateGatewayPayloadTest {
               "latest": {
                 "version": "1.2.3",
                 "versionCode": 1020300,
-                "title": "错题小印 1.2.3",
+                "title": "口袋小印 1.2.3",
                 "notes": "**更新**",
                 "releaseUrl": "https://github.com/soulxyz/xyprt_android/releases/tag/v1.2.3",
                 "downloadUrl": "https://api.xyprt.5am.top/v1/update/download.php?tag=v1.2.3",
                 "sha256": "abc",
-                "checkedVia": "错题小印更新服务"
+                "checkedVia": "口袋小印更新服务"
               }
             }""".trimIndent(),
             json,

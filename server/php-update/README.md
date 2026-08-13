@@ -1,4 +1,4 @@
-# 错题小印更新网关（PHP 8.0+）
+# 口袋小印更新网关（PHP 8.0+）
 
 目标：App 只访问 `https://api.xyprt.5am.top`；PHP 服务器只处理少量 JSON、健康探测和 302，不转发 APK 大文件。
 

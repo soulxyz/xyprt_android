@@ -207,7 +207,7 @@ fun TemplatePrintSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedButton(
-                    onClick = { saveImageLauncher.launch("${template.name.ifBlank { "错题小印" }}.png") },
+                    onClick = { saveImageLauncher.launch("${template.name.ifBlank { "口袋小印" }}.png") },
                     enabled = !working,
                     modifier = Modifier.weight(1f),
                 ) { Text("保存图片") }

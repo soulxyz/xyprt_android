@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">错题小印</string>
+    <string name="app_name">口袋小印</string>
 
     <!-- Actions -->
     <string name="action_cancel">取消</string>

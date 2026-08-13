@@ -36,7 +36,7 @@ data class UpdateInfo(
 )
 
 /**
- * App 只向错题小印自己的更新网关获取少量 JSON。
+ * App 只向口袋小印自己的更新网关获取少量 JSON。
  * GitHub / 镜像的并发探测、缓存与下载源选择全部由 PHP 网关完成，
  * APK 下载仍交给系统浏览器，因此 App 不需要存储/安装权限。
  */
@@ -108,13 +108,13 @@ internal fun parseGatewayUpdate(raw: String, json: Json): UpdateInfo? {
     return UpdateInfo(
         versionName = version,
         versionCode = latest.string("versionCode")?.toIntOrNull() ?: semanticVersionCode(version),
-        title = latest.string("title") ?: "错题小印 $version",
+        title = latest.string("title") ?: "口袋小印 $version",
         notes = latest.string("notes").orEmpty().trim().take(6_000),
         releaseUrl = releaseUrl,
         sourceApkUrl = latest.string("downloadUrl"),
         mirrorApkUrl = null,
         digestSha256 = latest.string("sha256"),
-        checkedVia = latest.string("checkedVia") ?: "错题小印更新服务",
+        checkedVia = latest.string("checkedVia") ?: "口袋小印更新服务",
     )
 }
 
