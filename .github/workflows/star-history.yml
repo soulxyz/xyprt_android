@@ -1,0 +1,115 @@
+name: Update Star History
+
+on:
+  # 有人新 Star 后立即刷新
+  watch:
+    types: [started]
+
+  # 每 6 小时兜底一次
+  # 主要负责：
+  # 1. unstar
+  # 2. watch 事件遗漏
+  # 3. 时间轴刷新
+  schedule:
+    - cron: '17 */6 * * *'
+
+  # 可以在 Actions 页面手动点 Run workflow
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: star-history
+  cancel-in-progress: true
+
+jobs:
+  update-star-history:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate Star History
+        uses: narayann7/star-history-action@v1.0.5
+        with:
+          repos: soulxyz/xyprt_android
+
+          # 专门用于读取 stargazer 历史
+          token: ${{ secrets.STAR_HISTORY_TOKEN }}
+
+          # 临时生成目录
+          output-dir: .star-history-build
+
+          # 我们自己管理 README
+          update-readme: false
+
+          # 不允许 Action 自动 commit 到 main
+          commit: false
+
+          # 同时生成浅色 / 深色
+          themes: light,dark
+
+          # 按日期显示
+          type: Date
+
+      - name: Prepare Star History artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$RUNNER_TEMP/star-history"
+
+          cp \
+            .star-history-build/star-history-light.svg \
+            "$RUNNER_TEMP/star-history/star-history-light.svg"
+
+          cp \
+            .star-history-build/star-history-dark.svg \
+            "$RUNNER_TEMP/star-history/star-history-dark.svg"
+
+          cp \
+            .star-history-build/star-history.png \
+            "$RUNNER_TEMP/star-history/star-history.png"
+
+          cat > "$RUNNER_TEMP/star-history/README.md" <<'EOF'
+          # Star History
+
+          This branch is generated automatically by GitHub Actions.
+
+          Do not edit files in this branch manually.
+
+          Source repository:
+          `soulxyz/xyprt_android`
+          EOF
+
+      - name: Publish to orphan star-history branch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # 每次都创建全新的 orphan commit
+          # 因此 star-history 分支永远只有一个 commit
+          git checkout --orphan __star_history_publish
+
+          # 删除 main 分支带过来的所有文件
+          git rm -rf . >/dev/null 2>&1 || true
+          git clean -fdx
+
+          # 只把生成的 Star History 文件放进新分支
+          cp "$RUNNER_TEMP/star-history/"* .
+
+          git add .
+
+          git commit \
+            -m "chore: refresh star history"
+
+          # 用新 orphan commit 覆盖 star-history 分支
+          git push \
+            --force \
+            origin HEAD:star-history
