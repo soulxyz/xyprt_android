@@ -42,7 +42,7 @@ object DocumentImageExporter {
 
     fun share(context: Context, bitmap: Bitmap, fileName: String) {
         val dir = File(context.cacheDir, "shared_exports").apply { mkdirs() }
-        val safe = fileName.replace(Regex("[\\/:*?\"<>|]+"), "_").ifBlank { "错题小印" }
+        val safe = fileName.replace(Regex("[\\/:*?\"<>|]+"), "_").ifBlank { "口袋小印" }
         val file = File(dir, "${safe}_${System.currentTimeMillis()}.png")
         file.outputStream().use { out ->
             check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) { "生成分享图片失败" }

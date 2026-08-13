@@ -26,7 +26,7 @@ android {
         targetSdk = 36
         versionCode = 1020300
         versionName = "1.2.3"
-        manifestPlaceholders["appName"] = "错题小印"
+        manifestPlaceholders["appName"] = "口袋小印"
         val updateApiBase = providers.gradleProperty("XYPRT_UPDATE_API_BASE_URL")
             .orElse("https://api.xyprt.5am.top")
             .get()
@@ -37,7 +37,7 @@ android {
     }
 
     buildTypes {
-        debug { manifestPlaceholders["appName"] = "错题小印" }
+        debug { manifestPlaceholders["appName"] = "口袋小印" }
         release {
             isMinifyEnabled = false
             isShrinkResources = false

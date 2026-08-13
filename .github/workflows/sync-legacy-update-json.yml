@@ -1,0 +1,70 @@
+name: Sync Legacy Update JSON
+
+on:
+  release:
+    types: [published, edited]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: legacy-update-json
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Build update.json from latest GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_json="$(gh api "repos/$REPO/releases/latest")"
+          tag="$(jq -r '.tag_name' <<<"$release_json")"
+          version="${tag#v}"
+          version="${version#V}"
+          core="${version%%-*}"
+          IFS='.' read -r major minor patch <<<"$core"
+          major="${major:-0}"; minor="${minor:-0}"; patch="${patch:-0}"
+          version_code=$((10#$major * 1000000 + 10#$minor * 10000 + 10#$patch * 100))
+
+          apk_json="$(jq -c '[.assets[]? | select(.name | ascii_downcase | endswith(".apk"))] | sort_by(.size) | reverse | .[0] // {}' <<<"$release_json")"
+          apk_url="$(jq -r '.browser_download_url // empty' <<<"$apk_json")"
+          digest="$(jq -r '.digest // empty' <<<"$apk_json")"
+          sha256="${digest#sha256:}"
+
+          jq -n \
+            --arg version "$version" \
+            --argjson versionCode "$version_code" \
+            --arg title "$(jq -r '.name // empty' <<<"$release_json")" \
+            --arg notes "$(jq -r '.body // empty' <<<"$release_json")" \
+            --arg release "$(jq -r '.html_url' <<<"$release_json")" \
+            --arg apk "$apk_url" \
+            --arg sha256 "$sha256" \
+            '{version:$version, versionCode:$versionCode, title:$title, notes:$notes, release:$release, apk:$apk, sha256:$sha256}' \
+            > update.json
+
+      - name: Commit only when changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- update.json; then
+            echo "update.json already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add update.json
+          git commit -m "chore: sync legacy update metadata"
+          git push origin main

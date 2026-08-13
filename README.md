@@ -1,4 +1,4 @@
-<h1 align="center">错题小印 安卓端</h1>
+<h1 align="center">口袋小印 安卓端</h1>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg" alt="License: GPL v3"/></a>
@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  另外WEB版已上线！支持Windows、安卓端. 在线测试：<a href="https://xyprt.5am.top">[错题小印WEB版]</a>  
+  另外WEB版已上线！支持Windows、安卓端. 在线测试：<a href="https://xyprt.5am.top">[口袋小印WEB版]</a>
 </p>
 
 ## 功能特性
@@ -100,7 +100,7 @@ Gradle 版本由 Wrapper 自动管理，无需手动安装。
 
 ## 上游与致谢
 
-本项目基于开源项目 [LaBLEr](https://github.com/toolicious/labler) 继续开发，深度适配错题小印x1，并添加完善了大量其他功能，优化和修改了UI界面。 
+本项目基于开源项目 [LaBLEr](https://github.com/toolicious/labler) 继续开发，深度适配错题小印x1，并添加完善了大量其他功能，优化和修改了UI界面。
 感谢上游作者 [toolicious](https://github.com/toolicious) 及所有贡献者。
 
 
