@@ -1,8 +1,12 @@
 package io.github.soulxyz.xyprt.ui.editor
 
+import android.graphics.Paint
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,7 +25,11 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +41,8 @@ import io.github.soulxyz.xyprt.model.LabelTextAlign
 import io.github.soulxyz.xyprt.model.TextElement
 import io.github.soulxyz.xyprt.printer.MediaType
 import io.github.soulxyz.xyprt.render.LabelRenderer
+import io.github.soulxyz.xyprt.render.MonoConverter
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -67,7 +77,7 @@ fun EditorCanvas(
     onSelect: (String?) -> Unit,
     onDoubleTap: (String) -> Unit,
     onDeleteSelected: () -> Unit,
-    onDragStart: (String) -> Unit,
+    onDragStart: (String, Boolean) -> Unit,
     onDragBy: (Offset) -> Unit,
     onDragEnd: () -> Unit,
     onResizeStart: (String) -> Unit,
@@ -79,6 +89,7 @@ fun EditorCanvas(
     modifier: Modifier = Modifier,
 ) {
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
+    var snapFreeDrag by remember { mutableStateOf(false) }
 
     val labelW = LabelSpec.PRINT_WIDTH_PX.toFloat()
     val labelH = spec.lengthPx.toFloat()
@@ -91,6 +102,14 @@ fun EditorCanvas(
         (boxSize.width - labelW * total) / 2f,
         (boxSize.height - labelH * total) / 2f,
     )
+
+    // Show the unselected content through the exact 384-dot / 1-bit print pipeline.
+    // The selected element stays vector while editing, so it remains clear when moving or resizing.
+    val others = elements.filter { it.id != selectedId }
+    val base = remember(spec, others) { MonoConverter.toBitmap(LabelRenderer.renderMono(spec, others)) }
+    val basePaint = remember(total < 1f) {
+        Paint().apply { isAntiAlias = false; isFilterBitmap = total < 1f }
+    }
 
     val elementsState = rememberUpdatedState(elements)
     val selectedIdState = rememberUpdatedState(selectedId)
@@ -115,8 +134,8 @@ fun EditorCanvas(
                 var rotateStartTouch = 0f
                 var rotateStartDegrees = 0
 
-                detectDragGestures(
-                    onDragStart = { pos ->
+                detectDragGesturesWithDoubleTap(
+                    onStart = { pos, snapFree ->
                         val sc = totalState.value.coerceAtLeast(0.001f)
                         val lp = (pos - tlState.value) / sc
                         val sel = elementsState.value.find { it.id == selectedIdState.value }
@@ -138,13 +157,15 @@ fun EditorCanvas(
                             }
                             sel != null && hitTest(lp, sel) -> {
                                 mode = 1
-                                onDragStart(sel.id)
+                                snapFreeDrag = snapFree
+                                onDragStart(sel.id, snapFree)
                             }
                             else -> {
                                 val hit = elementsState.value.lastOrNull { hitTest(lp, it) }
                                 if (hit != null) {
                                     mode = 1
-                                    onDragStart(hit.id)
+                                    snapFreeDrag = snapFree
+                                    onDragStart(hit.id, snapFree)
                                 } else {
                                     mode = 0
                                     onSelect(null)
@@ -153,7 +174,6 @@ fun EditorCanvas(
                         }
                     },
                     onDrag = { change, amount ->
-                        change.consume()
                         val sc = totalState.value.coerceAtLeast(0.001f)
                         when (mode) {
                             1 -> onDragBy(amount / sc)
@@ -162,28 +182,20 @@ fun EditorCanvas(
                                 val lp = (change.position - tlState.value) / sc
                                 val delta = normalizeDelta(angleDegrees(lp, rotateCenter) - rotateStartTouch)
                                 val raw = normalizeDegrees(rotateStartDegrees + delta.roundToInt())
-                                // Gentle 15° magnetic snapping without making free rotation impossible.
                                 val nearest = ((raw + 7) / 15) * 15 % 360
                                 val snapped = if (angularDistance(raw, nearest) <= 3) nearest else raw
                                 onRotateTo(snapped)
                             }
                         }
                     },
-                    onDragEnd = {
+                    onEnd = {
                         when (mode) {
                             1 -> onDragEnd()
                             2 -> onResizeEnd()
                             3 -> onRotateEnd()
                         }
                         mode = 0
-                    },
-                    onDragCancel = {
-                        when (mode) {
-                            1 -> onDragEnd()
-                            2 -> onResizeEnd()
-                            3 -> onRotateEnd()
-                        }
-                        mode = 0
+                        snapFreeDrag = false
                     },
                 )
             }
@@ -250,7 +262,8 @@ fun EditorCanvas(
                 } else {
                     nc.clipRect(0f, 0f, labelW, labelH)
                 }
-                LabelRenderer.drawInto(nc, spec, elements)
+                nc.drawBitmap(base, 0f, 0f, basePaint)
+                elements.find { it.id == selectedId }?.let { LabelRenderer.drawElementInto(nc, it) }
                 nc.restoreToCount(save)
             }
 
@@ -283,12 +296,13 @@ fun EditorCanvas(
 
             val sel = elements.find { it.id == selectedId }
             if (sel != null) {
+                val frameColor = if (snapFreeDrag) guideColor else selectionColor
                 val b = elementBounds(sel)
                 val topLeft = toScreen(b.left, b.top)
                 val topRight = toScreen(b.right, b.top)
                 val bottomRight = toScreen(b.right, b.bottom)
                 drawRect(
-                    color = selectionColor,
+                    color = frameColor,
                     topLeft = topLeft,
                     size = Size(b.width * total, b.height * total),
                     style = Stroke(width = 2.5f),
@@ -316,18 +330,69 @@ fun EditorCanvas(
 
                 // Rotate handle.
                 drawCircle(surfaceColor, radius = 13f, center = topRight)
-                drawCircle(selectionColor, radius = 13f, center = topRight, style = Stroke(width = 2.5f))
-                drawCircle(selectionColor, radius = 5f, center = topRight, style = Stroke(width = 2f))
-                drawLine(selectionColor, topRight + Offset(3f, -5f), topRight + Offset(7f, -3f), 2f)
+                drawCircle(frameColor, radius = 13f, center = topRight, style = Stroke(width = 2.5f))
+                drawCircle(frameColor, radius = 5f, center = topRight, style = Stroke(width = 2f))
+                drawLine(frameColor, topRight + Offset(3f, -5f), topRight + Offset(7f, -3f), 2f)
 
                 // Resize handle.
                 drawCircle(surfaceColor, radius = 13f, center = bottomRight)
-                drawCircle(selectionColor, radius = 13f, center = bottomRight, style = Stroke(width = 2.5f))
-                drawLine(selectionColor, bottomRight + Offset(-5f, 5f), bottomRight + Offset(5f, -5f), 2f)
-                drawLine(selectionColor, bottomRight + Offset(0f, 5f), bottomRight + Offset(5f, 0f), 2f)
+                drawCircle(frameColor, radius = 13f, center = bottomRight, style = Stroke(width = 2.5f))
+                drawLine(frameColor, bottomRight + Offset(-5f, 5f), bottomRight + Offset(5f, -5f), 2f)
+                drawLine(frameColor, bottomRight + Offset(0f, 5f), bottomRight + Offset(5f, 0f), 2f)
             }
         }
     }
+}
+
+
+/**
+ * Recognises both a normal drag and "double tap, keep holding, then drag". The latter is used
+ * for pixel-level placement and reports snapFree=true. Plain double taps are still handled by
+ * the separate tap detector, so text/property editing keeps working.
+ */
+private suspend fun PointerInputScope.detectDragGesturesWithDoubleTap(
+    onStart: (Offset, Boolean) -> Unit,
+    onDrag: (PointerInputChange, Offset) -> Unit,
+    onEnd: () -> Unit,
+) = awaitEachGesture {
+    val first = awaitFirstDown(requireUnconsumed = false)
+    var start = first
+    var snapFree = false
+    var overSlop = Offset.Zero
+    var slop = awaitTouchSlopOrCancellation(first.id) { change, over ->
+        change.consume()
+        overSlop = over
+    }
+    if (slop == null) {
+        val second = awaitSecondDown(first) ?: return@awaitEachGesture
+        snapFree = true
+        start = second
+        slop = awaitTouchSlopOrCancellation(second.id) { change, over ->
+            change.consume()
+            overSlop = over
+        }
+    }
+    val dragStart = slop ?: return@awaitEachGesture
+
+    onStart(start.position, snapFree)
+    if (overSlop != Offset.Zero) onDrag(dragStart, overSlop)
+    drag(dragStart.id) { change ->
+        val delta = change.positionChange()
+        if (delta != Offset.Zero) onDrag(change, delta)
+        change.consume()
+    }
+    onEnd()
+}
+
+private suspend fun AwaitPointerEventScope.awaitSecondDown(
+    first: PointerInputChange,
+): PointerInputChange? = withTimeoutOrNull(viewConfiguration.doubleTapTimeoutMillis) {
+    val minUptime = first.uptimeMillis + viewConfiguration.doubleTapMinTimeMillis
+    var change: PointerInputChange
+    do {
+        change = awaitFirstDown(requireUnconsumed = false)
+    } while (change.uptimeMillis < minUptime)
+    change
 }
 
 private fun angleDegrees(point: Offset, center: Offset): Float =
