@@ -1,9 +1,9 @@
 {
   "version": "1.2.3",
   "versionCode": 1020300,
-  "title": "口袋小印 1.2.3",
-  "notes": "更新检查切换到自有更新网关，并完成品牌名称与正式签名轮换。",
-  "release": "https://github.com/soulxyz/xyprt_android/releases/tag/v1.2.3",
-  "apk": "https://github.com/soulxyz/xyprt_android/releases/latest/download/xyprt.apk",
+  "title": "1.2.3",
+  "notes": "* 更名为口袋小印，并启用新签名，兼容旧签名\r\n* App 更新优先访问口袋小印自有更新网关，加速更新信息获取\r\n* 优化一些小细节 呐呐！\r\n* 若你觉得好用，欢迎进入项目主页，为我点个STAR⭐(≧∇≦)ﾉ\r",
+  "release": "https://github.com/soulxyz/xyprt_android/releases/tag/1.2.3",
+  "apk": "https://github.com/soulxyz/xyprt_android/releases/download/1.2.3/xyprt.apk",
   "sha256": "30adcfc5811381d9012817649c08e5434a5973034cb3941c122db8c0a2b2a49a"
 }
