@@ -173,6 +173,8 @@ data class ImageElement(
     val outlineThickness: Int = 1,
     val outlineMethod: OutlineMethod = OutlineMethod.CANNY, // photos default to gradient edge detection
     val outlineSmooth: Boolean = false,
+    val removeRedInk: Boolean = false,
+    val removeBlueInk: Boolean = false,
 ) : LabelElement {
     /** Display height derived from the width while preserving the aspect ratio. */
     val heightPx: Float get() = if (srcWidth > 0) widthPx * srcHeight / srcWidth else widthPx

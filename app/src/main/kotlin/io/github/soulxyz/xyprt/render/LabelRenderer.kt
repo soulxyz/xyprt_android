@@ -31,6 +31,7 @@ import io.github.soulxyz.xyprt.printer.dither.DitherMode
 import io.github.soulxyz.xyprt.printer.dither.OutlineMethod
 import io.github.soulxyz.xyprt.printer.dither.Ditherer
 import io.github.soulxyz.xyprt.printer.dither.Outline
+import io.github.soulxyz.xyprt.printer.dither.InkRemoval
 import kotlin.math.ceil
 import kotlin.math.round
 
@@ -455,7 +456,8 @@ object LabelRenderer {
      */
     private fun imagePixels(e: ImageElement, w: Int, h: Int): IntArray? {
         val key = "${e.pngBase64.hashCode()}:${e.pngBase64.length}:$w:$h:${e.dither}:${e.invert}:" +
-            "${e.threshold}:${e.contrast}:${e.outlineMethod}:${e.outlineSensitivity}:${e.outlineThickness}:${e.outlineSmooth}"
+            "${e.threshold}:${e.contrast}:${e.outlineMethod}:${e.outlineSensitivity}:${e.outlineThickness}:${e.outlineSmooth}:" +
+            "${e.removeRedInk}:${e.removeBlueInk}"
         imageCache.get(key)?.let { return it }
         val src = try {
             val bytes = Base64.decode(e.pngBase64, Base64.NO_WRAP)
@@ -465,9 +467,10 @@ object LabelRenderer {
         } ?: return null
         val scaled = Bitmap.createScaledBitmap(src, w, h, true)
         src.recycle()
-        val px = IntArray(w * h)
-        scaled.getPixels(px, 0, w, 0, 0, w, h)
+        val rawPx = IntArray(w * h)
+        scaled.getPixels(rawPx, 0, w, 0, 0, w, h)
         scaled.recycle()
+        val px = InkRemoval.apply(rawPx, e.removeRedInk, e.removeBlueInk)
         val isGlyph = BooleanArray(px.size) { (px[it] ushr 24) >= 128 }
         val black = if (e.dither == DitherMode.OUTLINE) {
             val edge = when (e.outlineMethod) {

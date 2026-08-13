@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -87,12 +88,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
-private enum class SourceMode { TEXT, IMAGE, PDF, CAMERA }
+private enum class SourceMode { TEXT, IMAGE, PDF, CAMERA, TODO }
 
 private fun defaultAdjustments(mode: SourceMode) = when (mode) {
     SourceMode.IMAGE, SourceMode.CAMERA -> QuickImageAdjustments(mode = DitherMode.FLOYD_STEINBERG, threshold = 155)
     SourceMode.PDF -> QuickImageAdjustments(mode = DitherMode.THRESHOLD, threshold = 190, contrast = 10)
-    SourceMode.TEXT -> QuickImageAdjustments(mode = DitherMode.THRESHOLD, threshold = 170)
+    SourceMode.TEXT, SourceMode.TODO -> QuickImageAdjustments(mode = DitherMode.THRESHOLD, threshold = 170)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -108,6 +109,8 @@ fun QuickPrintScreen(
     val inferred = remember(mode, externalIntent) { inferMode(mode, externalIntent) }
     var sourceMode by remember { mutableStateOf(inferred) }
     var text by remember { mutableStateOf(externalText(context, externalIntent).orEmpty()) }
+    var todoTitle by remember { mutableStateOf("今日待办") }
+    var todoItems by remember { mutableStateOf("") }
     var textStyle by remember { mutableStateOf(QuickTextStyle()) }
     var uris by remember { mutableStateOf(externalUris(externalIntent)) }
     var adjustments by remember { mutableStateOf(defaultAdjustments(inferred)) }
@@ -125,12 +128,13 @@ fun QuickPrintScreen(
     var cameraCropDraft by remember { mutableStateOf(CropRect()) }
     var cameraCropApplied by remember { mutableStateOf(CropRect()) }
     var showCropEditor by remember { mutableStateOf(false) }
+    var savingCameraDraft by remember { mutableStateOf(false) }
     val withBt = rememberBlePermissionRunner()
 
     fun switchMode(next: SourceMode) {
         sourceMode = next
         adjustments = defaultAdjustments(next)
-        if (next == SourceMode.TEXT) uris = emptyList()
+        if (next == SourceMode.TEXT || next == SourceMode.TODO) uris = emptyList()
     }
 
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { picked ->
@@ -184,17 +188,21 @@ fun QuickPrintScreen(
                 SourceMode.IMAGE -> imagePicker.launch(arrayOf("image/*"))
                 SourceMode.PDF -> pdfPicker.launch(arrayOf("application/pdf"))
                 SourceMode.CAMERA -> launchCamera()
-                SourceMode.TEXT -> Unit
+                SourceMode.TEXT, SourceMode.TODO -> Unit
             }
         }
     }
 
-    LaunchedEffect(sourceMode, text, textStyle, uris, adjustments, pdfAutoCrop, cameraCropApplied, showCropEditor) {
-        if (sourceMode != SourceMode.TEXT && uris.isEmpty()) {
+    LaunchedEffect(sourceMode, text, todoTitle, todoItems, textStyle, uris, adjustments, pdfAutoCrop, cameraCropApplied, showCropEditor) {
+        if ((sourceMode == SourceMode.IMAGE || sourceMode == SourceMode.PDF || sourceMode == SourceMode.CAMERA) && uris.isEmpty()) {
             mono = null
             return@LaunchedEffect
         }
         if (sourceMode == SourceMode.TEXT && text.isBlank()) {
+            mono = null
+            return@LaunchedEffect
+        }
+        if (sourceMode == SourceMode.TODO && todoItems.isBlank()) {
             mono = null
             return@LaunchedEffect
         }
@@ -211,6 +219,7 @@ fun QuickPrintScreen(
             withContext(Dispatchers.IO) {
                 val bitmap = when (sourceMode) {
                     SourceMode.TEXT -> QuickPrintRenderer.text(text, textStyle)
+                    SourceMode.TODO -> QuickPrintRenderer.todo(todoTitle, todoItems)
                     SourceMode.IMAGE -> if (uris.size == 1) {
                         QuickPrintRenderer.image(context, uris.first(), adjustments.rotationDegrees, adjustments.scalePercent)
                     } else {
@@ -240,6 +249,27 @@ fun QuickPrintScreen(
         rendering = false
     }
 
+    fun leaveScreen() {
+        val cameraUri = uris.firstOrNull()
+        if (sourceMode == SourceMode.CAMERA && cameraUri != null && !savingCameraDraft) {
+            savingCameraDraft = true
+            val crop = if (showCropEditor) cameraCropDraft else cameraCropApplied
+            vm.saveCameraDraft(cameraUri, crop.normalized(), adjustments) { result ->
+                savingCameraDraft = false
+                android.widget.Toast.makeText(
+                    context,
+                    if (result.isSuccess) "拍照内容已保存到我的文档" else "拍照草稿保存失败",
+                    android.widget.Toast.LENGTH_SHORT,
+                ).show()
+                onBack()
+            }
+        } else if (!savingCameraDraft) {
+            onBack()
+        }
+    }
+
+    BackHandler { leaveScreen() }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -248,9 +278,13 @@ fun QuickPrintScreen(
                     containerColor = MaterialTheme.colorScheme.background,
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 ),
-                title = { Text(if (sourceMode == SourceMode.CAMERA) "拍照打印" else "快速打印", fontWeight = FontWeight.SemiBold) },
+                title = { Text(when (sourceMode) {
+                    SourceMode.CAMERA -> "拍照打印"
+                    SourceMode.TODO -> "待办打印"
+                    else -> "快速打印"
+                }, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { leaveScreen() }, enabled = !savingCameraDraft) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
@@ -307,6 +341,7 @@ fun QuickPrintScreen(
                     else pdfPicker.launch(arrayOf("application/pdf"))
                 },
                 onCamera = { launchCamera() },
+                onTodo = { switchMode(SourceMode.TODO) },
             )
             Spacer(Modifier.height(10.dp))
 
@@ -329,6 +364,30 @@ fun QuickPrintScreen(
                             )
                             Spacer(Modifier.height(8.dp))
                             TextStyleSummary(textStyle, onClick = { showTextSettings = true })
+                        }
+                        SourceMode.TODO -> {
+                            OutlinedTextField(
+                                value = todoTitle,
+                                onValueChange = { todoTitle = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                label = { Text("清单标题") },
+                                placeholder = { Text("今日待办") },
+                                shape = MaterialTheme.shapes.large,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = todoItems,
+                                onValueChange = { todoItems = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                minLines = 6,
+                                maxLines = 14,
+                                label = { Text("待办事项") },
+                                placeholder = { Text("每行一项，例如：\n整理错题\n背 30 个单词\n晚上跑步") },
+                                shape = MaterialTheme.shapes.large,
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text("打印后可直接在纸上勾选完成项。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         SourceMode.IMAGE -> SelectedSourceCard(
                             title = if (uris.size > 1) "已选择 ${uris.size} 张图片" else displayName(context, uris.firstOrNull()) ?: "选择图片",
@@ -456,7 +515,7 @@ fun QuickPrintScreen(
         }
     }
 
-    if (showAdjustments && sourceMode != SourceMode.TEXT) {
+    if (showAdjustments && sourceMode != SourceMode.TEXT && sourceMode != SourceMode.TODO) {
         ModalBottomSheet(onDismissRequest = { showAdjustments = false }) {
             Column(
                 Modifier.padding(horizontal = 20.dp).navigationBarsPadding().verticalScroll(rememberScrollState()),
@@ -489,6 +548,10 @@ fun QuickPrintScreen(
                     onRotationDegrees = { adjustments = adjustments.copy(rotationDegrees = it) },
                     scalePercent = adjustments.scalePercent,
                     onScalePercent = { adjustments = adjustments.copy(scalePercent = it) },
+                    removeRedInk = if (sourceMode == SourceMode.IMAGE || sourceMode == SourceMode.CAMERA) adjustments.removeRedInk else null,
+                    removeBlueInk = if (sourceMode == SourceMode.IMAGE || sourceMode == SourceMode.CAMERA) adjustments.removeBlueInk else null,
+                    onRemoveRedInk = if (sourceMode == SourceMode.IMAGE || sourceMode == SourceMode.CAMERA) ({ v -> adjustments = adjustments.copy(removeRedInk = v) }) else null,
+                    onRemoveBlueInk = if (sourceMode == SourceMode.IMAGE || sourceMode == SourceMode.CAMERA) ({ v -> adjustments = adjustments.copy(removeBlueInk = v) }) else null,
                 )
                 Button(onClick = { showAdjustments = false }, modifier = Modifier.fillMaxWidth()) { Text("完成") }
                 Spacer(Modifier.height(12.dp))
@@ -570,12 +633,14 @@ private fun SourceSelector(
     onImage: () -> Unit,
     onPdf: () -> Unit,
     onCamera: () -> Unit,
+    onTodo: () -> Unit,
 ) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         FilterChip(selected = sourceMode == SourceMode.IMAGE, onClick = onImage, label = { Text("图片") }, modifier = Modifier.weight(1f))
         FilterChip(selected = sourceMode == SourceMode.PDF, onClick = onPdf, label = { Text("PDF") }, modifier = Modifier.weight(1f))
         FilterChip(selected = sourceMode == SourceMode.TEXT, onClick = onText, label = { Text("文字") }, modifier = Modifier.weight(1f))
         FilterChip(selected = sourceMode == SourceMode.CAMERA, onClick = onCamera, label = { Text("拍照") }, modifier = Modifier.weight(1f))
+        FilterChip(selected = sourceMode == SourceMode.TODO, onClick = onTodo, label = { Text("待办") }, modifier = Modifier.weight(1f))
     }
 }
 
@@ -686,6 +751,7 @@ private fun EmptyPreviewCard(sourceMode: SourceMode) {
                     SourceMode.IMAGE -> "选择图片后，这里会显示实际打印效果"
                     SourceMode.PDF -> "选择 PDF 后，这里会显示实际打印效果"
                     SourceMode.CAMERA -> "拍照后预览打印效果"
+                    SourceMode.TODO -> "输入待办事项后，这里会生成勾选清单"
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -716,12 +782,17 @@ private fun QuickPrintBottomBar(
                     if (sourceMode == SourceMode.TEXT) {
                         Text("${fontLabel(textStyle.font)} · 字号 ${textStyle.fontSizePx} · ${alignLabel(textStyle.align)}", style = MaterialTheme.typography.labelLarge, maxLines = 1)
                         Text("行距 ${textStyle.lineSpacingPercent}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    } else if (sourceMode == SourceMode.TODO) {
+                        Text("待办清单", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                        Text("打印后直接勾选", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                     } else {
                         Text("${modeLabel(adjustments.mode)} · ${adjustmentSummary(adjustments)}", style = MaterialTheme.typography.labelLarge, maxLines = 1)
                     }
                 }
-                OutlinedButton(onClick = if (sourceMode == SourceMode.TEXT) onTextAdjust else onAdjust, enabled = enabled) {
-                    Text(if (sourceMode == SourceMode.TEXT) "排版" else "调整")
+                if (sourceMode != SourceMode.TODO) {
+                    OutlinedButton(onClick = if (sourceMode == SourceMode.TEXT) onTextAdjust else onAdjust, enabled = enabled) {
+                        Text(if (sourceMode == SourceMode.TEXT) "排版" else "调整")
+                    }
                 }
                 Button(onClick = onPrint, enabled = enabled) { Text("打印") }
             }
@@ -759,6 +830,7 @@ private fun quickHistoryTitle(context: Context, mode: SourceMode, text: String, 
     SourceMode.IMAGE -> if (uris.size > 1) "图片打印（${uris.size}张）" else displayName(context, uris.firstOrNull()) ?: "图片打印"
     SourceMode.PDF -> displayName(context, uris.firstOrNull()) ?: "PDF 打印"
     SourceMode.CAMERA -> "拍照打印"
+    SourceMode.TODO -> "待办清单"
 }
 
 private fun displayName(context: Context, uri: Uri?): String? {
@@ -774,6 +846,7 @@ private fun inferMode(mode: String, intent: Intent?): SourceMode {
     val mime = intent?.type.orEmpty()
     return when {
         mode.equals("camera", true) -> SourceMode.CAMERA
+        mode.equals("todo", true) -> SourceMode.TODO
         mode.equals("image", true) || mime.startsWith("image/") -> SourceMode.IMAGE
         mode.equals("pdf", true) || mime == "application/pdf" -> SourceMode.PDF
         else -> SourceMode.TEXT

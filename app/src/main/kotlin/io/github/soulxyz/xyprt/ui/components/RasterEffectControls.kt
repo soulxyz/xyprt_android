@@ -50,6 +50,10 @@ fun RasterEffectControls(
     onRotationDegrees: ((Int) -> Unit)? = null,
     scalePercent: Int? = null,
     onScalePercent: ((Int) -> Unit)? = null,
+    removeRedInk: Boolean? = null,
+    removeBlueInk: Boolean? = null,
+    onRemoveRedInk: ((Boolean) -> Unit)? = null,
+    onRemoveBlueInk: ((Boolean) -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         RasterModeSelector(mode = mode, onMode = onMode)
@@ -73,6 +77,10 @@ fun RasterEffectControls(
             onRotationDegrees = onRotationDegrees,
             scalePercent = scalePercent,
             onScalePercent = onScalePercent,
+            removeRedInk = removeRedInk,
+            removeBlueInk = removeBlueInk,
+            onRemoveRedInk = onRemoveRedInk,
+            onRemoveBlueInk = onRemoveBlueInk,
         )
     }
 }
@@ -133,6 +141,10 @@ fun RasterAdjustmentDetails(
     onRotationDegrees: ((Int) -> Unit)? = null,
     scalePercent: Int? = null,
     onScalePercent: ((Int) -> Unit)? = null,
+    removeRedInk: Boolean? = null,
+    removeBlueInk: Boolean? = null,
+    onRemoveRedInk: ((Boolean) -> Unit)? = null,
+    onRemoveBlueInk: ((Boolean) -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         when (mode) {
@@ -195,6 +207,27 @@ fun RasterAdjustmentDetails(
                     Switch(checked = invert, onCheckedChange = onInvert)
                 },
             )
+        }
+
+
+        if (removeRedInk != null && removeBlueInk != null && onRemoveRedInk != null && onRemoveBlueInk != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("彩色笔迹", style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(72.dp))
+                FilterChip(
+                    selected = removeRedInk,
+                    onClick = { onRemoveRedInk(!removeRedInk) },
+                    label = { Text("去红笔") },
+                )
+                FilterChip(
+                    selected = removeBlueInk,
+                    onClick = { onRemoveBlueInk(!removeBlueInk) },
+                    label = { Text("去蓝笔") },
+                )
+            }
         }
 
         if (rotationDegrees != null && onRotationDegrees != null) {

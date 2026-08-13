@@ -99,6 +99,7 @@ fun HomeScreen(
     onQuickImage: () -> Unit,
     onQuickDocument: () -> Unit,
     onQuickCamera: () -> Unit,
+    onQuickTodo: () -> Unit,
     vm: HomeViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -242,6 +243,14 @@ fun HomeScreen(
                     subtitle = "字号、字体、行距",
                     iconRes = R.drawable.ic_quick_text,
                     onClick = onQuickText,
+                )
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                QuickActionWideCard(
+                    title = "待办清单",
+                    subtitle = "今天要做什么，打印后直接勾选",
+                    iconRes = R.drawable.ic_quick_todo,
+                    onClick = onQuickTodo,
                 )
             }
             item(span = { GridItemSpan(maxLineSpan) }) {

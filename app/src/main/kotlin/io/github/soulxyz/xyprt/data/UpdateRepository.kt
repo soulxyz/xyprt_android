@@ -78,13 +78,19 @@ class UpdateRepository(
     fun currentVersionCode(): Int = semanticVersionCode(BuildConfig.VERSION_NAME)
 
     private suspend fun fetchBest(): UpdateInfo? = withContext(Dispatchers.IO) {
-        val candidates = listOf(
-            scope.async(Dispatchers.IO) { runCatching { fetchRelease("$MIRROR$API_LATEST", "镜像站") }.getOrNull() },
-            scope.async(Dispatchers.IO) { runCatching { fetchRelease(API_LATEST, "GitHub") }.getOrNull() },
-            scope.async(Dispatchers.IO) { runCatching { fetchStatus("$MIRROR$RAW_STATUS", "镜像站") }.getOrNull() },
-            scope.async(Dispatchers.IO) { runCatching { fetchStatus(RAW_STATUS, "GitHub") }.getOrNull() },
+        // GitHub Release is the source of truth: its title/body are exactly what users see on the
+        // release page. The lightweight update.json is only a fallback for API outages/rate limits.
+        val releases = listOf(
+            scope.async(Dispatchers.IO) { runCatching { fetchRelease(API_LATEST, "GitHub Release") }.getOrNull() },
+            scope.async(Dispatchers.IO) { runCatching { fetchRelease("$MIRROR$API_LATEST", "Release 镜像") }.getOrNull() },
         ).awaitAll().filterNotNull()
-        candidates.maxByOrNull { it.versionCode }
+        releases.maxByOrNull { it.versionCode }?.let { return@withContext it }
+
+        val fallbacks = listOf(
+            scope.async(Dispatchers.IO) { runCatching { fetchStatus(RAW_STATUS, "GitHub 备用源") }.getOrNull() },
+            scope.async(Dispatchers.IO) { runCatching { fetchStatus("$MIRROR$RAW_STATUS", "备用镜像") }.getOrNull() },
+        ).awaitAll().filterNotNull()
+        fallbacks.maxByOrNull { it.versionCode }
     }
 
     private fun fetchRelease(url: String, via: String): UpdateInfo? {
