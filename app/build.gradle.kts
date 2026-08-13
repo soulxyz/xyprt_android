@@ -24,9 +24,16 @@ android {
         applicationId = "io.github.soulxyz.xyprt"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1020200
-        versionName = "1.2.2"
+        versionCode = 1020300
+        versionName = "1.2.3"
         manifestPlaceholders["appName"] = "错题小印"
+        val updateApiBase = providers.gradleProperty("XYPRT_UPDATE_API_BASE_URL")
+            .orElse("https://api.xyprt.5am.top")
+            .get()
+            .trimEnd('/')
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+        buildConfigField("String", "UPDATE_API_BASE_URL", "\"$updateApiBase\"")
     }
 
     buildTypes {
