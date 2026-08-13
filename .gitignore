@@ -32,3 +32,6 @@ Thumbs.db
 .env
 .env.*
 signing/
+
+# Private release signing material (NEVER commit)
+private-signing/

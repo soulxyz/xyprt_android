@@ -1,0 +1,4 @@
+config/config.local.php
+var/cache/*
+!var/cache/.gitkeep
+*.log
