@@ -50,6 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.soulxyz.xyprt.App
 import io.github.soulxyz.xyprt.R
 import io.github.soulxyz.xyprt.ble.BlePermissions
 import io.github.soulxyz.xyprt.ble.PrinterState
@@ -58,9 +59,14 @@ import io.github.soulxyz.xyprt.ble.PrinterState
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onOpenCoCreator: () -> Unit = {},
+    onOpenEnhanced: () -> Unit = {},
     vm: SettingsViewModel = viewModel(),
 ) {
     val context = LocalContext.current
+    val appContainer = remember { (context.applicationContext as App).container }
+    val coCreator by appContainer.coCreator.state.collectAsState()
+    val modelCatalog by appContainer.enhancedModels.catalog.collectAsState()
     val state by vm.printerState.collectAsState()
     val info by vm.printerInfo.collectAsState()
     val saved by vm.savedPrinter.collectAsState()
@@ -194,6 +200,30 @@ fun SettingsScreen(
                     commandFeedback?.let {
                         Spacer(Modifier.height(8.dp))
                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            Text("版本与增强能力", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(if (coCreator.active) "共创预览" else "社区开源版", style = MaterialTheme.typography.titleSmall)
+                            Text(if (coCreator.active) "已启用共创者权益" else "核心功能持续免费维护", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        OutlinedButton(onClick = onOpenCoCreator) { Text(if (coCreator.active) "共创者中心" else "共创者计划") }
+                    }
+                    HorizontalDivider()
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("增强能力", style = MaterialTheme.typography.titleSmall)
+                            val ready = modelCatalog.items.count { it.installed && !it.locked }
+                            Text("标准识别始终可用${if (ready > 0) " · $ready 个增强包已就绪" else ""}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        OutlinedButton(onClick = onOpenEnhanced) { Text("管理") }
                     }
                 }
             }

@@ -24,8 +24,8 @@ android {
         applicationId = "io.github.soulxyz.xyprt"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1020300
-        versionName = "1.2.3"
+        versionCode = providers.gradleProperty("XYPRT_VERSION_CODE").orElse("1020300").get().toInt()
+        versionName = providers.gradleProperty("XYPRT_VERSION_NAME").orElse("1.2.3").get()
         manifestPlaceholders["appName"] = "口袋小印"
         val updateApiBase = providers.gradleProperty("XYPRT_UPDATE_API_BASE_URL")
             .orElse("https://api.xyprt.5am.top")
@@ -34,6 +34,7 @@ android {
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
         buildConfigField("String", "UPDATE_API_BASE_URL", "\"$updateApiBase\"")
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
     buildTypes {
@@ -56,6 +57,12 @@ android {
     }
 
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+
+    // Public/online builds keep release lint enabled. The portable offline archive currently
+    // lacks Google's lint-gradle artifact, so a private reproducible build may opt out explicitly.
+    lint {
+        checkReleaseBuilds = !providers.gradleProperty("XYPRT_OFFLINE_SKIP_LINT").orElse("false").get().toBoolean()
+    }
 }
 
 configurations.all {
@@ -88,11 +95,15 @@ dependencies {
         implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     }
 
-    // LabelRenderer uses ZXing through reflection. Public builds resolve it normally;
-    // the private offline build injects the runtime classes after assembleDebug.
-    val localZxingMarker = rootProject.file(".local-build/USE_INJECTED_ZXING")
-    if (!localZxingMarker.exists()) {
-        runtimeOnly("com.google.zxing:core:3.5.3")
-    }
+    // Offline/private builds can pin verified local artifacts without changing public Maven coordinates.
+    val localZxing = rootProject.file(".local-build/jars/core-3.5.3.jar")
+    if (localZxing.exists()) implementation(files(localZxing)) else runtimeOnly("com.google.zxing:core:3.5.3")
+
+    val localOpenCv = rootProject.file(".local-build/aar/opencv-4.13.0.aar")
+    if (localOpenCv.exists()) implementation(files(localOpenCv)) else implementation("org.opencv:opencv:4.13.0")
+
+    val localOrt = rootProject.file(".local-build/aar/onnxruntime-android-1.24.1.aar")
+    if (localOrt.exists()) implementation(files(localOrt)) else implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.1")
+
     testImplementation("junit:junit:4.13.2")
 }

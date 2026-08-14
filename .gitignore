@@ -35,3 +35,7 @@ signing/
 
 # Private release signing material (NEVER commit)
 private-signing/
+
+# Private/offline build inputs
+/.local-build/
+/private-ml/

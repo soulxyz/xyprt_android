@@ -59,6 +59,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -72,8 +73,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.soulxyz.xyprt.App
 import io.github.soulxyz.xyprt.R
+import io.github.soulxyz.xyprt.scanner.DocumentQuad
+import io.github.soulxyz.xyprt.scanner.ScanEngine
 import io.github.soulxyz.xyprt.data.SavedDocument
+import io.github.soulxyz.xyprt.data.TodoHistorySource
 import io.github.soulxyz.xyprt.printer.MediaType
 import io.github.soulxyz.xyprt.printer.MonoImage
 import io.github.soulxyz.xyprt.printer.dither.DitherMode
@@ -102,9 +107,11 @@ fun QuickPrintScreen(
     mode: String,
     onBack: () -> Unit,
     externalIntent: Intent? = null,
+    historyId: Long? = null,
     vm: QuickPrintViewModel = viewModel(),
 ) {
     val context = LocalContext.current
+    val scanner = remember { (context.applicationContext as App).container.scanner }
     val savedDocuments by vm.documents.collectAsState()
     val inferred = remember(mode, externalIntent) { inferMode(mode, externalIntent) }
     var sourceMode by remember { mutableStateOf(inferred) }
@@ -125,8 +132,11 @@ fun QuickPrintScreen(
     var savingDocument by remember { mutableStateOf(false) }
     var pickerOpened by rememberSaveable { mutableStateOf(false) }
     var pendingCameraUriText by rememberSaveable { mutableStateOf<String?>(null) }
-    var cameraCropDraft by remember { mutableStateOf(CropRect()) }
-    var cameraCropApplied by remember { mutableStateOf(CropRect()) }
+    var cameraQuadDraft by remember { mutableStateOf(DocumentQuad()) }
+    var cameraQuadApplied by remember { mutableStateOf(DocumentQuad()) }
+    var cameraScanLabel by remember { mutableStateOf("标准识别（内置）") }
+    var cameraScanning by remember { mutableStateOf(false) }
+    var scanGeneration by remember { mutableIntStateOf(0) }
     var showCropEditor by remember { mutableStateOf(false) }
     var savingCameraDraft by remember { mutableStateOf(false) }
     val withBt = rememberBlePermissionRunner()
@@ -159,8 +169,10 @@ fun QuickPrintScreen(
             sourceMode = SourceMode.CAMERA
             adjustments = defaultAdjustments(SourceMode.CAMERA)
             uris = listOf(uri)
-            cameraCropDraft = CropRect()
-            cameraCropApplied = CropRect()
+            cameraQuadDraft = DocumentQuad()
+            cameraQuadApplied = DocumentQuad()
+            cameraScanLabel = "正在识别纸张边缘…"
+            scanGeneration++
             showCropEditor = true
             error = null
         } else {
@@ -181,8 +193,24 @@ fun QuickPrintScreen(
         }
     }
 
+    LaunchedEffect(historyId) {
+        if (historyId != null) {
+            vm.loadTodoSource(historyId)?.let { source ->
+                sourceMode = SourceMode.TODO
+                todoTitle = source.title
+                todoItems = source.items
+                textStyle = QuickTextStyle(
+                    fontSizePx = source.fontSizePx,
+                    lineSpacingPercent = source.lineSpacingPercent,
+                    font = runCatching { QuickTextFont.valueOf(source.font) }.getOrDefault(QuickTextFont.SANS),
+                    align = runCatching { QuickTextAlign.valueOf(source.align) }.getOrDefault(QuickTextAlign.LEFT),
+                )
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
-        if (externalIntent == null && !pickerOpened) {
+        if (externalIntent == null && historyId == null && !pickerOpened) {
             pickerOpened = true
             when (sourceMode) {
                 SourceMode.IMAGE -> imagePicker.launch(arrayOf("image/*"))
@@ -193,7 +221,26 @@ fun QuickPrintScreen(
         }
     }
 
-    LaunchedEffect(sourceMode, text, todoTitle, todoItems, textStyle, uris, adjustments, pdfAutoCrop, cameraCropApplied, showCropEditor) {
+    // Automatic detection is asynchronous. The UI stays interactive and the user can always move the four corners.
+    LaunchedEffect(sourceMode, uris, scanGeneration) {
+        val uri = uris.firstOrNull() ?: return@LaunchedEffect
+        if (sourceMode != SourceMode.CAMERA || !showCropEditor) return@LaunchedEffect
+        cameraScanning = true
+        val result = runCatching {
+            withContext(Dispatchers.IO) { QuickPrintRenderer.previewBitmap(context, uri, 1800) }.let { bmp ->
+                try { scanner.detect(bmp, preferEnhanced = true) } finally { bmp.recycle() }
+            }
+        }.getOrNull()
+        if (result != null) {
+            cameraQuadDraft = result.quad
+            cameraScanLabel = if (result.engine == ScanEngine.ENHANCED) "增强识别 · 可手动微调" else "标准识别（内置）· 可手动微调"
+        } else {
+            cameraScanLabel = "标准框选 · 请手动调整四角"
+        }
+        cameraScanning = false
+    }
+
+    LaunchedEffect(sourceMode, text, todoTitle, todoItems, textStyle, uris, adjustments, pdfAutoCrop, cameraQuadApplied, showCropEditor) {
         if ((sourceMode == SourceMode.IMAGE || sourceMode == SourceMode.PDF || sourceMode == SourceMode.CAMERA) && uris.isEmpty()) {
             mono = null
             return@LaunchedEffect
@@ -219,7 +266,7 @@ fun QuickPrintScreen(
             withContext(Dispatchers.IO) {
                 val bitmap = when (sourceMode) {
                     SourceMode.TEXT -> QuickPrintRenderer.text(text, textStyle)
-                    SourceMode.TODO -> QuickPrintRenderer.todo(todoTitle, todoItems)
+                    SourceMode.TODO -> QuickPrintRenderer.todo(todoTitle, todoItems, textStyle)
                     SourceMode.IMAGE -> if (uris.size == 1) {
                         QuickPrintRenderer.image(context, uris.first(), adjustments.rotationDegrees, adjustments.scalePercent)
                     } else {
@@ -232,13 +279,11 @@ fun QuickPrintScreen(
                         rotationDegrees = adjustments.rotationDegrees,
                         scalePercent = adjustments.scalePercent,
                     )
-                    SourceMode.CAMERA -> QuickPrintRenderer.image(
-                        context,
-                        uris.first(),
-                        adjustments.rotationDegrees,
-                        adjustments.scalePercent,
-                        crop = cameraCropApplied,
-                    )
+                    SourceMode.CAMERA -> {
+                        val src = QuickPrintRenderer.previewBitmap(context, uris.first(), 2600)
+                        val corrected = try { scanner.perspective(src, cameraQuadApplied, cleanupEdges = true) } finally { src.recycle() }
+                        try { QuickPrintRenderer.preparedImage(corrected, adjustments.rotationDegrees, adjustments.scalePercent) } finally { corrected.recycle() }
+                    }
                 }
                 QuickPrintRenderer.toMono(
                     bitmap,
@@ -253,8 +298,8 @@ fun QuickPrintScreen(
         val cameraUri = uris.firstOrNull()
         if (sourceMode == SourceMode.CAMERA && cameraUri != null && !savingCameraDraft) {
             savingCameraDraft = true
-            val crop = if (showCropEditor) cameraCropDraft else cameraCropApplied
-            vm.saveCameraDraft(cameraUri, crop.normalized(), adjustments) { result ->
+            val quad = if (showCropEditor) cameraQuadDraft else cameraQuadApplied
+            vm.saveCameraDraft(cameraUri, quad, adjustments) { result ->
                 savingCameraDraft = false
                 android.widget.Toast.makeText(
                     context,
@@ -297,13 +342,14 @@ fun QuickPrintScreen(
                         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).navigationBarsPadding(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        OutlinedButton(onClick = { cameraCropDraft = CropRect() }, modifier = Modifier.weight(1f)) { Text("重置") }
+                        OutlinedButton(onClick = { scanGeneration++ }, enabled = !cameraScanning, modifier = Modifier.weight(1f)) { Text(if (cameraScanning) "识别中" else "重新识别") }
                         Button(
                             onClick = {
-                                cameraCropApplied = cameraCropDraft.normalized()
+                                cameraQuadApplied = cameraQuadDraft.clamped()
                                 showCropEditor = false
                             },
-                            modifier = Modifier.weight(2f),
+                            enabled = cameraQuadDraft.isReasonable(),
+                            modifier = Modifier.weight(1.5f),
                         ) { Text("使用此区域") }
                     }
                 }
@@ -387,7 +433,9 @@ fun QuickPrintScreen(
                                 shape = MaterialTheme.shapes.large,
                             )
                             Spacer(Modifier.height(6.dp))
-                            Text("打印后可直接在纸上勾选完成项。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            TextStyleSummary(textStyle, onClick = { showTextSettings = true })
+                            Spacer(Modifier.height(4.dp))
+                            Text("打印后可直接在纸上勾选完成项；打印历史会保留可编辑源内容。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         SourceMode.IMAGE -> SelectedSourceCard(
                             title = if (uris.size > 1) "已选择 ${uris.size} 张图片" else displayName(context, uris.firstOrNull()) ?: "选择图片",
@@ -451,17 +499,21 @@ fun QuickPrintScreen(
                                     onAction = { launchCamera() },
                                 )
                             } else if (showCropEditor) {
-                                Text("框选要打印的内容", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text("确认纸张四角", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.height(4.dp))
-                                Text("拖动四角或选框调整范围", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(cameraScanLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                Text("自动识别只负责给出初始位置；拖动四个圆点可随时修正。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.height(10.dp))
                                 PhotoCropEditor(
                                     uri = uris.first(),
-                                    crop = cameraCropDraft,
-                                    onCropChange = { cameraCropDraft = it },
+                                    quad = cameraQuadDraft,
+                                    onQuadChange = { cameraQuadDraft = it },
                                 )
                                 Spacer(Modifier.height(8.dp))
-                                TextButton(onClick = { launchCamera() }) { Text("重新拍摄") }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton(onClick = { cameraQuadDraft = DocumentQuad() }) { Text("恢复默认") }
+                                    TextButton(onClick = { launchCamera() }) { Text("重新拍摄") }
+                                }
                             } else {
                                 SelectedSourceCard(
                                     title = "已截取拍摄内容",
@@ -472,7 +524,7 @@ fun QuickPrintScreen(
                                 )
                                 Spacer(Modifier.height(6.dp))
                                 TextButton(onClick = {
-                                    cameraCropDraft = cameraCropApplied
+                                    cameraQuadDraft = cameraQuadApplied
                                     showCropEditor = true
                                 }) { Text("重新裁剪") }
                             }
@@ -604,7 +656,11 @@ fun QuickPrintScreen(
             initialMedia = MediaType.CONTINUOUS,
             onDismiss = { showPrint = false },
             onPrinted = { copies, _ ->
-                vm.recordPrinted(title = quickHistoryTitle(context, sourceMode, text, uris), image = image, copies = copies)
+                vm.recordPrinted(
+                    title = if (sourceMode == SourceMode.TODO) todoTitle.ifBlank { "待办清单" } else quickHistoryTitle(context, sourceMode, text, uris),
+                    image = image, copies = copies,
+                    todo = if (sourceMode == SourceMode.TODO) TodoHistorySource(todoTitle, todoItems, textStyle.fontSizePx, textStyle.lineSpacingPercent, textStyle.font.name, textStyle.align.name) else null,
+                )
             },
         )
     }

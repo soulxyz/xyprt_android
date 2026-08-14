@@ -10,6 +10,11 @@ import io.github.soulxyz.xyprt.data.SavedDocumentRepository
 import io.github.soulxyz.xyprt.data.TemplateJson
 import io.github.soulxyz.xyprt.data.TemplateRepository
 import io.github.soulxyz.xyprt.data.UpdateRepository
+import io.github.soulxyz.xyprt.data.remote.CoCreatorRepository
+import io.github.soulxyz.xyprt.data.remote.DeviceIdentity
+import io.github.soulxyz.xyprt.data.remote.EnhancedModelRepository
+import io.github.soulxyz.xyprt.data.remote.ServerApi
+import io.github.soulxyz.xyprt.scanner.DocumentScanner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,10 +37,15 @@ class AppContainer(context: Context) {
     private val database = LocalDatabase(context)
 
     val settings = SettingsRepository(context)
+    val serverApi = ServerApi(json)
+    val deviceIdentity = DeviceIdentity(context)
+    val coCreator = CoCreatorRepository(context, serverApi, deviceIdentity, applicationScope)
+    val enhancedModels = EnhancedModelRepository(context, serverApi, deviceIdentity, coCreator, applicationScope)
+    val scanner = DocumentScanner(enhancedModels)
     val templateRepository = TemplateRepository(database.templateDao, json)
     val historyRepository = HistoryRepository(database.printHistoryDao, json)
     val savedDocuments = SavedDocumentRepository(context, json)
-    val updates = UpdateRepository(context, settings, json, applicationScope)
+    val updates = UpdateRepository(context, settings, json, applicationScope, serverApi, deviceIdentity, coCreator)
     val templateJson = TemplateJson(json)
     val backup = BackupRepository(templateRepository, historyRepository, settings, savedDocuments, json)
     val printerManager = PrinterManager(context, settings, applicationScope)

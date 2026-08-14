@@ -28,4 +28,14 @@ class App : Application() {
             lastSymbolTab = container.settings.lastSymbolTab.first()
         }
     }
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (::container.isInitialized && level >= TRIM_MEMORY_UI_HIDDEN) {
+            // Enhanced inference sessions are intentionally lazy. Releasing them here avoids
+            // keeping tens of MB alive when the app is in the background; the encrypted model
+            // remains on disk and can be reloaded on the next scan.
+            container.scanner.releaseEnhanced()
+        }
+    }
+
 }

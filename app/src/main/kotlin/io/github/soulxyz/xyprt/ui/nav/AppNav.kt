@@ -18,6 +18,8 @@ import io.github.soulxyz.xyprt.ui.history.HistoryScreen
 import io.github.soulxyz.xyprt.ui.quickprint.QuickPrintScreen
 import io.github.soulxyz.xyprt.ui.home.HomeScreen
 import io.github.soulxyz.xyprt.ui.settings.SettingsScreen
+import io.github.soulxyz.xyprt.ui.cocreator.CoCreatorScreen
+import io.github.soulxyz.xyprt.ui.cocreator.EnhancedCapabilitiesScreen
 
 // Material 3 predictive-back motion (adopted from the Textary app). Values taken 1:1
 // from the M3 pattern "Full-screen surface transitions": the previous page peeks out
@@ -87,12 +89,16 @@ fun AppNav() {
             )
         }
         composable("history") {
-            HistoryScreen(onBack = { nav.popBackStack() })
+            HistoryScreen(onBack = { nav.popBackStack() }, onEditTodo = { id -> nav.navigate("quick/todo-edit/$id") })
         }
 
         composable("quick/{mode}") { entry ->
             val mode = entry.arguments?.getString("mode") ?: "text"
             QuickPrintScreen(mode = mode, onBack = { nav.popBackStack() })
+        }
+        composable("quick/todo-edit/{historyId}") { entry ->
+            val id = entry.arguments?.getString("historyId")?.toLongOrNull()
+            QuickPrintScreen(mode = "todo", historyId = id, onBack = { nav.popBackStack() })
         }
         composable("editor/{id}") { entry ->
             val id = entry.arguments?.getString("id").orEmpty()
@@ -103,7 +109,17 @@ fun AppNav() {
             )
         }
         composable("settings") {
-            SettingsScreen(onBack = { nav.popBackStack() })
+            SettingsScreen(
+                onBack = { nav.popBackStack() },
+                onOpenCoCreator = { nav.navigate("cocreator") },
+                onOpenEnhanced = { nav.navigate("enhanced-capabilities") },
+            )
+        }
+        composable("cocreator") {
+            CoCreatorScreen(onBack = { nav.popBackStack() }, onOpenCapabilities = { nav.navigate("enhanced-capabilities") })
+        }
+        composable("enhanced-capabilities") {
+            EnhancedCapabilitiesScreen(onBack = { nav.popBackStack() })
         }
     }
 }

@@ -70,13 +70,14 @@ fun InfoDialog(onDismiss: () -> Unit) {
         runCatching {
             @Suppress("DEPRECATION")
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
-        }.getOrNull()?.substringBefore("-") ?: "?"
+        }.getOrNull() ?: "?"
     }
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val cardColor = MaterialTheme.colorScheme.surfaceContainerLow
     val websiteUrl = "https://github.com/soulxyz/xyprt_android"
     val upstreamUrl = "https://github.com/toolicious/labler"
     val updateState by container.updates.state.collectAsState()
+    val coCreatorState by container.coCreator.state.collectAsState()
 
     val scope = rememberCoroutineScope()
     val backup = container.backup
@@ -168,7 +169,7 @@ fun InfoDialog(onDismiss: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(13.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("版本 $version · Soulxyz", style = MaterialTheme.typography.labelMedium, color = muted)
+                Text("${coCreatorState.editionLabel} · 版本 $version · Soulxyz", style = MaterialTheme.typography.labelMedium, color = muted)
                 Text(
                     "支持文字、图片、PDF、拍照和自由排版，也可从其他应用直接分享打印。让打印更简单，也更顺手。",
                     style = MaterialTheme.typography.bodyMedium,

@@ -11,6 +11,7 @@ import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import android.media.ExifInterface
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
@@ -93,7 +94,7 @@ object QuickPrintRenderer {
         }
     }
 
-    fun todo(title: String, itemsText: String): Bitmap {
+    fun todo(title: String, itemsText: String, style: QuickTextStyle = QuickTextStyle(fontSizePx = 29)): Bitmap {
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             textSize = 34f
@@ -101,8 +102,12 @@ object QuickPrintRenderer {
         }
         val itemPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
-            textSize = 29f
-            typeface = Typeface.SANS_SERIF
+            textSize = style.fontSizePx.coerceIn(16, 64).toFloat()
+            typeface = when (style.font) {
+                QuickTextFont.SANS -> Typeface.SANS_SERIF
+                QuickTextFont.SERIF -> Typeface.SERIF
+                QuickTextFont.MONO -> Typeface.MONOSPACE
+            }
         }
         val items = itemsText.lineSequence().map { it.trim().removePrefix("- ").removePrefix("• ") }
             .filter { it.isNotBlank() }.take(40).toList()
@@ -113,7 +118,12 @@ object QuickPrintRenderer {
             .setIncludePad(true).build()
         val itemLayouts = items.map { item ->
             StaticLayout.Builder.obtain(item, 0, item.length, itemPaint, itemTextW)
-                .setIncludePad(true).setLineSpacing(1f, 1.08f).build()
+                .setAlignment(when (style.align) {
+                    QuickTextAlign.LEFT -> Layout.Alignment.ALIGN_NORMAL
+                    QuickTextAlign.CENTER -> Layout.Alignment.ALIGN_CENTER
+                    QuickTextAlign.RIGHT -> Layout.Alignment.ALIGN_OPPOSITE
+                })
+                .setIncludePad(true).setLineSpacing(0f, style.lineSpacingPercent.coerceIn(80, 200) / 100f).build()
         }
         val gap = 12
         val emptyHint = if (items.isEmpty()) 54 else 0
@@ -134,7 +144,7 @@ object QuickPrintRenderer {
                     val boxTop = y + 4f
                     val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         color = Color.BLACK
-                        style = Paint.Style.STROKE
+                        this.style = Paint.Style.STROKE
                         strokeWidth = 2.2f
                     }
                     c.drawRect(2f, boxTop, 25f, boxTop + 23f, boxPaint)
@@ -165,6 +175,12 @@ object QuickPrintRenderer {
 
     fun previewBitmap(context: Context, uri: Uri, maxDimension: Int = 1600): Bitmap =
         decodeSampled(context, uri, maxDimension, Bitmap.Config.RGB_565) ?: error("无法读取图片")
+
+    /** Fit an already-corrected bitmap into the thermal-paper coordinate system. The caller keeps ownership of [src]. */
+    fun preparedImage(src: Bitmap, rotationDegrees: Int = 0, scalePercent: Int = 100): Bitmap {
+        val rotated = rotate(src, rotationDegrees)
+        return try { fitBitmapNoRecycle(rotated, scalePercent) } finally { if (rotated !== src) rotated.recycle() }
+    }
 
     fun image(
         context: Context,
@@ -267,7 +283,26 @@ object QuickPrintRenderer {
             inSampleSize = sample
             inPreferredConfig = config
         }
-        return context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+        val decoded = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) } ?: return null
+        val orientation = runCatching {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                ExifInterface(input).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+            } ?: ExifInterface.ORIENTATION_NORMAL
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> { matrix.postScale(-1f, 1f); matrix.postRotate(270f) }
+            ExifInterface.ORIENTATION_TRANSVERSE -> { matrix.postScale(-1f, 1f); matrix.postRotate(90f) }
+            else -> return decoded
+        }
+        val oriented = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+        if (oriented !== decoded) decoded.recycle()
+        return oriented
     }
 
     private fun cropBitmap(src: Bitmap, rect: CropRect): Bitmap {

@@ -60,7 +60,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HistoryScreen(onBack: () -> Unit, vm: HistoryViewModel = viewModel()) {
+fun HistoryScreen(onBack: () -> Unit, onEditTodo: (Long) -> Unit = {}, vm: HistoryViewModel = viewModel()) {
     val entries by vm.entries.collectAsState()
     var reprint by remember { mutableStateOf<Pair<MonoImage, PrintHistoryEntry>?>(null) }
     val withBlePermissions = rememberBlePermissionRunner()
@@ -115,6 +115,7 @@ fun HistoryScreen(onBack: () -> Unit, vm: HistoryViewModel = viewModel()) {
                         }
                     },
                     onDelete = { vm.delete(entry.id) },
+                    onEditTodo = if (entry.sourceType == "todo" && !entry.sourceJson.isNullOrBlank()) ({ onEditTodo(entry.id) }) else null,
                 )
             }
         }
@@ -134,6 +135,7 @@ private fun HistoryCard(
     entry: PrintHistoryEntry,
     onReprint: () -> Unit,
     onDelete: () -> Unit,
+    onEditTodo: (() -> Unit)? = null,
 ) {
     ElevatedCard(
         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -178,6 +180,7 @@ private fun HistoryCard(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(onClick = onReprint, modifier = Modifier.height(40.dp)) { Text("再打一次") }
+                    if (onEditTodo != null) OutlinedButton(onClick = onEditTodo, modifier = Modifier.height(40.dp)) { Text("编辑待办") }
                     IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
                         Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.cd_delete), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }

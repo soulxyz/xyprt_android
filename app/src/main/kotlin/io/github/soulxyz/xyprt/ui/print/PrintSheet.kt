@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.soulxyz.xyprt.R
 import io.github.soulxyz.xyprt.ble.PrinterState
+import io.github.soulxyz.xyprt.ble.PrinterTransport
 import io.github.soulxyz.xyprt.printer.MediaType
 import io.github.soulxyz.xyprt.printer.MonoImage
 import io.github.soulxyz.xyprt.ui.components.MonoPaperPreview
@@ -116,6 +117,15 @@ fun PrintSheet(
                 onAfterDots = { feedAfter = it },
             )
             Spacer(Modifier.height(8.dp))
+
+            (printerState as? PrinterState.Ready)?.let { ready ->
+                Text(
+                    if (ready.transport == PrinterTransport.CLASSIC) "当前打印通道：经典蓝牙（SPP，高速）" else "当前打印通道：低功耗蓝牙（BLE）",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.height(6.dp))
+            }
 
             if (printerState !is PrinterState.Printing) {
                 PrinterConnectSection(

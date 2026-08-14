@@ -29,6 +29,18 @@ data class PrintHistoryEntry(
     /** Exact 1-bit quick-print snapshot. Normal template prints leave this null. */
     val rasterBase64: String? = null,
     val rasterHeight: Int = 0,
+    val sourceType: String? = null,
+    val sourceJson: String? = null,
+)
+
+@Serializable
+data class TodoHistorySource(
+    val title: String,
+    val items: String,
+    val fontSizePx: Int = 30,
+    val lineSpacingPercent: Int = 115,
+    val font: String = "SANS",
+    val align: String = "LEFT",
 )
 
 class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json) {
@@ -63,6 +75,8 @@ class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json
         title: String,
         image: MonoImage,
         copies: Int,
+        sourceType: String? = null,
+        sourceJson: String? = null,
     ) {
         val approxMm = ceil(image.height / 8.0).toInt().coerceAtLeast(1)
         dao.insert(
@@ -78,6 +92,8 @@ class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json
                 printedAt = System.currentTimeMillis(),
                 rasterBase64 = encodeRaster(image),
                 rasterHeight = image.height,
+                sourceType = sourceType,
+                sourceJson = sourceJson,
             )
         )
         dao.prune()
@@ -102,6 +118,8 @@ class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json
                     printedAt = e.printedAt,
                     rasterBase64 = e.rasterBase64,
                     rasterHeight = e.rasterHeight,
+                    sourceType = e.sourceType,
+                    sourceJson = e.sourceJson,
                 )
             )
         }
@@ -128,6 +146,8 @@ class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json
         printedAt = printedAt,
         rasterBase64 = rasterBase64,
         rasterHeight = rasterHeight,
+        sourceType = sourceType,
+        sourceJson = sourceJson,
     )
 
     companion object {

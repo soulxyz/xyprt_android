@@ -54,6 +54,8 @@ data class PrintHistoryEntity(
     val printedAt: Long,
     val rasterBase64: String? = null,
     val rasterHeight: Int = 0,
+    val sourceType: String? = null,
+    val sourceJson: String? = null,
 )
 
 interface PrintHistoryDao {
@@ -193,6 +195,8 @@ private fun encodeHistory(items: List<PrintHistoryEntity>): String {
             put("elementsJson", e.elementsJson); put("copies", e.copies); put("printedAt", e.printedAt)
             if (e.rasterBase64 != null) put("rasterBase64", e.rasterBase64) else put("rasterBase64", JSONObject.NULL)
             put("rasterHeight", e.rasterHeight)
+            if (e.sourceType != null) put("sourceType", e.sourceType) else put("sourceType", JSONObject.NULL)
+            if (e.sourceJson != null) put("sourceJson", e.sourceJson) else put("sourceJson", JSONObject.NULL)
         })
     }
     return arr.toString()
@@ -212,6 +216,8 @@ private fun decodeHistory(raw: String?): List<PrintHistoryEntity> = runCatching 
                 printedAt = o.optLong("printedAt"),
                 rasterBase64 = if (o.isNull("rasterBase64")) null else o.optString("rasterBase64").takeIf { it.isNotBlank() },
                 rasterHeight = o.optInt("rasterHeight", 0),
+                sourceType = if (o.isNull("sourceType")) null else o.optString("sourceType").takeIf { it.isNotBlank() },
+                sourceJson = if (o.isNull("sourceJson")) null else o.optString("sourceJson").takeIf { it.isNotBlank() },
             ))
         }
     }
