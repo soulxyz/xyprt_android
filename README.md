@@ -116,3 +116,21 @@ Gradle 版本由 Wrapper 自动管理，无需手动安装。
 ## 许可证
 
 本项目继承上游许可，基于 [GPL-3.0-or-later](LICENSE) 发布，即构建产物若进行分发，需要为被分发者提供源代码。
+
+## Source / Deps 分离恢复
+
+公开或日常 Git 源码包不携带 `.local-build` 大型二进制依赖。需要完全离线恢复时，使用与本版本匹配的 `PocketPrint Deps Vault`：
+
+```bash
+python3 tools/restore-local-build.py /path/to/PocketPrint-deps-vault.zip
+python3 tools/verify-local-build.py
+```
+
+Windows 同样可使用 Python 3：
+
+```powershell
+py -3 .\tools\restore-local-build.py C:\path\to\PocketPrint-deps-vault.zip
+py -3 .\tools\verify-local-build.py
+```
+
+恢复脚本会先验证 Vault ZIP CRC，再验证 OpenCV、ONNX Runtime、ZXing 和 Kotlin serialization 本地依赖的固定 SHA-256，校验全部通过后才写入 `.local-build`。日常联网构建不要求存在 `.local-build`，Gradle 会使用公开 Maven 坐标；共创 ONNX 构建需显式传入 `-PXYPRT_INCLUDE_ONNX=true`。
