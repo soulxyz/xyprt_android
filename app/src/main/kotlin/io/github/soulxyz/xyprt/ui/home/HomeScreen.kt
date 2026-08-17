@@ -100,6 +100,7 @@ fun HomeScreen(
     onQuickDocument: () -> Unit,
     onQuickCamera: () -> Unit,
     onQuickTodo: () -> Unit,
+    onOpenCoCreator: () -> Unit,
     vm: HomeViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -151,7 +152,7 @@ fun HomeScreen(
                         Surface(
                             color = MaterialTheme.colorScheme.primaryContainer,
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.size(38.dp),
+                            modifier = Modifier.size(34.dp),
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Image(
@@ -188,9 +189,9 @@ fun HomeScreen(
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 156.dp),
             modifier = Modifier.padding(padding).fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 PrinterOverviewCard(
@@ -332,7 +333,10 @@ fun HomeScreen(
         }
     }
 
-    if (showInfoDialog) InfoDialog(onDismiss = { vm.markCurrentUpdateSeen(); showInfoDialog = false })
+    if (showInfoDialog) InfoDialog(
+        onDismiss = { vm.markCurrentUpdateSeen(); showInfoDialog = false },
+        onOpenCoCreator = onOpenCoCreator,
+    )
 
     if (showNewDialog) {
         LabelDialog(
@@ -414,28 +418,28 @@ private fun PrinterOverviewCard(
         onClick = onOpenSettings,
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(16.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
         ) {
             Surface(
                 color = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.size(46.dp),
+                shape = RoundedCornerShape(11.dp),
+                modifier = Modifier.size(38.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         painterResource(R.drawable.ic_print),
                         contentDescription = null,
-                        modifier = Modifier.size(23.dp),
+                        modifier = Modifier.size(20.dp),
                         tint = if (ready) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
                     )
                 }
             }
             Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(2.dp))
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             }
             if (!ready && state !is PrinterState.Printing) {
                 Button(onClick = onPrimaryAction) {
@@ -478,15 +482,15 @@ private fun QuickActionCard(
 ) {
     ElevatedCard(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 106.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 88.dp),
         colors = CardDefaults.elevatedCardColors(
             containerColor = if (featured) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
         ),
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = if (featured) 1.dp else 0.dp),
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp),
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             Surface(
                 color = if (featured) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
@@ -497,7 +501,7 @@ private fun QuickActionCard(
                     Icon(
                         painter = painterResource(iconRes),
                         contentDescription = null,
-                        modifier = Modifier.size(21.dp),
+                        modifier = Modifier.size(19.dp),
                         tint = if (featured) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
@@ -517,17 +521,17 @@ private fun QuickActionWideCard(
 ) {
     OutlinedCard(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Surface(
                 color = MaterialTheme.colorScheme.secondaryContainer,
                 shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.size(42.dp),
+                modifier = Modifier.size(36.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                    Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
                 }
             }
             Column(Modifier.weight(1f)) {
@@ -554,7 +558,7 @@ private fun RecentPrintPanel(entries: List<PrintHistoryEntry>, onClick: () -> Un
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.size(42.dp),
+                        modifier = Modifier.size(36.dp),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(

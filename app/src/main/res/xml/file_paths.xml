@@ -2,5 +2,7 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="camera" path="camera/" />
     <cache-path name="shared_exports" path="shared_exports/" />
+    <cache-path name="history_edit" path="history_edit/" />
     <files-path name="saved_documents" path="saved_documents/" />
+    <files-path name="quick_print_drafts" path="quick_print_drafts/" />
 </paths>

@@ -10,6 +10,7 @@ import io.github.soulxyz.xyprt.data.SavedDocumentRepository
 import io.github.soulxyz.xyprt.data.TemplateJson
 import io.github.soulxyz.xyprt.data.TemplateRepository
 import io.github.soulxyz.xyprt.data.UpdateRepository
+import io.github.soulxyz.xyprt.data.UpdateDownloadManager
 import io.github.soulxyz.xyprt.data.remote.CoCreatorRepository
 import io.github.soulxyz.xyprt.data.remote.DeviceIdentity
 import io.github.soulxyz.xyprt.data.remote.EnhancedModelRepository
@@ -46,6 +47,7 @@ class AppContainer(context: Context) {
     val historyRepository = HistoryRepository(database.printHistoryDao, json)
     val savedDocuments = SavedDocumentRepository(context, json)
     val updates = UpdateRepository(context, settings, json, applicationScope, serverApi, deviceIdentity, coCreator)
+    val updateDownloads = UpdateDownloadManager(context, settings, applicationScope)
     val templateJson = TemplateJson(json)
     val backup = BackupRepository(templateRepository, historyRepository, settings, savedDocuments, json)
     val printerManager = PrinterManager(context, settings, applicationScope)

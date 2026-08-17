@@ -100,9 +100,9 @@ fun PrinterConnectSection(
                         Button(onClick = onConnect, enabled = !connecting) {
                             Text(stringResource(R.string.action_connect))
                         }
-                    }
-                    OutlinedButton(onClick = onOpenSettings) {
-                        Text(stringResource(R.string.print_printer_settings))
+                        OutlinedButton(onClick = onOpenSettings) { Text("更换打印机") }
+                    } else {
+                        Button(onClick = onOpenSettings) { Text("连接打印机") }
                     }
                 }
             }

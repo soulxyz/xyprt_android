@@ -2,6 +2,7 @@ package io.github.soulxyz.xyprt.ui.quickprint
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -55,6 +57,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -77,8 +80,10 @@ import io.github.soulxyz.xyprt.App
 import io.github.soulxyz.xyprt.R
 import io.github.soulxyz.xyprt.scanner.DocumentQuad
 import io.github.soulxyz.xyprt.scanner.ScanEngine
+import io.github.soulxyz.xyprt.scanner.QuadPoint
 import io.github.soulxyz.xyprt.data.SavedDocument
-import io.github.soulxyz.xyprt.data.TodoHistorySource
+import io.github.soulxyz.xyprt.data.QuickPrintDraft
+import io.github.soulxyz.xyprt.data.QuickPrintHistorySource
 import io.github.soulxyz.xyprt.printer.MediaType
 import io.github.soulxyz.xyprt.printer.MonoImage
 import io.github.soulxyz.xyprt.printer.dither.DitherMode
@@ -96,7 +101,8 @@ import kotlin.math.roundToInt
 private enum class SourceMode { TEXT, IMAGE, PDF, CAMERA, TODO }
 
 private fun defaultAdjustments(mode: SourceMode) = when (mode) {
-    SourceMode.IMAGE, SourceMode.CAMERA -> QuickImageAdjustments(mode = DitherMode.FLOYD_STEINBERG, threshold = 155)
+    SourceMode.IMAGE -> QuickImageAdjustments(mode = DitherMode.FLOYD_STEINBERG, threshold = 155)
+    SourceMode.CAMERA -> QuickImageAdjustments(mode = DitherMode.THRESHOLD, paperPreset = PaperPreset.DOCUMENT, threshold = 188, contrast = 8)
     SourceMode.PDF -> QuickImageAdjustments(mode = DitherMode.THRESHOLD, threshold = 190, contrast = 10)
     SourceMode.TEXT, SourceMode.TODO -> QuickImageAdjustments(mode = DitherMode.THRESHOLD, threshold = 170)
 }
@@ -108,6 +114,7 @@ fun QuickPrintScreen(
     onBack: () -> Unit,
     externalIntent: Intent? = null,
     historyId: Long? = null,
+    onOpenPrinterSettings: () -> Unit = {},
     vm: QuickPrintViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -137,8 +144,13 @@ fun QuickPrintScreen(
     var cameraScanLabel by remember { mutableStateOf("标准识别（内置）") }
     var cameraScanning by remember { mutableStateOf(false) }
     var scanGeneration by remember { mutableIntStateOf(0) }
-    var showCropEditor by remember { mutableStateOf(false) }
-    var savingCameraDraft by remember { mutableStateOf(false) }
+    var showCropEditor by remember { mutableStateOf(historyId == null && inferred == SourceMode.IMAGE && uris.size == 1) }
+    var imageCorrectionApplied by remember { mutableStateOf(false) }
+    var savingDraft by remember { mutableStateOf(false) }
+    var draftCandidate by remember { mutableStateOf<QuickPrintDraft?>(null) }
+    var draftChecked by remember { mutableStateOf(false) }
+    val preparedCache = remember { PreparedBitmapCache() }
+    DisposableEffect(Unit) { onDispose { preparedCache.clear() } }
     val withBt = rememberBlePermissionRunner()
 
     fun switchMode(next: SourceMode) {
@@ -147,15 +159,111 @@ fun QuickPrintScreen(
         if (next == SourceMode.TEXT || next == SourceMode.TODO) uris = emptyList()
     }
 
+    fun sourceSnapshot(includeDraftQuad: Boolean = false): QuickPrintHistorySource {
+        val quad = if (showCropEditor) cameraQuadDraft else cameraQuadApplied
+        val keepQuad = uris.size == 1 && (sourceMode == SourceMode.CAMERA ||
+            (sourceMode == SourceMode.IMAGE && (imageCorrectionApplied || includeDraftQuad)))
+        return QuickPrintHistorySource(
+            mode = sourceMode.name,
+            text = text,
+            todoTitle = todoTitle,
+            todoItems = todoItems,
+            fontSizePx = textStyle.fontSizePx,
+            lineSpacingPercent = textStyle.lineSpacingPercent,
+            font = textStyle.font.name,
+            align = textStyle.align.name,
+            uris = uris.map(Uri::toString),
+            ditherMode = adjustments.mode.name,
+            paperPreset = adjustments.paperPreset.name,
+            threshold = adjustments.threshold,
+            contrast = adjustments.contrast,
+            invert = adjustments.invert,
+            outlineSensitivity = adjustments.outlineSensitivity,
+            outlineThickness = adjustments.outlineThickness,
+            outlineMethod = adjustments.outlineMethod.name,
+            outlineSmooth = adjustments.outlineSmooth,
+            rotationDegrees = adjustments.rotationDegrees,
+            landscapePrint = adjustments.landscapePrint,
+            scalePercent = adjustments.scalePercent,
+            removeRedInk = adjustments.removeRedInk,
+            removeBlueInk = adjustments.removeBlueInk,
+            pdfAutoCrop = pdfAutoCrop,
+            cameraQuad = if (keepQuad) quad.points().flatMap { listOf(it.x, it.y) } else emptyList(),
+        )
+    }
+
+    fun applySource(source: QuickPrintHistorySource, draft: QuickPrintDraft? = null) {
+        sourceMode = runCatching { SourceMode.valueOf(source.mode) }.getOrDefault(SourceMode.IMAGE)
+        text = source.text
+        todoTitle = source.todoTitle.ifBlank { "今日待办" }
+        todoItems = source.todoItems
+        textStyle = QuickTextStyle(
+            fontSizePx = source.fontSizePx,
+            lineSpacingPercent = source.lineSpacingPercent,
+            font = runCatching { QuickTextFont.valueOf(source.font) }.getOrDefault(QuickTextFont.SANS),
+            align = runCatching { QuickTextAlign.valueOf(source.align) }.getOrDefault(QuickTextAlign.LEFT),
+        )
+        uris = source.uris.mapNotNull { raw ->
+            runCatching { Uri.parse(raw) }.getOrNull()?.takeIf { uri ->
+                runCatching { context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false }.getOrDefault(false)
+            }
+        }
+        adjustments = QuickImageAdjustments(
+            mode = runCatching { DitherMode.valueOf(source.ditherMode) }.getOrDefault(DitherMode.THRESHOLD),
+            paperPreset = runCatching { PaperPreset.valueOf(source.paperPreset) }.getOrDefault(PaperPreset.ORIGINAL),
+            threshold = source.threshold, contrast = source.contrast, invert = source.invert,
+            outlineSensitivity = source.outlineSensitivity, outlineThickness = source.outlineThickness,
+            outlineMethod = runCatching { io.github.soulxyz.xyprt.printer.dither.OutlineMethod.valueOf(source.outlineMethod) }.getOrDefault(io.github.soulxyz.xyprt.printer.dither.OutlineMethod.CANNY),
+            outlineSmooth = source.outlineSmooth, rotationDegrees = source.rotationDegrees,
+            landscapePrint = source.landscapePrint, scalePercent = source.scalePercent,
+            removeRedInk = source.removeRedInk, removeBlueInk = source.removeBlueInk,
+        )
+        pdfAutoCrop = source.pdfAutoCrop
+        if (source.cameraQuad.size == 8) {
+            val q = DocumentQuad(
+                QuadPoint(source.cameraQuad[0], source.cameraQuad[1]),
+                QuadPoint(source.cameraQuad[2], source.cameraQuad[3]),
+                QuadPoint(source.cameraQuad[4], source.cameraQuad[5]),
+                QuadPoint(source.cameraQuad[6], source.cameraQuad[7]),
+            )
+            cameraQuadApplied = q
+            cameraQuadDraft = q
+        } else {
+            cameraQuadApplied = DocumentQuad()
+            cameraQuadDraft = DocumentQuad()
+        }
+        imageCorrectionApplied = draft?.imageCorrectionApplied ?: (sourceMode == SourceMode.IMAGE && source.cameraQuad.size == 8)
+        showCropEditor = draft?.showCropEditor ?: false
+        if (sourceMode == SourceMode.CAMERA && source.cameraQuad.size == 8 && draft == null) showCropEditor = false
+    }
+
+    fun hasMeaningfulDraft(): Boolean = when (sourceMode) {
+        SourceMode.TEXT -> text.isNotBlank()
+        SourceMode.TODO -> todoTitle.isNotBlank() || todoItems.isNotBlank()
+        SourceMode.IMAGE, SourceMode.PDF, SourceMode.CAMERA -> uris.isNotEmpty()
+    }
+
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { picked ->
         if (picked.isNotEmpty()) {
-            uris = picked
-            showCropEditor = false
+            picked.forEach { uri -> runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
             switchMode(SourceMode.IMAGE)
+            uris = picked
+            cameraQuadDraft = DocumentQuad()
+            cameraQuadApplied = DocumentQuad()
+            imageCorrectionApplied = false
+            if (picked.size == 1) {
+                cameraScanLabel = "正在识别纸张边缘…"
+                showCropEditor = true
+                scanGeneration++
+            } else {
+                showCropEditor = false
+            }
+            error = null
         }
     }
     val pdfPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { picked ->
         if (picked != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(picked, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             uris = listOf(picked)
             showCropEditor = false
             switchMode(SourceMode.PDF)
@@ -195,22 +303,36 @@ fun QuickPrintScreen(
 
     LaunchedEffect(historyId) {
         if (historyId != null) {
-            vm.loadTodoSource(historyId)?.let { source ->
-                sourceMode = SourceMode.TODO
-                todoTitle = source.title
-                todoItems = source.items
-                textStyle = QuickTextStyle(
-                    fontSizePx = source.fontSizePx,
-                    lineSpacingPercent = source.lineSpacingPercent,
-                    font = runCatching { QuickTextFont.valueOf(source.font) }.getOrDefault(QuickTextFont.SANS),
-                    align = runCatching { QuickTextAlign.valueOf(source.align) }.getOrDefault(QuickTextAlign.LEFT),
-                )
+            val restored = vm.loadQuickSource(historyId)
+            if (restored != null) {
+                applySource(restored)
+                if (uris.isEmpty() && sourceMode != SourceMode.TEXT && sourceMode != SourceMode.TODO) {
+                    vm.historyRasterUri(historyId)?.let { fallback ->
+                        uris = listOf(fallback)
+                        sourceMode = SourceMode.IMAGE
+                        adjustments = defaultAdjustments(SourceMode.IMAGE)
+                        imageCorrectionApplied = false
+                    }
+                }
+            } else {
+                vm.historyRasterUri(historyId)?.let { fallback ->
+                    sourceMode = SourceMode.IMAGE
+                    uris = listOf(fallback)
+                    adjustments = defaultAdjustments(SourceMode.IMAGE)
+                    imageCorrectionApplied = false
+                }
             }
         }
     }
 
     LaunchedEffect(Unit) {
-        if (externalIntent == null && historyId == null && !pickerOpened) {
+        var loadedDraft = draftCandidate
+        if (externalIntent == null && historyId == null && !draftChecked) {
+            loadedDraft = vm.loadDraft()
+            draftCandidate = loadedDraft
+            draftChecked = true
+        }
+        if (externalIntent == null && historyId == null && loadedDraft == null && !pickerOpened) {
             pickerOpened = true
             when (sourceMode) {
                 SourceMode.IMAGE -> imagePicker.launch(arrayOf("image/*"))
@@ -224,7 +346,7 @@ fun QuickPrintScreen(
     // Automatic detection is asynchronous. The UI stays interactive and the user can always move the four corners.
     LaunchedEffect(sourceMode, uris, scanGeneration) {
         val uri = uris.firstOrNull() ?: return@LaunchedEffect
-        if (sourceMode != SourceMode.CAMERA || !showCropEditor) return@LaunchedEffect
+        if ((sourceMode != SourceMode.CAMERA && sourceMode != SourceMode.IMAGE) || !showCropEditor || uris.size != 1) return@LaunchedEffect
         cameraScanning = true
         val result = runCatching {
             withContext(Dispatchers.IO) { QuickPrintRenderer.previewBitmap(context, uri, 1800) }.let { bmp ->
@@ -240,7 +362,7 @@ fun QuickPrintScreen(
         cameraScanning = false
     }
 
-    LaunchedEffect(sourceMode, text, todoTitle, todoItems, textStyle, uris, adjustments, pdfAutoCrop, cameraQuadApplied, showCropEditor) {
+    LaunchedEffect(sourceMode, text, todoTitle, todoItems, textStyle, uris, adjustments, pdfAutoCrop, cameraQuadApplied, imageCorrectionApplied, showCropEditor) {
         if ((sourceMode == SourceMode.IMAGE || sourceMode == SourceMode.PDF || sourceMode == SourceMode.CAMERA) && uris.isEmpty()) {
             mono = null
             return@LaunchedEffect
@@ -253,62 +375,94 @@ fun QuickPrintScreen(
             mono = null
             return@LaunchedEffect
         }
-        if (sourceMode == SourceMode.CAMERA && showCropEditor) {
+        if ((sourceMode == SourceMode.CAMERA || sourceMode == SourceMode.IMAGE) && showCropEditor) {
             mono = null
             return@LaunchedEffect
         }
-        // Slider drags / typing can update many times per second. A tiny debounce keeps the UI fluid and
-        // guarantees only the latest state performs the expensive PDF/image pipeline.
-        delay(70)
+        // Keep the current preview visible while a slider is moving. Only the 1-bit conversion is
+        // repeated; single-image decode/perspective/fit is cached until source geometry changes.
+        delay(90)
         rendering = true
         error = null
-        mono = runCatching {
+        val rendered = runCatching {
             withContext(Dispatchers.IO) {
-                val bitmap = when (sourceMode) {
-                    SourceMode.TEXT -> QuickPrintRenderer.text(text, textStyle)
-                    SourceMode.TODO -> QuickPrintRenderer.todo(todoTitle, todoItems, textStyle)
-                    SourceMode.IMAGE -> if (uris.size == 1) {
-                        QuickPrintRenderer.image(context, uris.first(), adjustments.rotationDegrees, adjustments.scalePercent)
-                    } else {
-                        QuickPrintRenderer.images(context, uris, adjustments.rotationDegrees, adjustments.scalePercent)
+                val outputRotation = adjustments.outputRotationDegrees()
+                when (sourceMode) {
+                    SourceMode.TEXT -> {
+                        val base = QuickPrintRenderer.text(text, textStyle)
+                        val prepared = try { QuickPrintRenderer.preparedImage(base, outputRotation, adjustments.scalePercent) } finally { base.recycle() }
+                        try { QuickPrintRenderer.toMono(prepared, adjustments) } finally { prepared.recycle() }
                     }
-                    SourceMode.PDF -> QuickPrintRenderer.pdf(
-                        context,
-                        uris.first(),
-                        autoCropWhiteMargins = pdfAutoCrop,
-                        rotationDegrees = adjustments.rotationDegrees,
-                        scalePercent = adjustments.scalePercent,
-                    )
+                    SourceMode.TODO -> {
+                        val base = QuickPrintRenderer.todo(todoTitle, todoItems, textStyle)
+                        val prepared = try { QuickPrintRenderer.preparedImage(base, outputRotation, adjustments.scalePercent) } finally { base.recycle() }
+                        try { QuickPrintRenderer.toMono(prepared, adjustments) } finally { prepared.recycle() }
+                    }
+                    SourceMode.IMAGE -> {
+                        if (uris.size == 1) {
+                            val quadKey = cameraQuadApplied.points().joinToString(";") { "${it.x},${it.y}" }
+                            val key = "image|${uris.first()}|$imageCorrectionApplied|$quadKey|$outputRotation|${adjustments.scalePercent}"
+                            val prepared = preparedCache.getOrCreate(key) {
+                                if (imageCorrectionApplied) {
+                                    val src = QuickPrintRenderer.previewBitmap(context, uris.first(), 2600)
+                                    val corrected = try { scanner.perspective(src, cameraQuadApplied, cleanupEdges = true) } finally { src.recycle() }
+                                    try { QuickPrintRenderer.preparedImage(corrected, outputRotation, adjustments.scalePercent) } finally { corrected.recycle() }
+                                } else {
+                                    QuickPrintRenderer.image(context, uris.first(), outputRotation, adjustments.scalePercent)
+                                }
+                            }
+                            QuickPrintRenderer.toMono(prepared, adjustments)
+                        } else {
+                            val prepared = QuickPrintRenderer.images(context, uris, outputRotation, adjustments.scalePercent)
+                            try { QuickPrintRenderer.toMono(prepared, adjustments) } finally { prepared.recycle() }
+                        }
+                    }
+                    SourceMode.PDF -> {
+                        val prepared = QuickPrintRenderer.pdf(
+                            context,
+                            uris.first(),
+                            autoCropWhiteMargins = pdfAutoCrop,
+                            rotationDegrees = outputRotation,
+                            scalePercent = adjustments.scalePercent,
+                        )
+                        try { QuickPrintRenderer.toMono(prepared, adjustments) } finally { prepared.recycle() }
+                    }
                     SourceMode.CAMERA -> {
-                        val src = QuickPrintRenderer.previewBitmap(context, uris.first(), 2600)
-                        val corrected = try { scanner.perspective(src, cameraQuadApplied, cleanupEdges = true) } finally { src.recycle() }
-                        try { QuickPrintRenderer.preparedImage(corrected, adjustments.rotationDegrees, adjustments.scalePercent) } finally { corrected.recycle() }
+                        val quadKey = cameraQuadApplied.points().joinToString(";") { "${it.x},${it.y}" }
+                        val key = "camera|${uris.first()}|$quadKey|$outputRotation|${adjustments.scalePercent}"
+                        val prepared = preparedCache.getOrCreate(key) {
+                            val src = QuickPrintRenderer.previewBitmap(context, uris.first(), 2600)
+                            val corrected = try { scanner.perspective(src, cameraQuadApplied, cleanupEdges = true) } finally { src.recycle() }
+                            try { QuickPrintRenderer.preparedImage(corrected, outputRotation, adjustments.scalePercent) } finally { corrected.recycle() }
+                        }
+                        QuickPrintRenderer.toMono(prepared, adjustments)
                     }
                 }
-                QuickPrintRenderer.toMono(
-                    bitmap,
-                    if (sourceMode == SourceMode.TEXT) defaultAdjustments(SourceMode.TEXT) else adjustments,
-                ).also { bitmap.recycle() }
             }
-        }.onFailure { error = it.message ?: "内容处理失败" }.getOrNull()
+        }
+        rendered.onSuccess { mono = it }.onFailure { error = it.message ?: "内容处理失败" }
         rendering = false
     }
 
     fun leaveScreen() {
-        val cameraUri = uris.firstOrNull()
-        if (sourceMode == SourceMode.CAMERA && cameraUri != null && !savingCameraDraft) {
-            savingCameraDraft = true
-            val quad = if (showCropEditor) cameraQuadDraft else cameraQuadApplied
-            vm.saveCameraDraft(cameraUri, quad, adjustments) { result ->
-                savingCameraDraft = false
-                android.widget.Toast.makeText(
-                    context,
-                    if (result.isSuccess) "拍照内容已保存到我的文档" else "拍照草稿保存失败",
-                    android.widget.Toast.LENGTH_SHORT,
-                ).show()
-                onBack()
-            }
-        } else if (!savingCameraDraft) {
+        if (savingDraft) return
+        if (!hasMeaningfulDraft()) {
+            onBack()
+            return
+        }
+        savingDraft = true
+        val draft = QuickPrintDraft(
+            source = sourceSnapshot(includeDraftQuad = true),
+            showCropEditor = showCropEditor,
+            imageCorrectionApplied = imageCorrectionApplied,
+        )
+        vm.saveDraftAsync(draft) { result ->
+            savingDraft = false
+            android.widget.Toast.makeText(
+                context,
+                if (result.isSuccess) "编辑进度已保存，下次可以继续" else "草稿保存失败，本次内容尚未保存",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
             onBack()
         }
     }
@@ -325,18 +479,19 @@ fun QuickPrintScreen(
                 ),
                 title = { Text(when (sourceMode) {
                     SourceMode.CAMERA -> "拍照打印"
+                    SourceMode.IMAGE -> "图片编辑"
                     SourceMode.TODO -> "待办打印"
                     else -> "快速打印"
                 }, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
-                    IconButton(onClick = { leaveScreen() }, enabled = !savingCameraDraft) {
+                    IconButton(onClick = { leaveScreen() }, enabled = !savingDraft) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
             )
         },
         bottomBar = {
-            if (sourceMode == SourceMode.CAMERA && showCropEditor) {
+            if ((sourceMode == SourceMode.CAMERA || sourceMode == SourceMode.IMAGE) && showCropEditor) {
                 Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).navigationBarsPadding(),
@@ -346,6 +501,7 @@ fun QuickPrintScreen(
                         Button(
                             onClick = {
                                 cameraQuadApplied = cameraQuadDraft.clamped()
+                                if (sourceMode == SourceMode.IMAGE) imageCorrectionApplied = !cameraQuadDraft.isEffectivelyFullImage()
                                 showCropEditor = false
                             },
                             enabled = cameraQuadDraft.isReasonable(),
@@ -375,22 +531,63 @@ fun QuickPrintScreen(
                 .verticalScroll(rememberScrollState()),
         ) {
             Spacer(Modifier.height(4.dp))
-            SourceSelector(
-                sourceMode = sourceMode,
-                onText = { switchMode(SourceMode.TEXT) },
-                onImage = {
-                    if (sourceMode == SourceMode.IMAGE && uris.isNotEmpty()) switchMode(SourceMode.IMAGE)
-                    else imagePicker.launch(arrayOf("image/*"))
-                },
-                onPdf = {
-                    if (sourceMode == SourceMode.PDF && uris.isNotEmpty()) switchMode(SourceMode.PDF)
-                    else pdfPicker.launch(arrayOf("application/pdf"))
-                },
-                onCamera = { launchCamera() },
-                onTodo = { switchMode(SourceMode.TODO) },
-            )
-            Spacer(Modifier.height(10.dp))
+            if (!showCropEditor) {
+                SourceSelector(
+                    sourceMode = sourceMode,
+                    onText = { switchMode(SourceMode.TEXT) },
+                    onImage = {
+                        if (sourceMode == SourceMode.IMAGE && uris.isNotEmpty()) switchMode(SourceMode.IMAGE)
+                        else imagePicker.launch(arrayOf("image/*"))
+                    },
+                    onPdf = {
+                        if (sourceMode == SourceMode.PDF && uris.isNotEmpty()) switchMode(SourceMode.PDF)
+                        else pdfPicker.launch(arrayOf("application/pdf"))
+                    },
+                    onCamera = { launchCamera() },
+                    onTodo = { switchMode(SourceMode.TODO) },
+                )
+                draftCandidate?.let { draft ->
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("有未完成的编辑", fontWeight = FontWeight.SemiBold)
+                                Text("上次中途退出的内容已经保存，可以接着调，不用重新选图或拍照。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            TextButton(onClick = {
+                                applySource(draft.source, draft)
+                                draftCandidate = null
+                                pickerOpened = true
+                            }) { Text("继续") }
+                            TextButton(onClick = {
+                                vm.clearDraft()
+                                draftCandidate = null
+                            }) { Text("放弃") }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text("方向", style = MaterialTheme.typography.labelLarge)
+                    FilterChip(selected = !adjustments.landscapePrint, onClick = { adjustments = adjustments.copy(landscapePrint = false) }, label = { Text("竖向") })
+                    FilterChip(selected = adjustments.landscapePrint, onClick = { adjustments = adjustments.copy(landscapePrint = true) }, label = { Text("横向") })
+                    Spacer(Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(8.dp))
 
+            } else {
+                Text(cameraScanLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                Text("拖动四角或边中点修正范围；自动识别只是起点。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+            }
             AnimatedContent(
                 targetState = sourceMode,
                 transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
@@ -433,17 +630,44 @@ fun QuickPrintScreen(
                                 shape = MaterialTheme.shapes.large,
                             )
                             Spacer(Modifier.height(6.dp))
-                            TextStyleSummary(textStyle, onClick = { showTextSettings = true })
+                            TextStyleSummary(textStyle, title = "字体与排版", onClick = { showTextSettings = true })
                             Spacer(Modifier.height(4.dp))
-                            Text("打印后可直接在纸上勾选完成项；打印历史会保留可编辑源内容。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("字号、字体、行距和对齐都可以调整；打印历史会保留可编辑源内容。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        SourceMode.IMAGE -> SelectedSourceCard(
-                            title = if (uris.size > 1) "已选择 ${uris.size} 张图片" else displayName(context, uris.firstOrNull()) ?: "选择图片",
-                            subtitle = if (uris.isEmpty()) "从相册或文件中选择" else "可连续打印多张图片",
-                            iconRes = R.drawable.ic_quick_image,
-                            action = if (uris.isEmpty()) "选择" else "更换",
-                            onAction = { imagePicker.launch(arrayOf("image/*")) },
-                        )
+                        SourceMode.IMAGE -> {
+                            if (uris.isEmpty()) {
+                                SelectedSourceCard(
+                                    title = "选择图片",
+                                    subtitle = "相册里的试卷、讲义和照片也可以先裁边再优化",
+                                    iconRes = R.drawable.ic_quick_image,
+                                    action = "选择",
+                                    onAction = { imagePicker.launch(arrayOf("image/*")) },
+                                )
+                            } else if (showCropEditor && uris.size == 1) {
+                                Text("裁切与校正", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.height(8.dp))
+                                PhotoCropEditor(uri = uris.first(), quad = cameraQuadDraft, onQuadChange = { cameraQuadDraft = it })
+                                Spacer(Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton(onClick = { cameraQuadDraft = fullImageQuad() }) { Text("整张图片") }
+                                    TextButton(onClick = { imagePicker.launch(arrayOf("image/*")) }) { Text("重新选择") }
+                                }
+                            } else {
+                                SelectedSourceCard(
+                                    title = if (uris.size > 1) "已选择 ${uris.size} 张图片" else displayName(context, uris.firstOrNull()) ?: "图片编辑",
+                                    subtitle = if (uris.size > 1) "多图将连续打印；单图可裁边、透视和优化" else "已校正，可继续调整纸面效果",
+                                    iconRes = R.drawable.ic_quick_image,
+                                    action = "更换",
+                                    onAction = { imagePicker.launch(arrayOf("image/*")) },
+                                )
+                                if (uris.size == 1) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        TextButton(onClick = { cameraQuadDraft = cameraQuadApplied; showCropEditor = true }) { Text("重新裁剪") }
+                                        TextButton(onClick = { scanGeneration++; cameraQuadDraft = cameraQuadApplied; showCropEditor = true }) { Text("重新识别") }
+                                    }
+                                }
+                            }
+                        }
                         SourceMode.PDF -> {
                             SelectedSourceCard(
                                 title = displayName(context, uris.firstOrNull()) ?: "选择 PDF",
@@ -516,24 +740,79 @@ fun QuickPrintScreen(
                                 }
                             } else {
                                 SelectedSourceCard(
-                                    title = "已截取拍摄内容",
-                                    subtitle = "已裁剪，可继续调整",
+                                    title = "拍照编辑",
+                                    subtitle = "纸张已经校正，下方可以直接看效果并调整",
                                     iconRes = R.drawable.ic_camera,
                                     action = "重拍",
                                     onAction = { launchCamera() },
                                 )
-                                Spacer(Modifier.height(6.dp))
-                                TextButton(onClick = {
-                                    cameraQuadDraft = cameraQuadApplied
-                                    showCropEditor = true
-                                }) { Text("重新裁剪") }
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    TextButton(onClick = { cameraQuadDraft = cameraQuadApplied; showCropEditor = true }) { Text("重新裁剪") }
+                                    TextButton(onClick = { scanGeneration++; cameraQuadDraft = cameraQuadApplied; showCropEditor = true }) { Text("重新识别") }
+                                }
                             }
                         }
                     }
                 }
             }
 
-            if ((sourceMode == SourceMode.IMAGE || sourceMode == SourceMode.PDF || sourceMode == SourceMode.CAMERA) && !showCropEditor && uris.isNotEmpty()) {
+            if ((sourceMode == SourceMode.CAMERA || sourceMode == SourceMode.IMAGE) && !showCropEditor && uris.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (sourceMode == SourceMode.CAMERA) "拍照效果" else "图片效果", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.weight(1f))
+                    if (rendering) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    else mono?.let { Text("约 ${(it.height + 7) / 8} mm", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+                Spacer(Modifier.height(8.dp))
+                when {
+                    mono != null -> MonoPaperPreview(image = mono!!, minViewportHeight = 300.dp, maxViewportHeight = 620.dp)
+                    rendering -> PreviewPlaceholder()
+                    else -> EmptyPreviewCard(sourceMode)
+                }
+                error?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                }
+                Spacer(Modifier.height(10.dp))
+                Text("快速优化", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    listOf(
+                        PaperPreset.ORIGINAL to "原图",
+                        PaperPreset.BRIGHTEN to "净化",
+                        PaperPreset.SHARPEN to "清晰",
+                        PaperPreset.DOCUMENT to "黑白文档",
+                        PaperPreset.GRAYSCALE to "灰度",
+                    ).forEach { (preset, label) ->
+                        FilterChip(
+                            selected = adjustments.paperPreset == preset,
+                            onClick = { adjustments = adjustments.copy(paperPreset = preset) },
+                            label = { Text(label, maxLines = 1) },
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedButton(
+                        onClick = { adjustments = adjustments.copy(rotationDegrees = (adjustments.rotationDegrees + 90) % 360) },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("旋转 90°") }
+                    OutlinedButton(onClick = { showAdjustments = true }, modifier = Modifier.weight(1f)) { Text("更多调整") }
+                }
+                Text(
+                    "先选最接近的效果即可；阈值、对比度、去红蓝笔等细项放在“更多调整”里。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            if (sourceMode == SourceMode.PDF && !showCropEditor && uris.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
                 RasterModeSelector(
                     mode = adjustments.mode,
@@ -541,7 +820,7 @@ fun QuickPrintScreen(
                 )
             }
 
-            if (!(sourceMode == SourceMode.CAMERA && showCropEditor)) {
+            if (sourceMode != SourceMode.CAMERA && sourceMode != SourceMode.IMAGE) {
                 Spacer(Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text("打印预览", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -554,8 +833,8 @@ fun QuickPrintScreen(
                 }
                 Spacer(Modifier.height(8.dp))
                 when {
-                    rendering -> PreviewPlaceholder()
                     mono != null -> MonoPaperPreview(image = mono!!, minViewportHeight = 260.dp, maxViewportHeight = 560.dp)
+                    rendering -> PreviewPlaceholder()
                     else -> EmptyPreviewCard(sourceMode)
                 }
                 error?.let {
@@ -567,13 +846,23 @@ fun QuickPrintScreen(
         }
     }
 
-    if (showAdjustments && sourceMode != SourceMode.TEXT && sourceMode != SourceMode.TODO) {
+    if (showAdjustments && (sourceMode == SourceMode.PDF || sourceMode == SourceMode.IMAGE || sourceMode == SourceMode.CAMERA)) {
         ModalBottomSheet(onDismissRequest = { showAdjustments = false }) {
             Column(
                 Modifier.padding(horizontal = 20.dp).navigationBarsPadding().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text("打印调整", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text(if (sourceMode == SourceMode.PDF) "打印调整" else "图片调整", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                if (sourceMode == SourceMode.IMAGE || sourceMode == SourceMode.CAMERA) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        listOf(
+                            PaperPreset.ORIGINAL to "原图", PaperPreset.BRIGHTEN to "净化",
+                            PaperPreset.SHARPEN to "清晰", PaperPreset.DOCUMENT to "黑白文档", PaperPreset.GRAYSCALE to "灰度",
+                        ).forEach { (preset, label) ->
+                            FilterChip(selected = adjustments.paperPreset == preset, onClick = { adjustments = adjustments.copy(paperPreset = preset) }, label = { Text(label) })
+                        }
+                    }
+                }
                 // The preview lives inside the sheet: the controls never hide the thing being adjusted.
                 mono?.let {
                     MonoPaperPreview(image = it, minViewportHeight = 130.dp, maxViewportHeight = 190.dp)
@@ -659,8 +948,14 @@ fun QuickPrintScreen(
                 vm.recordPrinted(
                     title = if (sourceMode == SourceMode.TODO) todoTitle.ifBlank { "待办清单" } else quickHistoryTitle(context, sourceMode, text, uris),
                     image = image, copies = copies,
-                    todo = if (sourceMode == SourceMode.TODO) TodoHistorySource(todoTitle, todoItems, textStyle.fontSizePx, textStyle.lineSpacingPercent, textStyle.font.name, textStyle.align.name) else null,
+                    source = sourceSnapshot(),
                 )
+                vm.clearDraft()
+                draftCandidate = null
+            },
+            onOpenPrinterSettings = {
+                showPrint = false
+                onOpenPrinterSettings()
             },
         )
     }
@@ -701,11 +996,11 @@ private fun SourceSelector(
 }
 
 @Composable
-private fun TextStyleSummary(style: QuickTextStyle, onClick: () -> Unit) {
+private fun TextStyleSummary(style: QuickTextStyle, title: String = "文字排版", onClick: () -> Unit) {
     OutlinedCard(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("文字排版", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 Text(
                     "字号 ${style.fontSizePx} · ${fontLabel(style.font)} · 行距 ${style.lineSpacingPercent}% · ${alignLabel(style.align)}",
                     style = MaterialTheme.typography.bodySmall,
@@ -714,7 +1009,7 @@ private fun TextStyleSummary(style: QuickTextStyle, onClick: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Text("设置", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text("调整", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -839,15 +1134,15 @@ private fun QuickPrintBottomBar(
                         Text("${fontLabel(textStyle.font)} · 字号 ${textStyle.fontSizePx} · ${alignLabel(textStyle.align)}", style = MaterialTheme.typography.labelLarge, maxLines = 1)
                         Text("行距 ${textStyle.lineSpacingPercent}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                     } else if (sourceMode == SourceMode.TODO) {
-                        Text("待办清单", style = MaterialTheme.typography.labelLarge, maxLines = 1)
-                        Text("打印后直接勾选", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        Text("${fontLabel(textStyle.font)} · 字号 ${textStyle.fontSizePx} · ${alignLabel(textStyle.align)}", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                        Text("行距 ${textStyle.lineSpacingPercent}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                     } else {
                         Text("${modeLabel(adjustments.mode)} · ${adjustmentSummary(adjustments)}", style = MaterialTheme.typography.labelLarge, maxLines = 1)
                     }
                 }
-                if (sourceMode != SourceMode.TODO) {
-                    OutlinedButton(onClick = if (sourceMode == SourceMode.TEXT) onTextAdjust else onAdjust, enabled = enabled) {
-                        Text(if (sourceMode == SourceMode.TEXT) "排版" else "调整")
+                if (sourceMode != SourceMode.CAMERA && sourceMode != SourceMode.IMAGE) {
+                    OutlinedButton(onClick = if (sourceMode == SourceMode.TEXT || sourceMode == SourceMode.TODO) onTextAdjust else onAdjust, enabled = enabled) {
+                        Text(if (sourceMode == SourceMode.TEXT || sourceMode == SourceMode.TODO) "字体" else "调整")
                     }
                 }
                 Button(onClick = onPrint, enabled = enabled) { Text("打印") }
@@ -898,6 +1193,21 @@ private fun displayName(context: Context, uri: Uri?): String? {
     }.getOrNull()
 }
 
+private fun DocumentQuad.isEffectivelyFullImage(): Boolean {
+    val p = points()
+    return p[0].x < .01f && p[0].y < .01f &&
+        p[1].x > .99f && p[1].y < .01f &&
+        p[2].x > .99f && p[2].y > .99f &&
+        p[3].x < .01f && p[3].y > .99f
+}
+
+private fun fullImageQuad() = DocumentQuad(
+    topLeft = QuadPoint(0.001f, 0.001f),
+    topRight = QuadPoint(0.999f, 0.001f),
+    bottomRight = QuadPoint(0.999f, 0.999f),
+    bottomLeft = QuadPoint(0.001f, 0.999f),
+)
+
 private fun inferMode(mode: String, intent: Intent?): SourceMode {
     val mime = intent?.type.orEmpty()
     return when {
@@ -938,4 +1248,26 @@ private fun newCameraUri(context: Context): Uri {
     val dir = File(context.cacheDir, "camera").apply { mkdirs() }
     val file = File(dir, "capture_${System.currentTimeMillis()}.jpg")
     return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+}
+
+/** Small in-memory cache so slider changes do not decode and perspective-warp the same photo again. */
+private class PreparedBitmapCache {
+    private var key: String? = null
+    private var bitmap: Bitmap? = null
+
+    suspend fun getOrCreate(newKey: String, loader: suspend () -> Bitmap): Bitmap {
+        bitmap?.takeIf { key == newKey && !it.isRecycled }?.let { return it }
+        val created = loader()
+        bitmap?.takeIf { it !== created && !it.isRecycled }?.recycle()
+        key = newKey
+        bitmap = created
+        return created
+    }
+
+    @Synchronized
+    fun clear() {
+        bitmap?.takeIf { !it.isRecycled }?.recycle()
+        bitmap = null
+        key = null
+    }
 }

@@ -15,6 +15,13 @@ if (localSerializationCompiler.exists()) {
 }
 
 
+// Keep Kotlin bytecode aligned with the Java 17 target even when the build host itself runs JDK 21.
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    @Suppress("DEPRECATION")
+    kotlinOptions.jvmTarget = "17"
+}
+
+
 android {
     namespace = "io.github.soulxyz.xyprt"
     compileSdk = 36
@@ -34,7 +41,9 @@ android {
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
         buildConfigField("String", "UPDATE_API_BASE_URL", "\"$updateApiBase\"")
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        val requestedAbis = providers.gradleProperty("XYPRT_ABIS").orElse("arm64-v8a,armeabi-v7a").get()
+            .split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        ndk { abiFilters += requestedAbis }
     }
 
     buildTypes {
@@ -56,7 +65,10 @@ android {
         buildConfig = true
     }
 
-    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    packaging {
+        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        jniLibs.useLegacyPackaging = providers.gradleProperty("XYPRT_COMPRESS_JNI").orElse("false").get().toBoolean()
+    }
 
     // Public/online builds keep release lint enabled. The portable offline archive currently
     // lacks Google's lint-gradle artifact, so a private reproducible build may opt out explicitly.

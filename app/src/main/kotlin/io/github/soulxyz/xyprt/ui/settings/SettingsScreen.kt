@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -43,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +56,8 @@ import io.github.soulxyz.xyprt.App
 import io.github.soulxyz.xyprt.R
 import io.github.soulxyz.xyprt.ble.BlePermissions
 import io.github.soulxyz.xyprt.ble.PrinterState
+import io.github.soulxyz.xyprt.data.UpdateDownloadMode
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,6 +71,8 @@ fun SettingsScreen(
     val appContainer = remember { (context.applicationContext as App).container }
     val coCreator by appContainer.coCreator.state.collectAsState()
     val modelCatalog by appContainer.enhancedModels.catalog.collectAsState()
+    val updateDownloadMode by appContainer.settings.updateDownloadMode.collectAsState(initial = UpdateDownloadMode.INTERNAL)
+    val scope = rememberCoroutineScope()
     val state by vm.printerState.collectAsState()
     val info by vm.printerInfo.collectAsState()
     val saved by vm.savedPrinter.collectAsState()
@@ -74,6 +80,8 @@ fun SettingsScreen(
     var showScanSheet by remember { mutableStateOf(false) }
     var showForgetConfirm by remember { mutableStateOf(false) }
     var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    LaunchedEffect(Unit) { appContainer.coCreator.refresh(silent = true) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -107,14 +115,14 @@ fun SettingsScreen(
         Column(
             Modifier
                 .padding(padding)
-                .padding(16.dp)
+                .padding(horizontal = 14.dp, vertical = 10.dp)
                 .verticalScroll(rememberScrollState())
         ) {
             Text(stringResource(R.string.settings_printer), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
 
             Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp)) {
                     val statusText = when (val s = state) {
                         is PrinterState.Disconnected -> stringResource(R.string.status_disconnected)
                         is PrinterState.Connecting -> stringResource(R.string.status_connecting, s.attempt)
@@ -160,7 +168,7 @@ fun SettingsScreen(
                         info?.serial?.let { Text(stringResource(R.string.info_serial, it), style = MaterialTheme.typography.bodySmall) }
                     }
 
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         val savedDisconnected = saved != null && state is PrinterState.Disconnected
                         when {
@@ -191,11 +199,7 @@ fun SettingsScreen(
                         }
                     }
                     if (state is PrinterState.Ready) {
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedButton(
-                            onClick = { vm.printTest() },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("打印测试") }
+                        TextButton(onClick = { vm.printTest() }) { Text("打印测试页") }
                     }
                     commandFeedback?.let {
                         Spacer(Modifier.height(8.dp))
@@ -204,26 +208,45 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
-            Text("版本与增强能力", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Spacer(Modifier.height(16.dp))
+            Text("版本与增强", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(6.dp))
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (coCreator.active || coCreator.entryEnabled) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(if (coCreator.active) "共创预览" else "开源稳定版", style = MaterialTheme.typography.titleSmall)
+                                Text(if (coCreator.active) "已激活共创资格，可优先体验灰度能力" else "稳定功能照常更新；共创入口由服务端按需开放", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            TextButton(onClick = onOpenCoCreator) { Text(if (coCreator.active) "共创中心" else "了解") }
+                        }
+                        HorizontalDivider()
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(if (coCreator.active) "共创预览" else "社区开源版", style = MaterialTheme.typography.titleSmall)
-                            Text(if (coCreator.active) "已启用共创者权益" else "核心功能持续免费维护", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("增强识别", style = MaterialTheme.typography.titleSmall)
+                            val ready = modelCatalog.items.count { it.installed && !it.locked }
+                            Text("内置稳定识别始终可用${if (ready > 0) " · $ready 个增强包已就绪" else ""}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        OutlinedButton(onClick = onOpenCoCreator) { Text(if (coCreator.active) "共创者中心" else "共创者计划") }
+                        TextButton(onClick = onOpenEnhanced) { Text("管理") }
                     }
                     HorizontalDivider()
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("增强能力", style = MaterialTheme.typography.titleSmall)
-                            val ready = modelCatalog.items.count { it.installed && !it.locked }
-                            Text("标准识别始终可用${if (ready > 0) " · $ready 个增强包已就绪" else ""}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text("更新下载", style = MaterialTheme.typography.titleSmall)
+                        Text("默认在应用内下载并校验安装包；需要时也可以交给浏览器下载。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = updateDownloadMode == UpdateDownloadMode.INTERNAL,
+                                onClick = { scope.launch { appContainer.settings.saveUpdateDownloadMode(UpdateDownloadMode.INTERNAL) } },
+                                label = { Text("应用内（推荐）") },
+                            )
+                            FilterChip(
+                                selected = updateDownloadMode == UpdateDownloadMode.EXTERNAL,
+                                onClick = { scope.launch { appContainer.settings.saveUpdateDownloadMode(UpdateDownloadMode.EXTERNAL) } },
+                                label = { Text("浏览器") },
+                            )
                         }
-                        OutlinedButton(onClick = onOpenEnhanced) { Text("管理") }
                     }
                 }
             }

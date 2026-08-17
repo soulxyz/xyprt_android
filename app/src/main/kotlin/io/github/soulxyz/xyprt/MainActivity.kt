@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             LablerTheme {
-                AppNav()
+                AppNav(startDestination = intent.getStringExtra(EXTRA_START_ROUTE) ?: "home")
             }
         }
         // Only hold on a real cold start (only then does the system show a splash). On
@@ -56,9 +56,10 @@ class MainActivity : ComponentActivity() {
         (application as App).container.printerManager.startBackgroundReconnect()
     }
 
-    private companion object {
+    companion object {
         // Covers the start offset (150 ms) + the extend (320 ms) plus some buffer,
         // so the whole motion is visible before the splash fades out.
         const val SPLASH_HOLD_MS = 500L
+        const val EXTRA_START_ROUTE = "start_route"
     }
 }

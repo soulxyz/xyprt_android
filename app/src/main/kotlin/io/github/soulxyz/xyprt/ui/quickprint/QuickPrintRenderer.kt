@@ -25,10 +25,19 @@ import io.github.soulxyz.xyprt.printer.dither.Outline
 import io.github.soulxyz.xyprt.printer.dither.InkRemoval
 import io.github.soulxyz.xyprt.printer.dither.OutlineMethod
 import kotlin.math.roundToInt
+import org.opencv.android.OpenCVLoader
+import org.opencv.core.Core
+import org.opencv.core.CvType
+import org.opencv.core.Mat
+import org.opencv.core.Size
+import org.opencv.imgproc.Imgproc
 
 /** Processing options shared by quick-image and PDF printing. */
+enum class PaperPreset { ORIGINAL, BRIGHTEN, SHARPEN, DOCUMENT, GRAYSCALE }
+
 data class QuickImageAdjustments(
     val mode: DitherMode = DitherMode.FLOYD_STEINBERG,
+    val paperPreset: PaperPreset = PaperPreset.ORIGINAL,
     val threshold: Int = 155,
     val contrast: Int = 0,
     val invert: Boolean = false,
@@ -36,11 +45,17 @@ data class QuickImageAdjustments(
     val outlineThickness: Int = 1,
     val outlineMethod: OutlineMethod = OutlineMethod.CANNY,
     val outlineSmooth: Boolean = false,
+    /** Rotation used to correct the source image itself. */
     val rotationDegrees: Int = 0,
+    /** Rotate the finished content sideways for physical horizontal printing. */
+    val landscapePrint: Boolean = false,
     val scalePercent: Int = 100,
     val removeRedInk: Boolean = false,
     val removeBlueInk: Boolean = false,
 )
+
+internal fun QuickImageAdjustments.outputRotationDegrees(): Int =
+    ((rotationDegrees + if (landscapePrint) 90 else 0) % 360 + 360) % 360
 
 enum class QuickTextFont { SANS, SERIF, MONO }
 enum class QuickTextAlign { LEFT, CENTER, RIGHT }
@@ -396,14 +411,15 @@ object QuickPrintRenderer {
             }
             if (a.invert) BooleanArray(edge.size) { !edge[it] } else edge
         } else {
-            val gray = FloatArray(px.size) { i ->
+            var gray = FloatArray(px.size) { i ->
                 val p = px[i]
                 val r = (p shr 16) and 0xff
                 val g = (p shr 8) and 0xff
                 val b = p and 0xff
-                val lum = r * 0.299f + g * 0.587f + b * 0.114f
-                if (a.invert) 255f - lum else lum
+                r * 0.299f + g * 0.587f + b * 0.114f
             }
+            gray = paperPreprocess(gray, w, h, a.paperPreset)
+            if (a.invert) gray = FloatArray(gray.size) { 255f - gray[it] }
             when (a.mode) {
                 DitherMode.THRESHOLD -> BooleanArray(gray.size) { gray[it] < a.threshold }
                 else -> Ditherer.of(a.mode).dither(Contrast.adjust(gray, a.contrast), w, h)
@@ -411,4 +427,334 @@ object QuickPrintRenderer {
         }
         return MonoImage(h, black).trimTrailingWhite()
     }
+
+    /**
+     * Document/photo cleanup presets. The primary path deliberately uses the same long-established
+     * OpenCV building blocks used by the reference scanner projects we keep for regression:
+     * CLAHE, Gaussian unsharp masking, illumination flattening and adaptive Gaussian thresholding.
+     * Processing runs after the source has already been fitted to printer width (384 px), so a
+     * preset change is cheap enough for interactive preview.
+     */
+    private fun paperPreprocess(src: FloatArray, w: Int, h: Int, preset: PaperPreset): FloatArray {
+        if (preset == PaperPreset.ORIGINAL) return src
+        if (!PaperOpenCv.ready) return paperPreprocessFallback(src, w, h, preset)
+
+        val gray = Mat(h, w, CvType.CV_8UC1)
+        gray.put(0, 0, ByteArray(src.size) { src[it].roundToInt().coerceIn(0, 255).toByte() })
+        val work = Mat()
+        val background = Mat()
+        val blur = Mat()
+        try {
+            when (preset) {
+                PaperPreset.ORIGINAL -> gray.copyTo(work)
+                PaperPreset.GRAYSCALE -> {
+                    // Keep tonal information, but clean the paper illumination before the thermal
+                    // ditherer sees it. This is useful for photos, packaging and handwriting.
+                    normalizePaperLighting(gray, work, strength = 245.0)
+                    if (grayContrast(work) < 46.0) {
+                        val clahe = Imgproc.createCLAHE(1.25, Size(8.0, 8.0))
+                        try { clahe.apply(work, work) } finally { clahe.collectGarbage() }
+                    }
+                }
+                PaperPreset.BRIGHTEN -> {
+                    // "净化" rather than a blind brightness offset: flatten warm shadows and lift
+                    // the paper background while keeping gray pencil/receipt strokes.
+                    normalizePaperLighting(gray, work, strength = 248.0)
+                    Core.addWeighted(work, 1.03, work, 0.0, 6.0, work)
+                }
+                PaperPreset.SHARPEN -> {
+                    normalizePaperLighting(gray, work, strength = 244.0)
+                    if (grayContrast(work) < 58.0) {
+                        val clahe = Imgproc.createCLAHE(1.35, Size(8.0, 8.0))
+                        try { clahe.apply(work, work) } finally { clahe.collectGarbage() }
+                    }
+                    Imgproc.GaussianBlur(work, blur, Size(0.0, 0.0), 1.0)
+                    Core.addWeighted(work, 1.62, blur, -0.62, 2.0, work)
+                }
+                PaperPreset.DOCUMENT -> robustDocumentBw(gray, work)
+            }
+            val out = ByteArray(src.size)
+            work.get(0, 0, out)
+            return FloatArray(out.size) { (out[it].toInt() and 0xff).toFloat() }
+        } catch (_: Throwable) {
+            return paperPreprocessFallback(src, w, h, preset)
+        } finally {
+            gray.release(); work.release(); background.release(); blur.release()
+        }
+    }
+
+    /**
+     * A print-oriented version of the robust document pipeline used by the reference scanner:
+     * shadow division -> conditional CLAHE -> light denoise -> several threshold candidates ->
+     * automatic quality selection -> conservative despeckle/border cleanup.
+     *
+     * The important difference from the previous implementation is that adaptive thresholding is
+     * no longer always forced. Clean receipts usually prefer Otsu; uneven photographed pages often
+     * prefer Gaussian/mean/Sauvola. Picking the least noisy plausible candidate avoids the black
+     * pepper seen in real receipts while still rescuing pages with shadows.
+     */
+    private fun robustDocumentBw(gray: Mat, out: Mat) {
+        val normalized = Mat()
+        val denoised = Mat()
+        val up = Mat()
+        try {
+            normalizePaperLighting(gray, normalized, strength = 246.0)
+            if (grayContrast(normalized) < 44.0) {
+                val clahe = Imgproc.createCLAHE(1.35, Size(8.0, 8.0))
+                try { clahe.apply(normalized, normalized) } finally { clahe.collectGarbage() }
+            }
+            Imgproc.GaussianBlur(normalized, denoised, Size(3.0, 3.0), 0.0)
+
+            // At printer width tiny Chinese strokes are only a few pixels. Threshold at up to 2x
+            // and reduce once, which gives local threshold algorithms enough neighborhood context.
+            val longSide = maxOf(denoised.cols(), denoised.rows()).coerceAtLeast(1)
+            val scale = minOf(2.0, 1500.0 / longSide).coerceAtLeast(1.0)
+            val thresholdInput = if (scale > 1.05) {
+                Imgproc.resize(denoised, up, Size(), scale, scale, Imgproc.INTER_CUBIC)
+                up
+            } else denoised
+
+            var block = (minOf(thresholdInput.cols(), thresholdInput.rows()) / 12).coerceIn(31, 81)
+            if (block % 2 == 0) block++
+            val c = resolveAdaptiveC(thresholdInput)
+
+            val otsu = Mat(); val mean = Mat(); val gaussian = Mat(); val sauvola = Mat()
+            try {
+                Imgproc.threshold(thresholdInput, otsu, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
+                Imgproc.adaptiveThreshold(thresholdInput, mean, 255.0, Imgproc.ADAPTIVE_THRESH_MEAN_C, Imgproc.THRESH_BINARY, block, c)
+                Imgproc.adaptiveThreshold(thresholdInput, gaussian, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, block, c)
+                sauvolaThreshold(thresholdInput, sauvola, block, 0.28)
+
+                val targetBlack = blackFraction(otsu).coerceIn(0.008, 0.34)
+                val candidates = listOf(otsu, gaussian, mean, sauvola)
+                val best = candidates.minByOrNull { scoreBwCandidate(it, targetBlack, thresholdInput) } ?: otsu
+                val chosen = Mat(); best.copyTo(chosen)
+                try {
+                    removeTinySpeckles(chosen, if (scale > 1.05) 7 else 2)
+                    reconnectThinStrokes(chosen, scale > 1.05)
+                    if (scale > 1.05) {
+                        Imgproc.resize(chosen, out, gray.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+                        Imgproc.threshold(out, out, 190.0, 255.0, Imgproc.THRESH_BINARY)
+                    } else chosen.copyTo(out)
+                    removeDocumentBorderArtifacts(out)
+                } finally { chosen.release() }
+            } finally { otsu.release(); mean.release(); gaussian.release(); sauvola.release() }
+        } finally { normalized.release(); denoised.release(); up.release() }
+    }
+
+    private fun normalizePaperLighting(gray: Mat, out: Mat, strength: Double) {
+        val bg = Mat()
+        try {
+            var k = (minOf(gray.cols(), gray.rows()) / 5).coerceIn(31, 91)
+            if (k % 2 == 0) k++
+            Imgproc.GaussianBlur(gray, bg, Size(k.toDouble(), k.toDouble()), 0.0)
+            Core.add(bg, org.opencv.core.Scalar.all(1.0), bg)
+            Core.divide(gray, bg, out, strength)
+        } finally { bg.release() }
+    }
+
+    private fun grayContrast(gray: Mat): Double {
+        val bytes = ByteArray((gray.total() * gray.channels()).toInt())
+        gray.get(0, 0, bytes)
+        if (bytes.isEmpty()) return 0.0
+        var sum = 0.0; var sumSq = 0.0
+        val step = (bytes.size / 12000).coerceAtLeast(1)
+        var n = 0
+        var i = 0
+        while (i < bytes.size) {
+            val v = (bytes[i].toInt() and 0xff).toDouble(); sum += v; sumSq += v * v; n++; i += step
+        }
+        val mean = sum / n.coerceAtLeast(1)
+        return kotlin.math.sqrt((sumSq / n.coerceAtLeast(1) - mean * mean).coerceAtLeast(0.0))
+    }
+
+    private fun resolveAdaptiveC(gray: Mat): Double =
+        (14.0 + (20.0 - grayContrast(gray)).coerceAtLeast(0.0) * 0.12).coerceIn(10.0, 18.0)
+
+    private fun sauvolaThreshold(gray: Mat, out: Mat, block: Int, k: Double) {
+        val f = Mat(); val mean = Mat(); val sq = Mat(); val meanSq = Mat()
+        try {
+            gray.convertTo(f, CvType.CV_32F)
+            Imgproc.boxFilter(f, mean, CvType.CV_32F, Size(block.toDouble(), block.toDouble()))
+            Core.multiply(f, f, sq)
+            Imgproc.boxFilter(sq, meanSq, CvType.CV_32F, Size(block.toDouble(), block.toDouble()))
+            val srcBytes = ByteArray((gray.total()).toInt()); gray.get(0, 0, srcBytes)
+            val means = FloatArray(srcBytes.size); val meansSq = FloatArray(srcBytes.size)
+            mean.get(0, 0, means); meanSq.get(0, 0, meansSq)
+            val dst = ByteArray(srcBytes.size)
+            for (i in dst.indices) {
+                val m = means[i].toDouble(); val variance = (meansSq[i] - means[i] * means[i]).toDouble().coerceAtLeast(0.0)
+                val std = kotlin.math.sqrt(variance)
+                val threshold = m * (1.0 + k * (std / 128.0 - 1.0))
+                dst[i] = if ((srcBytes[i].toInt() and 0xff) > threshold) 255.toByte() else 0
+            }
+            out.create(gray.rows(), gray.cols(), CvType.CV_8UC1); out.put(0, 0, dst)
+        } finally { f.release(); mean.release(); sq.release(); meanSq.release() }
+    }
+
+    private fun blackFraction(bw: Mat): Double {
+        val total = bw.total().toDouble().coerceAtLeast(1.0)
+        return (total - Core.countNonZero(bw)) / total
+    }
+
+    private fun scoreBwCandidate(bw: Mat, targetBlack: Double, sourceGray: Mat): Double {
+        val black = blackFraction(bw)
+        var score = kotlin.math.abs(black - targetBlack)
+        if (black < .006) score += 2.0
+        if (black > .48) score += 2.0
+        val inv = Mat(); val labels = Mat(); val stats = Mat(); val centroids = Mat()
+        try {
+            Core.bitwise_not(bw, inv)
+            val n = Imgproc.connectedComponentsWithStats(inv, labels, stats, centroids, 8, CvType.CV_32S)
+            if (n > 1) {
+                var tiny = 0
+                for (i in 1 until n) if (stats.get(i, Imgproc.CC_STAT_AREA)[0] < 5.0) tiny++
+                val area = bw.total().toDouble().coerceAtLeast(1.0)
+                score += tiny / (n - 1).toDouble() * 1.6 + minOf(1.4, tiny * 10000.0 / area * .065)
+            }
+        } catch (_: Throwable) { score += .25 }
+        finally { inv.release(); labels.release(); stats.release(); centroids.release() }
+
+        // Text/stroke retention: a candidate that looks wonderfully clean but erases the faint
+        // receipt characters is not useful. Reward black pixels that still cover real grayscale
+        // edges, while the component-noise term above keeps paper grain from gaming the score.
+        val edges = Mat(); val blackMask = Mat(); val expanded = Mat(); val overlap = Mat()
+        var kernel: Mat? = null
+        try {
+            Imgproc.Canny(sourceGray, edges, 35.0, 105.0)
+            Core.bitwise_not(bw, blackMask)
+            kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+            Imgproc.dilate(blackMask, expanded, kernel)
+            Core.bitwise_and(edges, expanded, overlap)
+            val edgeCount = Core.countNonZero(edges).toDouble()
+            if (edgeCount > 20.0) {
+                val recall = Core.countNonZero(overlap) / edgeCount
+                if (recall < .72) score += (.72 - recall) * .9
+                else score -= minOf(.12, (recall - .72) * .7)
+            }
+        } catch (_: Throwable) { }
+        finally { edges.release(); blackMask.release(); expanded.release(); overlap.release(); kernel?.release() }
+        return score
+    }
+
+    private fun removeTinySpeckles(bw: Mat, minArea: Int) {
+        val inv = Mat(); val labels = Mat(); val stats = Mat(); val centroids = Mat(); val mask = Mat()
+        try {
+            Core.bitwise_not(bw, inv)
+            val n = Imgproc.connectedComponentsWithStats(inv, labels, stats, centroids, 8, CvType.CV_32S)
+            for (i in 1 until n) {
+                if (stats.get(i, Imgproc.CC_STAT_AREA)[0] < minArea) {
+                    Core.compare(labels, org.opencv.core.Scalar(i.toDouble()), mask, Core.CMP_EQ)
+                    bw.setTo(org.opencv.core.Scalar(255.0), mask)
+                }
+            }
+        } catch (_: Throwable) {}
+        finally { inv.release(); labels.release(); stats.release(); centroids.release(); mask.release() }
+    }
+
+    private fun reconnectThinStrokes(bw: Mat, highRes: Boolean) {
+        if (!highRes) return
+        val inv = Mat(); val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(2.0, 2.0))
+        try {
+            Core.bitwise_not(bw, inv)
+            Imgproc.morphologyEx(inv, inv, Imgproc.MORPH_CLOSE, kernel)
+            Core.bitwise_not(inv, bw)
+        } catch (_: Throwable) {}
+        finally { inv.release(); kernel.release() }
+    }
+
+    private fun removeDocumentBorderArtifacts(binary: Mat) {
+        val inv = Mat()
+        val labels = Mat()
+        val stats = Mat()
+        val centroids = Mat()
+        val mask = Mat()
+        try {
+            Core.bitwise_not(binary, inv)
+            val count = Imgproc.connectedComponentsWithStats(inv, labels, stats, centroids, 8, CvType.CV_32S)
+            val w = binary.cols()
+            val h = binary.rows()
+            val total = (w * h).coerceAtLeast(1)
+            for (label in 1 until count) {
+                val left = stats.get(label, Imgproc.CC_STAT_LEFT)[0].toInt()
+                val top = stats.get(label, Imgproc.CC_STAT_TOP)[0].toInt()
+                val cw = stats.get(label, Imgproc.CC_STAT_WIDTH)[0].toInt()
+                val ch = stats.get(label, Imgproc.CC_STAT_HEIGHT)[0].toInt()
+                val area = stats.get(label, Imgproc.CC_STAT_AREA)[0].toInt()
+                val touches = left <= 1 || top <= 1 || left + cw >= w - 1 || top + ch >= h - 1
+                val borderLike = cw >= (w * .42f) || ch >= (h * .42f) || area >= (total * .012f)
+                // Do not erase a page that is genuinely mostly black.
+                if (touches && borderLike && area < total * .28f) {
+                    Core.compare(labels, org.opencv.core.Scalar(label.toDouble()), mask, Core.CMP_EQ)
+                    binary.setTo(org.opencv.core.Scalar(255.0), mask)
+                }
+            }
+            // A white one-pixel safety rim prevents interpolation residue from reappearing as a
+            // solid thermal-print border.
+            Imgproc.rectangle(binary, org.opencv.core.Point(0.0, 0.0), org.opencv.core.Point((w - 1).toDouble(), (h - 1).toDouble()), org.opencv.core.Scalar(255.0), 1)
+        } catch (_: Throwable) {
+            // Border cleanup is optional; never make a usable preset fail because of it.
+        } finally {
+            inv.release(); labels.release(); stats.release(); centroids.release(); mask.release()
+        }
+    }
+
+    /** Pure-Kotlin fallback used only if the native OpenCV runtime cannot be initialized. */
+    private fun paperPreprocessFallback(src: FloatArray, w: Int, h: Int, preset: PaperPreset): FloatArray {
+        if (preset == PaperPreset.ORIGINAL) return src
+        if (preset == PaperPreset.GRAYSCALE) {
+            val local = run {
+                val stride = w + 1
+                val integral = DoubleArray((w + 1) * (h + 1))
+                for (y in 0 until h) { var row = 0.0; for (x in 0 until w) { row += src[y*w+x]; integral[(y+1)*stride+x+1] = integral[y*stride+x+1] + row } }
+                FloatArray(src.size) { i ->
+                    val y=i/w; val x=i%w; val r=4; val x0=(x-r).coerceAtLeast(0); val x1=(x+r+1).coerceAtMost(w); val y0=(y-r).coerceAtLeast(0); val y1=(y+r+1).coerceAtMost(h)
+                    val sum=integral[y1*stride+x1]-integral[y0*stride+x1]-integral[y1*stride+x0]+integral[y0*stride+x0]
+                    (sum/((x1-x0)*(y1-y0))).toFloat()
+                }
+            }
+            return FloatArray(src.size) { (128f + (src[it] - local[it]) * 1.08f + (local[it]-128f)*0.92f).coerceIn(0f,255f) }
+        }
+        if (preset == PaperPreset.BRIGHTEN) return FloatArray(src.size) { (src[it] * 1.06f + 16f).coerceIn(0f, 255f) }
+
+        fun boxMean(radius: Int): FloatArray {
+            val stride = w + 1
+            val integral = DoubleArray((w + 1) * (h + 1))
+            for (y in 0 until h) {
+                var row = 0.0
+                for (x in 0 until w) {
+                    row += src[y * w + x]
+                    integral[(y + 1) * stride + x + 1] = integral[y * stride + x + 1] + row
+                }
+            }
+            val out = FloatArray(src.size)
+            for (y in 0 until h) {
+                val y0 = (y - radius).coerceAtLeast(0)
+                val y1 = (y + radius + 1).coerceAtMost(h)
+                for (x in 0 until w) {
+                    val x0 = (x - radius).coerceAtLeast(0)
+                    val x1 = (x + radius + 1).coerceAtMost(w)
+                    val sum = integral[y1 * stride + x1] - integral[y0 * stride + x1] - integral[y1 * stride + x0] + integral[y0 * stride + x0]
+                    out[y * w + x] = (sum / ((x1 - x0) * (y1 - y0))).toFloat()
+                }
+            }
+            return out
+        }
+        return when (preset) {
+            PaperPreset.SHARPEN -> {
+                val blur = boxMean(1)
+                FloatArray(src.size) { (src[it] + 0.75f * (src[it] - blur[it]) + 6f).coerceIn(0f, 255f) }
+            }
+            PaperPreset.DOCUMENT -> {
+                val local = boxMean(12)
+                FloatArray(src.size) { if (src[it] < local[it] - 10f) 0f else 255f }
+            }
+            else -> src
+        }
+    }
+
+    private object PaperOpenCv {
+        val ready: Boolean by lazy { runCatching { OpenCVLoader.initLocal() }.getOrDefault(false) }
+    }
+
 }

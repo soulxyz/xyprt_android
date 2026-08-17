@@ -1,11 +1,11 @@
 package io.github.soulxyz.xyprt.data.remote
 
 import android.content.Context
-import android.os.Build
 import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import java.io.File
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.MessageDigest
@@ -13,15 +13,21 @@ import java.security.PublicKey
 import java.util.UUID
 import javax.crypto.Cipher
 
+/**
+ * Anonymous installation identity used by the co-creator backend.
+ *
+ * The installation id lives in noBackupFilesDir so Android Auto Backup cannot restore an old id
+ * without its Android Keystore key after a reinstall. Older builds stored the id in preferences;
+ * that value is migrated once for existing installs.
+ */
 class DeviceIdentity(private val context: Context) {
     private val prefs = context.getSharedPreferences("xyprt_device_identity", Context.MODE_PRIVATE)
+    private val idFile = File(context.noBackupFilesDir, "xyprt_installation_id_v2")
     private val alias = "xyprt_device_identity_rsa_v1"
+    private val lock = Any()
 
-    val installationId: String by lazy {
-        prefs.getString("installation_id", null)?.takeIf { it.length in 16..128 } ?: UUID.randomUUID().toString().replace("-", "").also {
-            prefs.edit().putString("installation_id", it).apply()
-        }
-    }
+    val installationId: String
+        get() = synchronized(lock) { readOrCreateInstallationId() }
 
     val androidIdHash: String by lazy {
         val raw = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID).orEmpty()
@@ -32,6 +38,19 @@ class DeviceIdentity(private val context: Context) {
     val publicKeyBase64: String get() = Base64.encodeToString(publicKey.encoded, Base64.NO_WRAP)
     val publicKeyFingerprint: String get() = sha256Hex(publicKey.encoded)
 
+    /**
+     * Used only after the server reports an identity mismatch. The app-scoped ANDROID_ID hash and
+     * Keystore key still let the backend perform a controlled re-bind instead of trapping a user
+     * behind an identity restored from an old backup.
+     */
+    fun rotateInstallationId(): String = synchronized(lock) {
+        newInstallationId().also {
+            idFile.parentFile?.mkdirs()
+            idFile.writeText(it)
+            prefs.edit().remove("installation_id").apply()
+        }
+    }
+
     fun unwrapModelKey(wrappedBase64: String): ByteArray {
         val wrapped = Base64.decode(wrappedBase64, Base64.DEFAULT)
         val privateKey = ensureKeyPair().getKey(alias, null)
@@ -40,6 +59,20 @@ class DeviceIdentity(private val context: Context) {
             doFinal(wrapped)
         }
     }
+
+    private fun readOrCreateInstallationId(): String {
+        val fromFile = runCatching { idFile.takeIf { it.isFile }?.readText()?.trim() }.getOrNull()
+            ?.takeIf { it.length in 16..128 }
+        if (fromFile != null) return fromFile
+        val legacy = prefs.getString("installation_id", null)?.takeIf { it.length in 16..128 }
+        val value = legacy ?: newInstallationId()
+        idFile.parentFile?.mkdirs()
+        runCatching { idFile.writeText(value) }
+        prefs.edit().remove("installation_id").apply()
+        return value
+    }
+
+    private fun newInstallationId() = UUID.randomUUID().toString().replace("-", "")
 
     private fun ensureKeyPair(): KeyStore {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -59,6 +92,7 @@ class DeviceIdentity(private val context: Context) {
     }
 
     companion object {
-        fun sha256Hex(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        fun sha256Hex(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it) }
     }
 }

@@ -33,6 +33,36 @@ data class PrintHistoryEntry(
     val sourceJson: String? = null,
 )
 
+
+@Serializable
+data class QuickPrintHistorySource(
+    val mode: String,
+    val text: String = "",
+    val todoTitle: String = "",
+    val todoItems: String = "",
+    val fontSizePx: Int = 30,
+    val lineSpacingPercent: Int = 115,
+    val font: String = "SANS",
+    val align: String = "LEFT",
+    val uris: List<String> = emptyList(),
+    val ditherMode: String = "THRESHOLD",
+    val paperPreset: String = "ORIGINAL",
+    val threshold: Int = 170,
+    val contrast: Int = 0,
+    val invert: Boolean = false,
+    val outlineSensitivity: Int = 88,
+    val outlineThickness: Int = 1,
+    val outlineMethod: String = "CANNY",
+    val outlineSmooth: Boolean = false,
+    val rotationDegrees: Int = 0,
+    /** Physical print orientation. Kept separate from image correction rotation. */
+    val landscapePrint: Boolean = false,
+    val scalePercent: Int = 100,
+    val removeRedInk: Boolean = false,
+    val removeBlueInk: Boolean = false,
+    val pdfAutoCrop: Boolean = true,
+    val cameraQuad: List<Float> = emptyList(),
+)
 @Serializable
 data class TodoHistorySource(
     val title: String,

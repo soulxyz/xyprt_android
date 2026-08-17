@@ -17,8 +17,9 @@ data class CoCreatorState(
     val label: String? = null,
     val refreshing: Boolean = false,
     val lastError: String? = null,
+    val entryEnabled: Boolean = false,
 ) {
-    val editionLabel: String get() = if (active) "共创预览" else "社区开源版"
+    val editionLabel: String get() = if (active) "共创预览" else "开源稳定版"
 }
 
 class CoCreatorRepository(
@@ -42,17 +43,27 @@ class CoCreatorRepository(
         runCatching {
             registerDevice()
             val root = api.getJson("/v1/sponsor/status.php?installationId=${identity.installationId}")
-            parseSponsor(root["sponsor"]?.jsonObject)
+            parseSponsor(root["sponsor"]?.jsonObject, root["ui"]?.jsonObject)
         }.onSuccess { _state.value = it; cache(it) }
             .onFailure { if (!silent) _state.value = _state.value.copy(refreshing = false, lastError = it.message) }
     }
 
-    suspend fun activate(code: String): Result<CoCreatorState> = runCatching {
-        val root = api.postJson("/v1/sponsor/activate.php", buildJsonObject {
-            deviceFields(this)
-            put("code", code.trim())
-        })
-        parseSponsor(root["sponsor"]?.jsonObject).also { _state.value = it; cache(it) }
+    suspend fun activate(code: String): Result<CoCreatorState> {
+        suspend fun request(): CoCreatorState {
+            val root = api.postJson("/v1/sponsor/activate.php", buildJsonObject {
+                deviceFields(this)
+                put("code", code.trim())
+            })
+            return parseSponsor(root["sponsor"]?.jsonObject, root["ui"]?.jsonObject).also { _state.value = it; cache(it) }
+        }
+        return try {
+            Result.success(request())
+        } catch (first: Throwable) {
+            if (first.message.orEmpty().contains("device_identity_mismatch", ignoreCase = true)) {
+                identity.rotateInstallationId()
+                runCatching { request() }
+            } else Result.failure(first)
+        }
     }
 
     fun deviceBody() = buildJsonObject { deviceFields(this) }
@@ -72,20 +83,20 @@ class CoCreatorRepository(
     private fun loadCached(): CoCreatorState {
         val exp = prefs.getLong("expires_at", 0L).takeIf { it > 0L }
         val active = prefs.getBoolean("active", false) && (exp == null || exp > System.currentTimeMillis() / 1000L)
-        return CoCreatorState(active = active, expiresAt = exp, label = prefs.getString("label", null))
+        return CoCreatorState(active = active, expiresAt = exp, label = prefs.getString("label", null), entryEnabled = prefs.getBoolean("entry_enabled", false))
     }
 
     private fun cache(state: CoCreatorState) {
-        prefs.edit().putBoolean("active", state.active).putLong("expires_at", state.expiresAt ?: 0L).putString("label", state.label).apply()
+        prefs.edit().putBoolean("active", state.active).putLong("expires_at", state.expiresAt ?: 0L).putString("label", state.label).putBoolean("entry_enabled", state.entryEnabled).apply()
     }
 
-    private fun parseSponsor(o: kotlinx.serialization.json.JsonObject?): CoCreatorState {
-        if (o == null) return CoCreatorState()
+    private fun parseSponsor(o: kotlinx.serialization.json.JsonObject?, ui: kotlinx.serialization.json.JsonObject? = null): CoCreatorState {
         return CoCreatorState(
-            active = o.boolean("active") ?: false,
-            expiresAt = o.long("expiresAt"),
-            label = o.string("label"),
+            active = o?.boolean("active") ?: false,
+            expiresAt = o?.long("expiresAt"),
+            label = o?.string("label"),
             refreshing = false,
+            entryEnabled = ui?.boolean("cocreatorEntryEnabled") ?: _state.value.entryEnabled,
         )
     }
 }

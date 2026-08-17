@@ -39,11 +39,11 @@ private const val PEEK_FADE_INITIAL = 0.85f
 private val SystemBackEasing = CubicBezierEasing(0.1f, 0.1f, 0f, 1f)
 
 @Composable
-fun AppNav() {
+fun AppNav(startDestination: String = "home") {
     val nav = rememberNavController()
     NavHost(
         navController = nav,
-        startDestination = "home",
+        startDestination = startDestination,
         enterTransition = {
             slideInHorizontally(
                 animationSpec = tween(FORWARD_MS, easing = EaseOutCubic),
@@ -86,19 +86,28 @@ fun AppNav() {
                 onQuickDocument = { nav.navigate("quick/pdf") },
                 onQuickCamera = { nav.navigate("quick/camera") },
                 onQuickTodo = { nav.navigate("quick/todo") },
+                onOpenCoCreator = { nav.navigate("cocreator") },
             )
         }
         composable("history") {
-            HistoryScreen(onBack = { nav.popBackStack() }, onEditTodo = { id -> nav.navigate("quick/todo-edit/$id") })
+            HistoryScreen(
+                onBack = { nav.popBackStack() },
+                onEditQuick = { id -> nav.navigate("quick/history/$id") },
+                onOpenTemplate = { id -> nav.navigate("editor/$id") },
+            )
         }
 
         composable("quick/{mode}") { entry ->
             val mode = entry.arguments?.getString("mode") ?: "text"
-            QuickPrintScreen(mode = mode, onBack = { nav.popBackStack() })
+            QuickPrintScreen(mode = mode, onBack = { nav.popBackStack() }, onOpenPrinterSettings = { nav.navigate("settings") })
         }
         composable("quick/todo-edit/{historyId}") { entry ->
             val id = entry.arguments?.getString("historyId")?.toLongOrNull()
-            QuickPrintScreen(mode = "todo", historyId = id, onBack = { nav.popBackStack() })
+            QuickPrintScreen(mode = "todo", historyId = id, onBack = { nav.popBackStack() }, onOpenPrinterSettings = { nav.navigate("settings") })
+        }
+        composable("quick/history/{historyId}") { entry ->
+            val id = entry.arguments?.getString("historyId")?.toLongOrNull()
+            QuickPrintScreen(mode = "history", historyId = id, onBack = { nav.popBackStack() }, onOpenPrinterSettings = { nav.navigate("settings") })
         }
         composable("editor/{id}") { entry ->
             val id = entry.arguments?.getString("id").orEmpty()
@@ -110,7 +119,7 @@ fun AppNav() {
         }
         composable("settings") {
             SettingsScreen(
-                onBack = { nav.popBackStack() },
+                onBack = { if (!nav.popBackStack()) nav.navigate("home") },
                 onOpenCoCreator = { nav.navigate("cocreator") },
                 onOpenEnhanced = { nav.navigate("enhanced-capabilities") },
             )

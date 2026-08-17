@@ -25,6 +25,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -54,7 +55,10 @@ import androidx.compose.ui.window.DialogProperties
 import io.github.soulxyz.xyprt.App
 import io.github.soulxyz.xyprt.R
 import io.github.soulxyz.xyprt.data.UpdateState
+import io.github.soulxyz.xyprt.data.UpdateDownloadMode
+import io.github.soulxyz.xyprt.data.UpdateDownloadState
 import io.github.soulxyz.xyprt.ui.components.rememberBlePermissionRunner
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -62,7 +66,7 @@ import kotlinx.coroutines.withContext
 
 /** About + update status + portable backup. */
 @Composable
-fun InfoDialog(onDismiss: () -> Unit) {
+fun InfoDialog(onDismiss: () -> Unit, onOpenCoCreator: () -> Unit = {}) {
     val context = LocalContext.current
     val app = context.applicationContext as App
     val container = app.container
@@ -77,6 +81,7 @@ fun InfoDialog(onDismiss: () -> Unit) {
     val websiteUrl = "https://github.com/soulxyz/xyprt_android"
     val upstreamUrl = "https://github.com/toolicious/labler"
     val updateState by container.updates.state.collectAsState()
+    val updateDownloadState by container.updateDownloads.state.collectAsState()
     val coCreatorState by container.coCreator.state.collectAsState()
 
     val scope = rememberCoroutineScope()
@@ -85,7 +90,7 @@ fun InfoDialog(onDismiss: () -> Unit) {
     var showBackupMenu by remember { mutableStateOf(false) }
     var pendingImport by remember { mutableStateOf<ByteArray?>(null) }
 
-    LaunchedEffect(Unit) { container.updates.check() }
+    LaunchedEffect(Unit) { container.coCreator.refresh(silent = true); container.updates.check() }
 
     fun toast(res: Int) = Toast.makeText(context, context.getString(res), Toast.LENGTH_SHORT).show()
     fun openUrl(url: String) {
@@ -169,7 +174,18 @@ fun InfoDialog(onDismiss: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(13.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("${coCreatorState.editionLabel} · 版本 $version · Soulxyz", style = MaterialTheme.typography.labelMedium, color = muted)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text("版本 $version · Soulxyz", style = MaterialTheme.typography.labelMedium, color = muted)
+                    if (coCreatorState.active || coCreatorState.entryEnabled) {
+                        Text(
+                            coCreatorState.editionLabel,
+                            modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(MaterialTheme.colorScheme.primaryContainer)
+                                .clickable { onDismiss(); onOpenCoCreator() }.padding(horizontal = 10.dp, vertical = 5.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                }
                 Text(
                     "支持文字、图片、PDF、拍照和自由排版，也可从其他应用直接分享打印。让打印更简单，也更顺手。",
                     style = MaterialTheme.typography.bodyMedium,
@@ -178,8 +194,18 @@ fun InfoDialog(onDismiss: () -> Unit) {
 
                 UpdateCard(
                     state = updateState,
+                    downloadState = updateDownloadState,
                     onCheck = { container.updates.check(force = true) },
-                    onDownload = { info -> openUrl(info.mirrorApkUrl ?: info.sourceApkUrl ?: info.releaseUrl) },
+                    onDownload = { info ->
+                        scope.launch {
+                            if (container.updateDownloads.effectiveMode(info) == UpdateDownloadMode.EXTERNAL) {
+                                openUrl(info.mirrorApkUrl ?: info.sourceApkUrl ?: info.releaseUrl)
+                            } else container.updateDownloads.start(info)
+                        }
+                    },
+                    onCancel = { container.updateDownloads.cancel() },
+                    onInstall = { container.updateDownloads.installPrepared() },
+                    onBrowser = { info -> openUrl(info.mirrorApkUrl ?: info.sourceApkUrl ?: info.releaseUrl) },
                     onSource = { info -> openUrl(info.releaseUrl) },
                 )
 
@@ -234,8 +260,12 @@ fun InfoDialog(onDismiss: () -> Unit) {
 @Composable
 private fun UpdateCard(
     state: UpdateState,
+    downloadState: UpdateDownloadState,
     onCheck: () -> Unit,
     onDownload: (io.github.soulxyz.xyprt.data.UpdateInfo) -> Unit,
+    onCancel: () -> Unit,
+    onInstall: () -> Unit,
+    onBrowser: (io.github.soulxyz.xyprt.data.UpdateInfo) -> Unit,
     onSource: (io.github.soulxyz.xyprt.data.UpdateInfo) -> Unit,
 ) {
     val bg = MaterialTheme.colorScheme.surfaceContainerLow
@@ -266,14 +296,79 @@ private fun UpdateCard(
                 val info = state.info
                 Text("发现 ${info.versionName}", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                 if (info.notes.isNotBlank()) ReleaseNotes(info.notes)
+                val delta = info.delta
+                if (delta != null && info.fullSizeBytes != null && info.fullSizeBytes > 0) {
+                    Text(
+                        "可用增量更新 ${formatBytes(delta.patchSize)} · 完整包 ${formatBytes(info.fullSizeBytes)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
                 Text("更新信息来自${info.checkedVia}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { onDownload(info) }) { Text("下载更新") }
-                    OutlinedButton(onClick = { onSource(info) }) { Text("源站") }
+                when (val d = downloadState) {
+                    is UpdateDownloadState.Downloading -> if (d.info.versionCode == info.versionCode) {
+                        val total = d.totalBytes
+                        if (total != null && total > 0) {
+                            LinearProgressIndicator(progress = { (d.downloadedBytes.toFloat() / total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                        } else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Text(
+                            "${if (d.usingDelta) "增量更新" else "应用内下载"} · ${formatBytes(d.downloadedBytes)}${total?.let { " / ${formatBytes(it)}" }.orEmpty()}${if (d.bytesPerSecond > 0) " · ${formatBytes(d.bytesPerSecond)}/s" else ""}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        TextButton(onClick = onCancel) { Text("取消") }
+                    } else UpdateButtons(info, onDownload, onBrowser, onSource)
+                    is UpdateDownloadState.Verifying -> if (d.info.versionCode == info.versionCode) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Text(if (d.usingDelta) "正在重建并校验完整安装包…" else "正在校验安装包…", style = MaterialTheme.typography.bodySmall)
+                    } else UpdateButtons(info, onDownload, onBrowser, onSource)
+                    is UpdateDownloadState.NeedsInstallPermission -> if (d.info.versionCode == info.versionCode) {
+                        Text("安装包已校验。请先允许“口袋小印”安装未知应用，然后回来继续安装。", style = MaterialTheme.typography.bodySmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = onInstall) { Text("继续安装") }
+                            TextButton(onClick = { onBrowser(info) }) { Text("浏览器下载") }
+                        }
+                    } else UpdateButtons(info, onDownload, onBrowser, onSource)
+                    is UpdateDownloadState.ReadyToInstall -> if (d.info.versionCode == info.versionCode) {
+                        Text("安装包已校验，可以交给系统安装器。", style = MaterialTheme.typography.bodySmall)
+                        Button(onClick = onInstall) { Text("安装更新") }
+                    } else UpdateButtons(info, onDownload, onBrowser, onSource)
+                    is UpdateDownloadState.Installing -> if (d.info.versionCode == info.versionCode) {
+                        Text("已交给系统安装器，请按系统提示完成更新。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    } else UpdateButtons(info, onDownload, onBrowser, onSource)
+                    is UpdateDownloadState.Failed -> if (d.info?.versionCode == info.versionCode) {
+                        Text(d.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { onDownload(info) }) { Text("重试") }
+                            if (d.canUseBrowser) OutlinedButton(onClick = { onBrowser(info) }) { Text("浏览器下载") }
+                        }
+                    } else UpdateButtons(info, onDownload, onBrowser, onSource)
+                    UpdateDownloadState.Idle -> UpdateButtons(info, onDownload, onBrowser, onSource)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun UpdateButtons(
+    info: io.github.soulxyz.xyprt.data.UpdateInfo,
+    onDownload: (io.github.soulxyz.xyprt.data.UpdateInfo) -> Unit,
+    onBrowser: (io.github.soulxyz.xyprt.data.UpdateInfo) -> Unit,
+    onSource: (io.github.soulxyz.xyprt.data.UpdateInfo) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = { onDownload(info) }) { Text("更新") }
+        OutlinedButton(onClick = { onBrowser(info) }) { Text("浏览器") }
+        TextButton(onClick = { onSource(info) }) { Text("源站") }
+    }
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024 * 1024 -> String.format(Locale.US, "%.1f GB", bytes / (1024.0 * 1024 * 1024))
+    bytes >= 1024L * 1024 -> String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024))
+    bytes >= 1024 -> String.format(Locale.US, "%.1f KB", bytes / 1024.0)
+    else -> "$bytes B"
 }
 
 

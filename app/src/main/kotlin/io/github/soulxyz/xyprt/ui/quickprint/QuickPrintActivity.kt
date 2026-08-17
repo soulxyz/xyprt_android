@@ -2,9 +2,11 @@ package io.github.soulxyz.xyprt.ui.quickprint
 
 import android.content.Context
 import android.os.Bundle
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import io.github.soulxyz.xyprt.MainActivity
 import io.github.soulxyz.xyprt.ui.info.wrapWithAppLanguage
 import io.github.soulxyz.xyprt.ui.theme.LablerTheme
 
@@ -19,7 +21,14 @@ class QuickPrintActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             LablerTheme {
-                QuickPrintScreen(mode = "auto", onBack = { finish() }, externalIntent = intent)
+                QuickPrintScreen(
+                    mode = "auto",
+                    onBack = { finish() },
+                    externalIntent = intent,
+                    onOpenPrinterSettings = {
+                        startActivity(Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_START_ROUTE, "settings"))
+                    },
+                )
             }
         }
     }

@@ -7,6 +7,7 @@ import io.github.soulxyz.xyprt.data.remote.DeviceIdentity
 import io.github.soulxyz.xyprt.data.remote.ServerApi
 import io.github.soulxyz.xyprt.data.remote.boolean
 import io.github.soulxyz.xyprt.data.remote.int
+import io.github.soulxyz.xyprt.data.remote.long
 import io.github.soulxyz.xyprt.data.remote.string
 import java.net.HttpURLConnection
 import java.net.URL
@@ -41,6 +42,9 @@ data class UpdateInfo(
     val mirrorApkUrl: String?,
     val digestSha256: String?,
     val checkedVia: String,
+    val fullSizeBytes: Long? = null,
+    val serverDownloadMode: ServerDownloadMode = ServerDownloadMode.AUTO,
+    val delta: DeltaUpdateInfo? = null,
 )
 
 /**
@@ -110,13 +114,16 @@ class UpdateRepository(
                 mirrorApkUrl = null,
                 digestSha256 = release["download"]?.let { runCatching { it.jsonObject.string("sha256") }.getOrNull() },
                 checkedVia = "口袋小印共创更新服务",
+                fullSizeBytes = release["download"]?.let { runCatching { it.jsonObject.long("size") }.getOrNull() },
+                serverDownloadMode = parseServerDownloadMode(root.string("downloadMode")),
+                delta = parseManagedDelta(root, api),
             )
-        } else parseOpenSourceRelease(release)
+        } else parseOpenSourceRelease(release, parseServerDownloadMode(root.string("downloadMode")))
     }
 
     private suspend fun fetchGateway(): UpdateInfo? = withContext(Dispatchers.IO) { parseGatewayUpdate(httpGet(API_LATEST), json) }
 
-    private fun parseOpenSourceRelease(latest: JsonObject): UpdateInfo? {
+    private fun parseOpenSourceRelease(latest: JsonObject, mode: ServerDownloadMode = ServerDownloadMode.AUTO): UpdateInfo? {
         val version = latest.string("version") ?: return null
         return UpdateInfo(
             versionName = version,
@@ -126,6 +133,8 @@ class UpdateRepository(
             releaseUrl = latest.string("releaseUrl") ?: "$REPOSITORY_URL/releases/latest",
             sourceApkUrl = latest.string("downloadUrl"), mirrorApkUrl = null,
             digestSha256 = latest.string("sha256"), checkedVia = latest.string("checkedVia") ?: "口袋小印更新服务",
+            fullSizeBytes = latest.long("size"),
+            serverDownloadMode = mode,
         )
     }
 
@@ -155,8 +164,28 @@ internal fun parseGatewayUpdate(raw: String, json: Json): UpdateInfo? {
         releaseUrl = releaseUrl,
         sourceApkUrl = latest.localString("downloadUrl"), mirrorApkUrl = null,
         digestSha256 = latest.localString("sha256"), checkedVia = latest.localString("checkedVia") ?: "口袋小印更新服务",
+        fullSizeBytes = latest.localString("size")?.toLongOrNull(),
+        serverDownloadMode = parseServerDownloadMode(latest.localString("downloadMode")),
     )
 }
+
+private fun parseServerDownloadMode(raw: String?): ServerDownloadMode = when (raw?.lowercase()) {
+    "internal" -> ServerDownloadMode.INTERNAL
+    "external" -> ServerDownloadMode.EXTERNAL
+    else -> ServerDownloadMode.AUTO
+}
+
+private fun parseManagedDelta(root: JsonObject, api: ServerApi): DeltaUpdateInfo? = runCatching {
+    val d = root["delta"]?.jsonObject ?: return@runCatching null
+    DeltaUpdateInfo(
+        url = api.absolute(d.string("url") ?: return@runCatching null),
+        fromVersionCode = d.int("fromVersionCode") ?: return@runCatching null,
+        fromApkSha256 = d.string("fromApkSha256") ?: return@runCatching null,
+        patchSha256 = d.string("sha256") ?: return@runCatching null,
+        patchSize = d.long("size") ?: return@runCatching null,
+        resultApkSha256 = d.string("resultApkSha256") ?: return@runCatching null,
+    )
+}.getOrNull()
 
 private fun JsonObject.localString(key: String): String? = runCatching { this[key]?.jsonPrimitive?.content }.getOrNull()
 

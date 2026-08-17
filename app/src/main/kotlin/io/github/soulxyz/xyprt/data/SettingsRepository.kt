@@ -26,6 +26,7 @@ class SettingsRepository(private val context: Context) {
         val PRINT_FEED_BEFORE = intPreferencesKey("print_feed_before_dots")
         val PRINT_FEED_AFTER = intPreferencesKey("print_feed_after_dots")
         val LAST_SEEN_UPDATE_CODE = intPreferencesKey("last_seen_update_code")
+        val UPDATE_DOWNLOAD_MODE = stringPreferencesKey("update_download_mode")
     }
 
     val savedPrinter: Flow<SavedPrinter?> = context.dataStore.data.map { prefs ->
@@ -65,11 +66,23 @@ class SettingsRepository(private val context: Context) {
     val printFeedBeforeDots: Flow<Int> = context.dataStore.data.map { it[Keys.PRINT_FEED_BEFORE] ?: 10 }
     val printFeedAfterDots: Flow<Int> = context.dataStore.data.map { it[Keys.PRINT_FEED_AFTER] ?: 100 }
     val lastSeenUpdateCode: Flow<Int> = context.dataStore.data.map { it[Keys.LAST_SEEN_UPDATE_CODE] ?: 0 }
+    val updateDownloadMode: Flow<UpdateDownloadMode> = context.dataStore.data.map { prefs ->
+        when (prefs[Keys.UPDATE_DOWNLOAD_MODE]) {
+            "external" -> UpdateDownloadMode.EXTERNAL
+            else -> UpdateDownloadMode.INTERNAL
+        }
+    }
 
     suspend fun savePrintSpacing(beforeDots: Int, afterDots: Int) {
         context.dataStore.edit {
             it[Keys.PRINT_FEED_BEFORE] = beforeDots.coerceIn(0, 240)
             it[Keys.PRINT_FEED_AFTER] = afterDots.coerceIn(0, 320)
+        }
+    }
+
+    suspend fun saveUpdateDownloadMode(mode: UpdateDownloadMode) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.UPDATE_DOWNLOAD_MODE] = if (mode == UpdateDownloadMode.EXTERNAL) "external" else "internal"
         }
     }
 

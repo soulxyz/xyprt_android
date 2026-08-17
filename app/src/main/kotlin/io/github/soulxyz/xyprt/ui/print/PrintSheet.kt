@@ -47,6 +47,7 @@ fun PrintSheet(
     initialMedia: MediaType,
     onDismiss: () -> Unit,
     onPrinted: (copies: Int, media: MediaType) -> Unit = { _, _ -> },
+    onOpenPrinterSettings: () -> Unit = {},
     vm: PrintViewModel = viewModel(),
 ) {
     val working by vm.working.collectAsState()
@@ -132,7 +133,7 @@ fun PrintSheet(
                     state = printerState,
                     hasSavedPrinter = savedPrinter != null,
                     onConnect = { vm.connect() },
-                    onOpenSettings = onDismiss,
+                    onOpenSettings = onOpenPrinterSettings,
                 )
                 Spacer(Modifier.height(8.dp))
             }

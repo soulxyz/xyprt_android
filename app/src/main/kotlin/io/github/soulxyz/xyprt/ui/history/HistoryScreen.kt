@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -60,7 +61,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HistoryScreen(onBack: () -> Unit, onEditTodo: (Long) -> Unit = {}, vm: HistoryViewModel = viewModel()) {
+fun HistoryScreen(onBack: () -> Unit, onEditQuick: (Long) -> Unit = {}, onOpenTemplate: (String) -> Unit = {}, vm: HistoryViewModel = viewModel()) {
     val entries by vm.entries.collectAsState()
     var reprint by remember { mutableStateOf<Pair<MonoImage, PrintHistoryEntry>?>(null) }
     val withBlePermissions = rememberBlePermissionRunner()
@@ -115,7 +116,8 @@ fun HistoryScreen(onBack: () -> Unit, onEditTodo: (Long) -> Unit = {}, vm: Histo
                         }
                     },
                     onDelete = { vm.delete(entry.id) },
-                    onEditTodo = if (entry.sourceType == "todo" && !entry.sourceJson.isNullOrBlank()) ({ onEditTodo(entry.id) }) else null,
+                    onEditQuick = if (entry.rasterBase64 != null) ({ onEditQuick(entry.id) }) else null,
+                    onConvertLayout = if (entry.rasterBase64 != null) ({ vm.convertQuickToTemplate(entry.id) { id -> if (id != null) onOpenTemplate(id) } }) else null,
                 )
             }
         }
@@ -135,7 +137,8 @@ private fun HistoryCard(
     entry: PrintHistoryEntry,
     onReprint: () -> Unit,
     onDelete: () -> Unit,
-    onEditTodo: (() -> Unit)? = null,
+    onEditQuick: (() -> Unit)? = null,
+    onConvertLayout: (() -> Unit)? = null,
 ) {
     ElevatedCard(
         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -178,10 +181,11 @@ private fun HistoryCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(onClick = onReprint, modifier = Modifier.height(40.dp)) { Text("再打一次") }
-                    if (onEditTodo != null) OutlinedButton(onClick = onEditTodo, modifier = Modifier.height(40.dp)) { Text("编辑待办") }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onReprint, contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp), modifier = Modifier.height(36.dp)) { Text("再打") }
+                    if (onEditQuick != null) TextButton(onClick = onEditQuick, contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp), modifier = Modifier.height(36.dp)) { Text("重新编辑") }
+                    if (onConvertLayout != null) TextButton(onClick = onConvertLayout, contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp), modifier = Modifier.height(36.dp)) { Text("自由排版") }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
                         Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.cd_delete), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }

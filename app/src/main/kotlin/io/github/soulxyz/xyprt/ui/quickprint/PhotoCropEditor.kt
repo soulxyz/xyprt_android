@@ -39,7 +39,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.min
 
-private enum class QuadHandle { TL, TR, BR, BL }
+private enum class QuadHandle { TL, TOP, TR, RIGHT, BR, BOTTOM, BL, LEFT }
 
 /** Four-corner document surface. The user always has final control over the automatic detector. */
 @Composable
@@ -57,24 +57,51 @@ fun PhotoCropEditor(
     var boxSize by remember{mutableStateOf(IntSize.Zero)};var active by remember{mutableStateOf<QuadHandle?>(null)};val latest by rememberUpdatedState(quad)
     val primary=MaterialTheme.colorScheme.primary;val bg=MaterialTheme.colorScheme.surfaceContainerHighest
 
-    Box(modifier.fillMaxWidth().height(380.dp).background(bg,RoundedCornerShape(20.dp)).onSizeChanged{boxSize=it}){
+    Box(modifier.fillMaxWidth().height(480.dp).background(bg,RoundedCornerShape(20.dp)).onSizeChanged{boxSize=it}){
         val bmp=bitmap
         if(bmp!=null&&boxSize.width>0&&boxSize.height>0){
             Image(bmp.asImageBitmap(),null,Modifier.fillMaxSize(),contentScale=ContentScale.Fit,filterQuality=FilterQuality.Medium)
             val scale=min(boxSize.width/bmp.width.toFloat(),boxSize.height/bmp.height.toFloat());val dw=bmp.width*scale;val dh=bmp.height*scale;val ox=(boxSize.width-dw)/2f;val oy=(boxSize.height-dh)/2f
             fun screen(p:QuadPoint)=Offset(ox+p.x*dw,oy+p.y*dh)
             fun norm(p:Offset)=QuadPoint(((p.x-ox)/dw).coerceIn(0f,1f),((p.y-oy)/dh).coerceIn(0f,1f))
-            fun handles(q:DocumentQuad)=listOf(QuadHandle.TL to screen(q.topLeft),QuadHandle.TR to screen(q.topRight),QuadHandle.BR to screen(q.bottomRight),QuadHandle.BL to screen(q.bottomLeft))
+            fun handles(q:DocumentQuad):List<Pair<QuadHandle,Offset>> {
+                val tl=screen(q.topLeft);val tr=screen(q.topRight);val br=screen(q.bottomRight);val bl=screen(q.bottomLeft)
+                fun mid(a:Offset,b:Offset)=Offset((a.x+b.x)/2f,(a.y+b.y)/2f)
+                return listOf(
+                    QuadHandle.TL to tl, QuadHandle.TOP to mid(tl,tr), QuadHandle.TR to tr,
+                    QuadHandle.RIGHT to mid(tr,br), QuadHandle.BR to br, QuadHandle.BOTTOM to mid(br,bl),
+                    QuadHandle.BL to bl, QuadHandle.LEFT to mid(bl,tl),
+                )
+            }
             Canvas(Modifier.fillMaxSize().pointerInput(uri,boxSize){
-                detectDragGestures(onDragStart={pos->active=handles(latest).minByOrNull{(_,p)->(p-pos).getDistance()}?.takeIf{(_,p)->(p-pos).getDistance()<=hitPx}?.first},onDragEnd={active=null},onDragCancel={active=null},onDrag={change,_->
-                    val h=active?:return@detectDragGestures;change.consume();val p=norm(change.position);val next=when(h){QuadHandle.TL->latest.copy(topLeft=p);QuadHandle.TR->latest.copy(topRight=p);QuadHandle.BR->latest.copy(bottomRight=p);QuadHandle.BL->latest.copy(bottomLeft=p)}.clamped();if(next.area>0.015f)onQuadChange(next)
-                })
+                detectDragGestures(
+                    onDragStart={pos->active=handles(latest).minByOrNull{(_,p)->(p-pos).getDistance()}?.takeIf{(_,p)->(p-pos).getDistance()<=hitPx}?.first},
+                    onDragEnd={active=null},onDragCancel={active=null},
+                    onDrag={change,dragAmount->
+                        val h=active?:return@detectDragGestures;change.consume();val p=norm(change.position)
+                        val dx=dragAmount.x/dw;val dy=dragAmount.y/dh
+                        fun moved(q:QuadPoint)=QuadPoint((q.x+dx).coerceIn(0f,1f),(q.y+dy).coerceIn(0f,1f))
+                        val q=latest
+                        val next=when(h){
+                            QuadHandle.TL->q.copy(topLeft=p)
+                            QuadHandle.TR->q.copy(topRight=p)
+                            QuadHandle.BR->q.copy(bottomRight=p)
+                            QuadHandle.BL->q.copy(bottomLeft=p)
+                            QuadHandle.TOP->q.copy(topLeft=moved(q.topLeft),topRight=moved(q.topRight))
+                            QuadHandle.RIGHT->q.copy(topRight=moved(q.topRight),bottomRight=moved(q.bottomRight))
+                            QuadHandle.BOTTOM->q.copy(bottomRight=moved(q.bottomRight),bottomLeft=moved(q.bottomLeft))
+                            QuadHandle.LEFT->q.copy(bottomLeft=moved(q.bottomLeft),topLeft=moved(q.topLeft))
+                        }.clamped();if(next.area>0.015f)onQuadChange(next)
+                    }
+                )
             }){
                 val p=quad.points().map(::screen);val path=Path().apply{moveTo(p[0].x,p[0].y);lineTo(p[1].x,p[1].y);lineTo(p[2].x,p[2].y);lineTo(p[3].x,p[3].y);close()}
                 drawPath(path,Color.Black.copy(alpha=.10f));drawPath(path,primary,style=Stroke(width=2.dp.toPx()))
-                // Edge midpoints make perspective obvious without adding more drag targets.
-                for(i in 0..3){val a=p[i];val b=p[(i+1)%4];drawCircle(primary.copy(alpha=.55f),radius=2.5.dp.toPx(),center=Offset((a.x+b.x)/2,(a.y+b.y)/2))}
-                handles(quad).forEach{(_,pt)->drawCircle(Color.White,handleRadius+2.dp.toPx(),pt);drawCircle(primary,handleRadius,pt)}
+                handles(quad).forEach{(kind,pt)->
+                    val corner=kind==QuadHandle.TL||kind==QuadHandle.TR||kind==QuadHandle.BR||kind==QuadHandle.BL
+                    val r=if(corner)handleRadius else handleRadius*.82f
+                    drawCircle(Color.White,r+2.dp.toPx(),pt);drawCircle(primary.copy(alpha=if(corner)1f else .78f),r,pt)
+                }
             }
         }
     }
