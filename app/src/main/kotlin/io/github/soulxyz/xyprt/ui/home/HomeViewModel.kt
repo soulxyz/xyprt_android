@@ -30,6 +30,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val updateState = container.updates.state
+    val coCreatorState = container.coCreator.state
     val updateUnseen = combine(container.updates.state, container.settings.lastSeenUpdateCode) { state, seen ->
         val info = (state as? UpdateState.Available)?.info
         info != null && info.versionCode > seen
@@ -52,6 +53,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     val recentHistory = historyRepo.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val printStats = container.printStats.stats
 
     fun setQuery(value: String) {
         _query.value = value

@@ -68,6 +68,8 @@ data class QuickTextStyle(
 )
 
 /** Render arbitrary shared content into the BY-288's portrait paper coordinate system. */
+enum class TodoPreset { CLEAN, COMPACT, FOCUS }
+
 object QuickPrintRenderer {
     // Keep only a very small safety edge. 16 px/side made documents needlessly tiny.
     private const val EDGE_MARGIN = 4
@@ -109,15 +111,49 @@ object QuickPrintRenderer {
         }
     }
 
-    fun todo(title: String, itemsText: String, style: QuickTextStyle = QuickTextStyle(fontSizePx = 29)): Bitmap {
+    fun todo(
+        title: String,
+        itemsText: String,
+        style: QuickTextStyle = QuickTextStyle(fontSizePx = 29),
+        preset: TodoPreset = TodoPreset.CLEAN,
+        showDate: Boolean = true,
+        dateText: String = "",
+        centerTitle: Boolean = true,
+    ): Bitmap {
+        val titleSize = when (preset) {
+            TodoPreset.CLEAN -> 34f
+            TodoPreset.COMPACT -> 30f
+            TodoPreset.FOCUS -> 38f
+        }
+        val itemSize = when (preset) {
+            TodoPreset.CLEAN -> 29f
+            TodoPreset.COMPACT -> 27f
+            TodoPreset.FOCUS -> 31f
+        }
+        val gap = when (preset) {
+            TodoPreset.CLEAN -> 10
+            TodoPreset.COMPACT -> 6
+            TodoPreset.FOCUS -> 14
+        }
+        val checkboxSize = when (preset) {
+            TodoPreset.CLEAN -> 22f
+            TodoPreset.COMPACT -> 20f
+            TodoPreset.FOCUS -> 24f
+        }
+        val titleAlign = if (centerTitle) Layout.Alignment.ALIGN_CENTER else Layout.Alignment.ALIGN_NORMAL
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
-            textSize = 34f
+            textSize = titleSize
             typeface = Typeface.DEFAULT_BOLD
+        }
+        val datePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            textSize = 18f
+            typeface = Typeface.SANS_SERIF
         }
         val itemPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
-            textSize = style.fontSizePx.coerceIn(16, 64).toFloat()
+            textSize = itemSize
             typeface = when (style.font) {
                 QuickTextFont.SANS -> Typeface.SANS_SERIF
                 QuickTextFont.SERIF -> Typeface.SERIF
@@ -127,22 +163,31 @@ object QuickPrintRenderer {
         val items = itemsText.lineSequence().map { it.trim().removePrefix("- ").removePrefix("• ") }
             .filter { it.isNotBlank() }.take(40).toList()
         val safeTitle = title.trim().ifBlank { "今日待办" }
+        val safeDate = dateText.trim()
         val contentW = CONTENT_WIDTH
-        val itemTextW = (contentW - 38).coerceAtLeast(80)
+        val itemTextW = (contentW - 42).coerceAtLeast(80)
         val titleLayout = StaticLayout.Builder.obtain(safeTitle, 0, safeTitle.length, titlePaint, contentW)
-            .setIncludePad(true).build()
+            .setAlignment(titleAlign).setIncludePad(true).build()
+        val dateLayout = if (showDate && safeDate.isNotBlank()) {
+            StaticLayout.Builder.obtain(safeDate, 0, safeDate.length, datePaint, contentW)
+                .setAlignment(titleAlign).setIncludePad(true).build()
+        } else null
         val itemLayouts = items.map { item ->
             StaticLayout.Builder.obtain(item, 0, item.length, itemPaint, itemTextW)
-                .setAlignment(when (style.align) {
-                    QuickTextAlign.LEFT -> Layout.Alignment.ALIGN_NORMAL
-                    QuickTextAlign.CENTER -> Layout.Alignment.ALIGN_CENTER
-                    QuickTextAlign.RIGHT -> Layout.Alignment.ALIGN_OPPOSITE
+                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                .setIncludePad(true)
+                .setLineSpacing(0f, when (preset) {
+                    TodoPreset.CLEAN -> 1.08f
+                    TodoPreset.COMPACT -> 1.0f
+                    TodoPreset.FOCUS -> 1.12f
                 })
-                .setIncludePad(true).setLineSpacing(0f, style.lineSpacingPercent.coerceIn(80, 200) / 100f).build()
+                .build()
         }
-        val gap = 12
+        val headerGap = if (dateLayout != null) 5 else 0
+        val dividerGap = if (preset == TodoPreset.COMPACT) 10 else 15
+        val rowsHeight = itemLayouts.sumOf { maxOf(it.height, checkboxSize.toInt() + 4) + gap }
         val emptyHint = if (items.isEmpty()) 54 else 0
-        val h = (EDGE_MARGIN * 2 + titleLayout.height + 18 + itemLayouts.sumOf { maxOf(it.height, 34) + gap } + emptyHint)
+        val h = (EDGE_MARGIN * 2 + titleLayout.height + headerGap + (dateLayout?.height ?: 0) + dividerGap + 1 + 14 + rowsHeight + emptyHint)
             .coerceIn(80, MAX_HEIGHT)
         return Bitmap.createBitmap(Protocol.HEAD_DOTS, h, Bitmap.Config.ARGB_8888).also { out ->
             val c = Canvas(out)
@@ -150,24 +195,36 @@ object QuickPrintRenderer {
             c.save()
             c.translate(EDGE_MARGIN.toFloat(), EDGE_MARGIN.toFloat())
             titleLayout.draw(c)
-            var y = titleLayout.height + 18f
+            var y = titleLayout.height.toFloat()
+            dateLayout?.let { layout ->
+                y += headerGap
+                c.save(); c.translate(0f, y); layout.draw(c); c.restore()
+                y += layout.height
+            }
+            y += dividerGap
+            val divider = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; strokeWidth = if (preset == TodoPreset.FOCUS) 2f else 1.4f }
+            c.drawLine(0f, y, contentW.toFloat(), y, divider)
+            y += 14f
+
             if (items.isEmpty()) {
                 itemPaint.color = Color.GRAY
-                c.drawText("添加待办事项后即可打印", 0f, y + 32f, itemPaint)
+                c.drawText("写下今天要做的事", 0f, y + 32f, itemPaint)
             } else {
+                val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.BLACK
+                    this.style = Paint.Style.STROKE
+                    strokeWidth = if (preset == TodoPreset.FOCUS) 2.6f else 2.1f
+                }
                 itemLayouts.forEach { layout ->
-                    val boxTop = y + 4f
-                    val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                        color = Color.BLACK
-                        this.style = Paint.Style.STROKE
-                        strokeWidth = 2.2f
-                    }
-                    c.drawRect(2f, boxTop, 25f, boxTop + 23f, boxPaint)
+                    val rowHeight = maxOf(layout.height.toFloat(), checkboxSize + 4f)
+                    val boxTop = y + (rowHeight - checkboxSize) / 2f
+                    c.drawRect(2f, boxTop, 2f + checkboxSize, boxTop + checkboxSize, boxPaint)
+                    val textY = y + (rowHeight - layout.height) / 2f
                     c.save()
-                    c.translate(38f, y)
+                    c.translate(42f, textY)
                     layout.draw(c)
                     c.restore()
-                    y += maxOf(layout.height, 34) + gap
+                    y += rowHeight + gap
                 }
             }
             c.restore()

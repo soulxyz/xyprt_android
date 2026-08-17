@@ -128,6 +128,9 @@ fun HistoryScreen(onBack: () -> Unit, onEditQuick: (Long) -> Unit = {}, onOpenTe
             image = image,
             initialMedia = entry.spec.media,
             onDismiss = { reprint = null },
+            onPrinted = { copies, media, feedBeforeDots, feedAfterDots ->
+                vm.recordReprint(entry, image, copies, media, feedBeforeDots, feedAfterDots)
+            },
         )
     }
 }
@@ -176,8 +179,11 @@ private fun HistoryCard(
                     SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA).format(Date(entry.printedAt))
                 }
                 Text(dateText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val perCopyLength = entry.printedLengthMm?.let { total ->
+                    (total / entry.copies.coerceAtLeast(1)).toInt().coerceAtLeast(1)
+                }
                 Text(
-                    "${entry.copies} 份 · ${if (entry.spec.autoLength) "自动长度" else "${entry.spec.lengthMm} mm"}",
+                    "${entry.copies} 份 · ${perCopyLength?.let { "$it mm" } ?: if (entry.spec.autoLength) "自动长度" else "${entry.spec.lengthMm} mm"}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

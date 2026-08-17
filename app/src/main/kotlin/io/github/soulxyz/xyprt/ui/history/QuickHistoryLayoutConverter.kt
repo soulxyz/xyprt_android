@@ -53,18 +53,53 @@ internal object QuickHistoryLayoutConverter {
 
     private fun todo(source: QuickPrintHistorySource): EditableHistoryLayout {
         val elements = mutableListOf<LabelElement>()
+        val compact = source.todoPreset == "COMPACT"
+        val focus = source.todoPreset == "FOCUS"
+        val titleSize = when { focus -> 38f; compact -> 30f; else -> 34f }
+        val itemSize = when { focus -> 31f; compact -> 27f; else -> 29f }
+        val gap = when { focus -> 14f; compact -> 6f; else -> 10f }
+        val boxSize = when { focus -> 24f; compact -> 20f; else -> 22f }
+        val headerAlign = if (source.todoCenterTitle) LabelTextAlign.CENTER else LabelTextAlign.LEFT
         var y = 14f
         val title = TextElement(
             id = UUID.randomUUID().toString(),
             x = 8f,
             y = y,
             text = source.todoTitle.trim().ifBlank { "今日待办" },
-            fontSizePx = 34f,
+            fontSizePx = titleSize,
             bold = true,
+            align = headerAlign,
             boxWidthPx = (LabelSpec.PRINT_WIDTH_PX - 16).toFloat(),
         )
         elements += title
-        y += estimateTextHeight(title.text, title.fontSizePx, title.boxWidthPx ?: 368f, title.lineSpacingPercent) + 16f
+        y += estimateTextHeight(title.text, title.fontSizePx, title.boxWidthPx ?: 368f, title.lineSpacingPercent) + 5f
+
+        if (source.todoShowDate && source.todoDate.isNotBlank()) {
+            val date = TextElement(
+                id = UUID.randomUUID().toString(),
+                x = 8f,
+                y = y,
+                text = source.todoDate,
+                fontSizePx = 18f,
+                align = headerAlign,
+                boxWidthPx = (LabelSpec.PRINT_WIDTH_PX - 16).toFloat(),
+            )
+            elements += date
+            y += estimateTextHeight(date.text, date.fontSizePx, date.boxWidthPx ?: 368f, date.lineSpacingPercent) + 10f
+        } else {
+            y += 8f
+        }
+
+        elements += FrameElement(
+            id = UUID.randomUUID().toString(),
+            x = 8f,
+            y = y,
+            style = FrameStyle.LINE_H,
+            widthPx = (LabelSpec.PRINT_WIDTH_PX - 16).toFloat(),
+            heightPx = 2f,
+            strokePx = if (focus) 2f else 1.4f,
+        )
+        y += 15f
 
         source.todoItems.lineSequence()
             .map { it.trim().removePrefix("- ").removePrefix("• ") }
@@ -73,32 +108,34 @@ internal object QuickHistoryLayoutConverter {
             .forEach { item ->
                 val text = TextElement(
                     id = UUID.randomUUID().toString(),
-                    x = 42f,
+                    x = 50f,
                     y = y,
                     text = item,
-                    fontSizePx = source.fontSizePx.toFloat(),
-                    align = source.labelAlign(),
+                    fontSizePx = itemSize,
+                    align = LabelTextAlign.LEFT,
                     font = source.labelFont(),
-                    boxWidthPx = (LabelSpec.PRINT_WIDTH_PX - 52).toFloat(),
-                    lineSpacingPercent = source.lineSpacingPercent,
+                    boxWidthPx = (LabelSpec.PRINT_WIDTH_PX - 60).toFloat(),
+                    lineSpacingPercent = if (compact) 100 else if (focus) 112 else 108,
                 )
                 val textHeight = estimateTextHeight(
                     text.text,
                     text.fontSizePx,
-                    text.boxWidthPx ?: 332f,
+                    text.boxWidthPx ?: 324f,
                     text.lineSpacingPercent,
-                ).coerceAtLeast(26f)
+                ).coerceAtLeast(boxSize + 4f)
+                val rowHeight = maxOf(textHeight, boxSize + 4f)
+                val boxY = y + (rowHeight - boxSize) / 2f
                 elements += FrameElement(
                     id = UUID.randomUUID().toString(),
-                    x = 8f,
-                    y = y + 3f,
+                    x = 10f,
+                    y = boxY,
                     style = FrameStyle.RECT,
-                    widthPx = 22f,
-                    heightPx = 22f,
-                    strokePx = 2f,
+                    widthPx = boxSize,
+                    heightPx = boxSize,
+                    strokePx = if (focus) 2.6f else 2.1f,
                 )
-                elements += text
-                y += textHeight + 12f
+                elements += text.copy(y = y + (rowHeight - textHeight) / 2f)
+                y += rowHeight + gap
             }
 
         return EditableHistoryLayout(

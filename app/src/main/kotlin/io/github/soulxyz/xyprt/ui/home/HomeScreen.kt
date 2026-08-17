@@ -1,6 +1,7 @@
 package io.github.soulxyz.xyprt.ui.home
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -20,7 +21,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
@@ -43,6 +44,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
@@ -78,16 +81,18 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.soulxyz.xyprt.R
 import io.github.soulxyz.xyprt.ble.PrinterState
 import io.github.soulxyz.xyprt.data.PrintHistoryEntry
+import io.github.soulxyz.xyprt.data.PrintStatsSnapshot
 import io.github.soulxyz.xyprt.model.LabelSpec
 import io.github.soulxyz.xyprt.model.LabelTemplate
 import io.github.soulxyz.xyprt.printer.MediaType
 import io.github.soulxyz.xyprt.render.LabelRenderer
 import io.github.soulxyz.xyprt.ui.components.ClearButton
-import io.github.soulxyz.xyprt.ui.components.rememberBlePermissionState
 import io.github.soulxyz.xyprt.ui.info.InfoDialog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private enum class HomeTab { PRINT, DOCUMENTS, ME }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,13 +115,17 @@ fun HomeScreen(
     val printerState by vm.printerState.collectAsState()
     val savedPrinter by vm.savedPrinter.collectAsState()
     val updateUnseen by vm.updateUnseen.collectAsState()
-    val blePermission = rememberBlePermissionState()
+    val printStats by vm.printStats.collectAsState()
+    val coCreatorState by vm.coCreatorState.collectAsState()
+    var selectedTab by rememberSaveable { mutableStateOf(HomeTab.PRINT) }
     var showNewDialog by rememberSaveable { mutableStateOf(false) }
     var editTarget by remember { mutableStateOf<LabelTemplate?>(null) }
     var exportTarget by remember { mutableStateOf<LabelTemplate?>(null) }
     var deleteTarget by remember { mutableStateOf<LabelTemplate?>(null) }
     var showInfoDialog by rememberSaveable { mutableStateOf(false) }
     val defaultName = stringResource(R.string.default_label_name)
+
+    BackHandler(enabled = selectedTab != HomeTab.PRINT) { selectedTab = HomeTab.PRINT }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
@@ -148,42 +157,78 @@ fun HomeScreen(
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 ),
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.size(34.dp),
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Image(
-                                    painterResource(R.drawable.ic_logo_color),
-                                    contentDescription = null,
-                                    modifier = Modifier.width(20.dp).height(26.dp),
-                                )
+                    when (selectedTab) {
+                        HomeTab.PRINT -> Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.size(34.dp),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Image(
+                                        painterResource(R.drawable.ic_logo_color),
+                                        contentDescription = null,
+                                        modifier = Modifier.width(20.dp).height(26.dp),
+                                    )
+                                }
                             }
+                            Spacer(Modifier.width(10.dp))
+                            Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold)
                         }
-                        Spacer(Modifier.width(10.dp))
-                        Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold)
+                        HomeTab.DOCUMENTS -> Text("文档", fontWeight = FontWeight.SemiBold)
+                        HomeTab.ME -> Text("我的", fontWeight = FontWeight.SemiBold)
                     }
                 },
                 actions = {
-                    IconButton(onClick = onOpenHistory) {
-                        Icon(painterResource(R.drawable.ic_history), contentDescription = stringResource(R.string.cd_history))
-                    }
-                    Box {
-                        IconButton(onClick = { showInfoDialog = true }) {
-                            Icon(painterResource(R.drawable.ic_info), contentDescription = stringResource(R.string.cd_info))
+                    when (selectedTab) {
+                        HomeTab.PRINT -> PrinterStatusAction(
+                            state = printerState,
+                            savedName = savedPrinter?.name,
+                            onClick = onOpenSettings,
+                        )
+                        HomeTab.DOCUMENTS -> IconButton(onClick = { showNewDialog = true }) {
+                            Icon(Icons.Default.Add, contentDescription = "新建文档")
                         }
-                        if (updateUnseen) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.error,
-                                shape = RoundedCornerShape(50),
-                                modifier = Modifier.size(8.dp).align(Alignment.TopEnd).offset(x = (-7).dp, y = 7.dp),
-                            ) {}
-                        }
+                        HomeTab.ME -> Unit
                     }
                 },
             )
+        },
+        bottomBar = {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                tonalElevation = 0.dp,
+            ) {
+                NavigationBarItem(
+                    selected = selectedTab == HomeTab.PRINT,
+                    onClick = { selectedTab = HomeTab.PRINT },
+                    icon = { Icon(painterResource(R.drawable.ic_print), contentDescription = null) },
+                    label = { Text("打印") },
+                )
+                NavigationBarItem(
+                    selected = selectedTab == HomeTab.DOCUMENTS,
+                    onClick = { selectedTab = HomeTab.DOCUMENTS },
+                    icon = { Icon(painterResource(R.drawable.ic_documents), contentDescription = null) },
+                    label = { Text("文档") },
+                )
+                NavigationBarItem(
+                    selected = selectedTab == HomeTab.ME,
+                    onClick = { selectedTab = HomeTab.ME },
+                    icon = {
+                        Box {
+                            Icon(painterResource(R.drawable.ic_person), contentDescription = null)
+                            if (updateUnseen) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.error,
+                                    shape = RoundedCornerShape(50),
+                                    modifier = Modifier.size(7.dp).align(Alignment.TopEnd),
+                                ) {}
+                            }
+                        }
+                    },
+                    label = { Text("我的") },
+                )
+            }
         },
     ) { padding ->
         LazyVerticalGrid(
@@ -193,148 +238,105 @@ fun HomeScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                PrinterOverviewCard(
-                    state = printerState,
-                    savedName = savedPrinter?.name,
-                    permissionMissing = !blePermission.granted && savedPrinter != null,
-                    onOpenSettings = onOpenSettings,
-                    onPrimaryAction = {
-                        when {
-                            !blePermission.granted && savedPrinter != null -> blePermission.request()
-                            savedPrinter != null && printerState is PrinterState.Disconnected -> vm.connectSaved()
-                            else -> onOpenSettings()
+            when (selectedTab) {
+                HomeTab.PRINT -> {
+                    item {
+                        QuickActionCard(
+                            title = "图片", subtitle = "从相册选择",
+                            iconRes = R.drawable.ic_quick_image, featured = true, onClick = onQuickImage,
+                        )
+                    }
+                    item {
+                        QuickActionCard(
+                            title = "扫描", subtitle = "拍一张纸",
+                            iconRes = R.drawable.ic_camera, featured = true, onClick = onQuickCamera,
+                        )
+                    }
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        CompactPrintActions(
+                            onText = onQuickText,
+                            onTodo = onQuickTodo,
+                            onPdf = onQuickDocument,
+                        )
+                    }
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        QuickActionWideCard(
+                            title = "自由排版", subtitle = "图文、表格、二维码",
+                            iconRes = R.drawable.ic_quick_layout,
+                            onClick = { vm.create("", LabelSpec(autoLength = true), defaultName, onOpenTemplate) },
+                        )
+                    }
+                    if (recentHistory.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            SectionHeader(title = "最近打印", action = "全部", onAction = onOpenHistory)
                         }
-                    },
-                )
-            }
-
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                SectionHeader(title = "开始打印")
-            }
-            item {
-                QuickActionCard(
-                    title = "图片",
-                    subtitle = "照片、截图、插画",
-                    iconRes = R.drawable.ic_quick_image,
-                    featured = true,
-                    onClick = onQuickImage,
-                )
-            }
-            item {
-                QuickActionCard(
-                    title = "PDF",
-                    subtitle = "试卷、讲义、文档",
-                    iconRes = R.drawable.ic_quick_pdf,
-                    featured = true,
-                    onClick = onQuickDocument,
-                )
-            }
-            item {
-                QuickActionCard(
-                    title = "扫描",
-                    subtitle = "试卷、小票、纸张",
-                    iconRes = R.drawable.ic_camera,
-                    onClick = onQuickCamera,
-                )
-            }
-            item {
-                QuickActionCard(
-                    title = "文字",
-                    subtitle = "字号、字体、行距",
-                    iconRes = R.drawable.ic_quick_text,
-                    onClick = onQuickText,
-                )
-            }
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                QuickActionWideCard(
-                    title = "待办清单",
-                    subtitle = "今天要做什么，打印后直接勾选",
-                    iconRes = R.drawable.ic_quick_todo,
-                    onClick = onQuickTodo,
-                )
-            }
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                QuickActionWideCard(
-                    title = "自由排版",
-                    subtitle = "图文、表格、二维码",
-                    iconRes = R.drawable.ic_quick_layout,
-                    onClick = { showNewDialog = true },
-                )
-            }
-
-            if (recentHistory.isNotEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    SectionHeader(
-                        title = "最近打印",
-                        action = "全部",
-                        onAction = onOpenHistory,
-                    )
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            RecentPrintPanel(entries = recentHistory.take(2), onClick = onOpenHistory)
+                        }
+                    }
                 }
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    RecentPrintPanel(
-                        entries = recentHistory.take(2),
-                        onClick = onOpenHistory,
-                    )
+
+                HomeTab.DOCUMENTS -> {
+                    if (templates.isNotEmpty() || query.isNotBlank()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            OutlinedTextField(
+                                value = query,
+                                onValueChange = vm::setQuery,
+                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = { Text("搜索文档") },
+                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                trailingIcon = { if (query.isNotEmpty()) ClearButton { vm.setQuery("") } },
+                                singleLine = true,
+                                shape = MaterialTheme.shapes.large,
+                            )
+                        }
+                    }
+                    if (templates.isEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            EmptyDocumentsCard(searching = query.isNotBlank(), onCreate = { showNewDialog = true })
+                        }
+                    } else {
+                        items(templates, key = { it.id }) { template ->
+                            val copyName = context.getString(R.string.duplicate_name, template.name)
+                            TemplateCard(
+                                template = template,
+                                modifier = Modifier.animateItem(),
+                                onClick = { onOpenTemplate(template.id) },
+                                onToggleFavorite = { vm.toggleFavorite(template) },
+                                onEdit = { editTarget = template },
+                                onDuplicate = { vm.duplicate(template.id, copyName) },
+                                onDelete = { deleteTarget = template },
+                                onExport = {
+                                    exportTarget = template
+                                    exportLauncher.launch("${template.name}.xyprt")
+                                },
+                            )
+                        }
+                    }
+                }
+
+                HomeTab.ME -> {
+                    item(span = { GridItemSpan(maxLineSpan) }) { PrintStatsCard(printStats) }
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        ProfileActionGroup(
+                            recentCount = recentHistory.size.coerceAtMost(50),
+                            savedPrinterName = savedPrinter?.name,
+                            updateUnseen = updateUnseen,
+                            coCreatorActive = coCreatorState.active,
+                            onOpenHistory = onOpenHistory,
+                            onOpenCoCreator = onOpenCoCreator,
+                            onOpenInfo = { vm.markCurrentUpdateSeen(); showInfoDialog = true },
+                            onOpenSettings = onOpenSettings,
+                        )
+                    }
                 }
             }
-
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                SectionHeader(
-                    title = "我的文档",
-                    subtitle = null,
-                    action = "新建",
-                    onAction = { showNewDialog = true },
-                )
-            }
-
-            if (templates.isNotEmpty() || query.isNotBlank()) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = vm::setQuery,
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("搜索文档") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        trailingIcon = { if (query.isNotEmpty()) ClearButton { vm.setQuery("") } },
-                        singleLine = true,
-                        shape = MaterialTheme.shapes.large,
-                    )
-                }
-            }
-
-            if (templates.isEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    EmptyDocumentsCard(
-                        searching = query.isNotBlank(),
-                        onCreate = { showNewDialog = true },
-                    )
-                }
-            } else {
-                items(templates, key = { it.id }) { template ->
-                    val copyName = context.getString(R.string.duplicate_name, template.name)
-                    TemplateCard(
-                        template = template,
-                        modifier = Modifier.animateItem(),
-                        onClick = { onOpenTemplate(template.id) },
-                        onToggleFavorite = { vm.toggleFavorite(template) },
-                        onEdit = { editTarget = template },
-                        onDuplicate = { vm.duplicate(template.id, copyName) },
-                        onDelete = { deleteTarget = template },
-                        onExport = {
-                            exportTarget = template
-                            exportLauncher.launch("${template.name}.xyprt")
-                        },
-                    )
-                }
-            }
-
             item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(8.dp)) }
         }
     }
 
     if (showInfoDialog) InfoDialog(
-        onDismiss = { vm.markCurrentUpdateSeen(); showInfoDialog = false },
+        onDismiss = { showInfoDialog = false },
         onOpenCoCreator = onOpenCoCreator,
     )
 
@@ -384,70 +386,229 @@ fun HomeScreen(
 }
 
 @Composable
-private fun PrinterOverviewCard(
+private fun PrintStatsCard(stats: PrintStatsSnapshot) {
+    val distance = formatPrintedDistance(stats.printedLengthMm, stats.mileageComplete)
+    val analogy = printedDistanceAnalogy(stats.printedLengthMm)
+    val shape = RoundedCornerShape(26.dp)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .7f), shape),
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        shape = shape,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("打印足迹", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(distance, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
+                    Text("累计打印长度", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("${stats.printCount}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Medium)
+                    Text("次打印", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (analogy != null || !stats.mileageComplete) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .55f),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        analogy?.let { Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium) }
+                        if (!stats.mileageComplete) {
+                            Text(
+                                "部分早期记录没有保存完整长度，实际会更多。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileActionGroup(
+    recentCount: Int,
+    savedPrinterName: String?,
+    updateUnseen: Boolean,
+    coCreatorActive: Boolean,
+    onOpenHistory: () -> Unit,
+    onOpenCoCreator: () -> Unit,
+    onOpenInfo: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(20.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column {
+            ProfileActionRow(
+                iconRes = R.drawable.ic_history,
+                title = "打印记录",
+                subtitle = if (recentCount == 0) "还没有打印记录" else "最近 $recentCount 条",
+                onClick = onOpenHistory,
+            )
+            androidx.compose.material3.HorizontalDivider(
+                modifier = Modifier.padding(start = 58.dp),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+            ProfileActionRow(
+                iconRes = R.drawable.ic_logo_color,
+                title = "共创计划",
+                subtitle = if (coCreatorActive) "已加入" else "小范围开放中",
+                onClick = onOpenCoCreator,
+            )
+            androidx.compose.material3.HorizontalDivider(
+                modifier = Modifier.padding(start = 58.dp),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+            ProfileActionRow(
+                iconRes = R.drawable.ic_info,
+                title = "关于与更新",
+                subtitle = if (updateUnseen) "有新版本可用" else "版本与更新",
+                indicator = updateUnseen,
+                onClick = onOpenInfo,
+            )
+            androidx.compose.material3.HorizontalDivider(
+                modifier = Modifier.padding(start = 58.dp),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+            ProfileActionRow(
+                iconRes = R.drawable.ic_settings_simple,
+                title = "设置",
+                subtitle = savedPrinterName ?: "打印机、备份与其他设置",
+                onClick = onOpenSettings,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProfileActionRow(
+    iconRes: Int,
+    title: String,
+    subtitle: String,
+    indicator: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(
+            painterResource(iconRes),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(26.dp),
+        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (indicator) {
+            Surface(
+                color = MaterialTheme.colorScheme.error,
+                shape = RoundedCornerShape(999.dp),
+                modifier = Modifier.size(8.dp),
+            ) {}
+        }
+        Text("›", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.outline)
+    }
+}
+
+@Composable
+private fun PrinterStatusAction(
     state: PrinterState,
     savedName: String?,
-    permissionMissing: Boolean,
-    onOpenSettings: () -> Unit,
-    onPrimaryAction: () -> Unit,
+    onClick: () -> Unit,
 ) {
-    val ready = state is PrinterState.Ready
-    val title = when (state) {
-        is PrinterState.Ready -> state.name.removeSuffix("_BLE")
+    val connected = state is PrinterState.Ready
+    val busy = state is PrinterState.Printing || state is PrinterState.Connecting
+    val dot = when {
+        connected -> MaterialTheme.colorScheme.primary
+        busy -> MaterialTheme.colorScheme.tertiary
+        state is PrinterState.Error -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.outline
+    }
+    val status = when (state) {
+        is PrinterState.Ready -> "${state.name.removeSuffix("_BLE")}，已连接"
         is PrinterState.Printing -> "正在打印"
-        is PrinterState.Connecting -> savedName ?: "正在连接打印机"
-        is PrinterState.Error -> savedName ?: "打印机需要处理"
-        is PrinterState.Disconnected -> savedName ?: "连接打印机"
+        is PrinterState.Connecting -> "正在连接打印机"
+        is PrinterState.Error -> "打印机需要处理"
+        is PrinterState.Disconnected -> savedName?.let { "$it，未连接" } ?: "打印机"
     }
-    val subtitle = when (state) {
-        is PrinterState.Ready -> buildString {
-            append("已连接")
-            state.batteryPercent?.let { append(" · 电量 $it%") }
-        }
-        is PrinterState.Printing -> "任务进行中，请保持打印机开机"
-        is PrinterState.Connecting -> "正在连接…"
-        is PrinterState.Error -> state.message
-        is PrinterState.Disconnected -> if (savedName != null) "未连接 · 点此重新连接" else "首次使用连接一次，之后会自动记住"
-    }
-
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = if (ready) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
-        ),
-        onClick = onOpenSettings,
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(9.dp),
-        ) {
+    IconButton(onClick = onClick) {
+        Box {
+            Icon(
+                painterResource(R.drawable.ic_print),
+                contentDescription = status,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Surface(
-                color = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(11.dp),
-                modifier = Modifier.size(38.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        painterResource(R.drawable.ic_print),
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = if (ready) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(2.dp))
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-            }
-            if (!ready && state !is PrinterState.Printing) {
-                Button(onClick = onPrimaryAction) {
-                    Text(when { permissionMissing -> "允许蓝牙"; savedName != null -> "连接"; else -> "查找" })
-                }
-            } else {
-                Text("管理", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            }
+                color = dot,
+                shape = RoundedCornerShape(999.dp),
+                modifier = Modifier.size(8.dp).align(Alignment.BottomEnd),
+            ) {}
+        }
+    }
+}
+
+@Composable
+private fun CompactPrintActions(
+    onText: () -> Unit,
+    onTodo: () -> Unit,
+    onPdf: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        CompactPrintAction("文字", R.drawable.ic_quick_text, onText, Modifier.weight(1f))
+        CompactPrintAction("待办", R.drawable.ic_quick_todo, onTodo, Modifier.weight(1f))
+        CompactPrintAction("PDF", R.drawable.ic_quick_pdf, onPdf, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun CompactPrintAction(
+    title: String,
+    iconRes: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedCard(onClick = onClick, modifier = modifier) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                painterResource(iconRes),
+                contentDescription = null,
+                modifier = Modifier.size(21.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Text(title, style = MaterialTheme.typography.labelLarge)
         }
     }
 }
@@ -538,7 +699,7 @@ private fun QuickActionWideCard(
                 Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             }
-            Text("打开", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text("›", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.outline)
         }
     }
 }
@@ -581,7 +742,7 @@ private fun RecentPrintPanel(entries: List<PrintHistoryEntry>, onClick: () -> Un
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Text("查看", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    Text("›", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.outline)
                 }
             }
         }
@@ -602,7 +763,7 @@ private fun EmptyDocumentsCard(searching: Boolean, onCreate: () -> Unit) {
             )
             if (!searching) {
                 Text(
-                    "日常打印直接用上面的图片、扫描、PDF 或文字即可。",
+                    "自由排版文档会保存在这里。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

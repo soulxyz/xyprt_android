@@ -56,6 +56,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -84,7 +85,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.soulxyz.xyprt.App
 import io.github.soulxyz.xyprt.R
 import io.github.soulxyz.xyprt.scanner.DocumentQuad
-import io.github.soulxyz.xyprt.scanner.ScanEngine
 import io.github.soulxyz.xyprt.scanner.QuadPoint
 import io.github.soulxyz.xyprt.data.SavedDocument
 import io.github.soulxyz.xyprt.data.QuickPrintDraft
@@ -98,6 +98,9 @@ import io.github.soulxyz.xyprt.ui.components.RasterModeSelector
 import io.github.soulxyz.xyprt.ui.components.rememberBlePermissionRunner
 import io.github.soulxyz.xyprt.ui.print.PrintSheet
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -130,6 +133,10 @@ fun QuickPrintScreen(
     var text by remember { mutableStateOf(externalText(context, externalIntent).orEmpty()) }
     var todoTitle by remember { mutableStateOf("今日待办") }
     var todoItems by remember { mutableStateOf("") }
+    var todoPreset by remember { mutableStateOf(TodoPreset.CLEAN) }
+    var todoShowDate by remember { mutableStateOf(true) }
+    var todoDate by remember { mutableStateOf(defaultTodoDate()) }
+    var todoCenterTitle by remember { mutableStateOf(true) }
     var textStyle by remember { mutableStateOf(QuickTextStyle()) }
     var uris by remember { mutableStateOf(externalUris(externalIntent)) }
     var adjustments by remember { mutableStateOf(defaultAdjustments(inferred)) }
@@ -146,7 +153,7 @@ fun QuickPrintScreen(
     var pendingCameraUriText by rememberSaveable { mutableStateOf<String?>(null) }
     var cameraQuadDraft by remember { mutableStateOf(DocumentQuad()) }
     var cameraQuadApplied by remember { mutableStateOf(DocumentQuad()) }
-    var cameraScanLabel by remember { mutableStateOf("标准识别") }
+    var cameraScanHint by remember { mutableStateOf<String?>(null) }
     var cameraScanning by remember { mutableStateOf(false) }
     var scanGeneration by remember { mutableIntStateOf(0) }
     var imageSuggestionGeneration by remember { mutableIntStateOf(0) }
@@ -177,6 +184,10 @@ fun QuickPrintScreen(
             text = text,
             todoTitle = todoTitle,
             todoItems = todoItems,
+            todoPreset = todoPreset.name,
+            todoShowDate = todoShowDate,
+            todoDate = todoDate,
+            todoCenterTitle = todoCenterTitle,
             fontSizePx = textStyle.fontSizePx,
             lineSpacingPercent = textStyle.lineSpacingPercent,
             font = textStyle.font.name,
@@ -206,6 +217,10 @@ fun QuickPrintScreen(
         text = source.text
         todoTitle = source.todoTitle.ifBlank { "今日待办" }
         todoItems = source.todoItems
+        todoPreset = runCatching { TodoPreset.valueOf(source.todoPreset) }.getOrDefault(TodoPreset.CLEAN)
+        todoShowDate = source.todoShowDate
+        todoDate = source.todoDate.ifBlank { defaultTodoDate() }
+        todoCenterTitle = source.todoCenterTitle
         textStyle = QuickTextStyle(
             fontSizePx = source.fontSizePx,
             lineSpacingPercent = source.lineSpacingPercent,
@@ -257,6 +272,7 @@ fun QuickPrintScreen(
         if (picked.isNotEmpty()) {
             picked.forEach { uri -> runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
             switchMode(SourceMode.IMAGE)
+            draftCandidate = null
             uris = picked
             cameraQuadDraft = DocumentQuad()
             cameraQuadApplied = DocumentQuad()
@@ -273,12 +289,13 @@ fun QuickPrintScreen(
             runCatching { context.contentResolver.takePersistableUriPermission(picked, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             sourceMode = SourceMode.CAMERA
             adjustments = defaultAdjustments(SourceMode.CAMERA)
+            draftCandidate = null
             uris = listOf(picked)
             cameraQuadDraft = DocumentQuad()
             cameraQuadApplied = DocumentQuad()
             imageCorrectionApplied = false
             imageSuggestionQuad = null
-            cameraScanLabel = "正在识别纸张边缘…"
+            cameraScanHint = null
             showCropEditor = true
             scanGeneration++
             error = null
@@ -287,6 +304,7 @@ fun QuickPrintScreen(
     val pdfPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { picked ->
         if (picked != null) {
             runCatching { context.contentResolver.takePersistableUriPermission(picked, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            draftCandidate = null
             uris = listOf(picked)
             showCropEditor = false
             switchMode(SourceMode.PDF)
@@ -299,11 +317,12 @@ fun QuickPrintScreen(
         if ((ok || readable) && uri != null) {
             sourceMode = SourceMode.CAMERA
             adjustments = defaultAdjustments(SourceMode.CAMERA)
+            draftCandidate = null
             uris = listOf(uri)
             cameraQuadDraft = DocumentQuad()
             cameraQuadApplied = DocumentQuad()
             imageSuggestionQuad = null
-            cameraScanLabel = "正在识别纸张边缘…"
+            cameraScanHint = null
             scanGeneration++
             showCropEditor = true
             error = null
@@ -328,7 +347,7 @@ fun QuickPrintScreen(
     fun openImageDocumentCorrection() {
         if (sourceMode != SourceMode.IMAGE || uris.size != 1) return
         cameraQuadDraft = imageSuggestionQuad ?: if (imageCorrectionApplied) cameraQuadApplied else DocumentQuad()
-        cameraScanLabel = if (imageSuggestionQuad != null) "已检测到纸张" else "正在识别纸张边缘…"
+        cameraScanHint = null
         showCropEditor = true
         scanGeneration++
     }
@@ -361,35 +380,6 @@ fun QuickPrintScreen(
         }
     }
 
-    fun chooseScanIntent() {
-        // If the user already has one gallery image open, "扫描" means "treat this same image as
-        // paper". This keeps source acquisition separate from document treatment and avoids a
-        // surprising camera launch. Multi-image/PDF/text sources start from the scan landing card.
-        if (sourceMode == SourceMode.IMAGE && uris.size == 1) {
-            sourceMode = SourceMode.CAMERA
-            adjustments = defaultAdjustments(SourceMode.CAMERA)
-            cameraQuadDraft = imageSuggestionQuad ?: DocumentQuad()
-            cameraQuadApplied = DocumentQuad()
-            imageSuggestionQuad = null
-            imageCorrectionApplied = false
-            cameraScanLabel = "正在识别纸张边缘…"
-            showCropEditor = true
-            preparedCache.clear()
-            scanGeneration++
-            error = null
-        } else if (sourceMode != SourceMode.CAMERA) {
-            sourceMode = SourceMode.CAMERA
-            adjustments = defaultAdjustments(SourceMode.CAMERA)
-            uris = emptyList()
-            imageSuggestionQuad = null
-            imageCorrectionApplied = false
-            cameraQuadDraft = DocumentQuad()
-            cameraQuadApplied = DocumentQuad()
-            showCropEditor = false
-            preparedCache.clear()
-            error = null
-        }
-    }
 
     LaunchedEffect(historyId) {
         if (historyId != null) {
@@ -422,7 +412,7 @@ fun QuickPrintScreen(
             draftCandidate = loadedDraft
             draftChecked = true
         }
-        if (externalIntent == null && historyId == null && loadedDraft == null && !pickerOpened) {
+        if (externalIntent == null && historyId == null && !pickerOpened) {
             pickerOpened = true
             when (sourceMode) {
                 SourceMode.IMAGE -> imagePicker.launch(arrayOf("image/*"))
@@ -460,18 +450,14 @@ fun QuickPrintScreen(
         }.getOrNull()
         if (result != null) {
             cameraQuadDraft = result.quad
-            cameraScanLabel = when {
-                result.confidence < .50f -> "没有识别到完整纸张，请手动调整四角"
-                result.engine == ScanEngine.ENHANCED -> "增强识别"
-                else -> "标准识别"
-            }
+            cameraScanHint = if (result.confidence < .50f) "没有找到完整边缘，可以手动调整。" else null
         } else {
-            cameraScanLabel = "请手动调整四角"
+            cameraScanHint = "没有找到完整边缘，可以手动调整。"
         }
         cameraScanning = false
     }
 
-    LaunchedEffect(sourceMode, text, todoTitle, todoItems, textStyle, uris, adjustments, pdfAutoCrop, cameraQuadApplied, imageCorrectionApplied, showCropEditor) {
+    LaunchedEffect(sourceMode, text, todoTitle, todoItems, todoPreset, todoShowDate, todoDate, todoCenterTitle, textStyle, uris, adjustments, pdfAutoCrop, cameraQuadApplied, imageCorrectionApplied, showCropEditor) {
         if ((sourceMode == SourceMode.IMAGE || sourceMode == SourceMode.PDF || sourceMode == SourceMode.CAMERA) && uris.isEmpty()) {
             mono = null
             return@LaunchedEffect
@@ -503,7 +489,7 @@ fun QuickPrintScreen(
                         try { QuickPrintRenderer.toMono(prepared, adjustments) } finally { prepared.recycle() }
                     }
                     SourceMode.TODO -> {
-                        val base = QuickPrintRenderer.todo(todoTitle, todoItems, textStyle)
+                        val base = QuickPrintRenderer.todo(todoTitle, todoItems, textStyle, todoPreset, todoShowDate, todoDate, todoCenterTitle)
                         val prepared = try { QuickPrintRenderer.preparedImage(base, outputRotation, adjustments.scalePercent) } finally { base.recycle() }
                         try { QuickPrintRenderer.toMono(prepared, adjustments) } finally { prepared.recycle() }
                     }
@@ -586,15 +572,31 @@ fun QuickPrintScreen(
                     containerColor = MaterialTheme.colorScheme.background,
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 ),
-                title = { Text(when (sourceMode) {
-                    SourceMode.CAMERA -> "扫描打印"
-                    SourceMode.IMAGE -> "图片打印"
-                    SourceMode.TODO -> "待办打印"
-                    else -> "快速打印"
-                }, fontWeight = FontWeight.SemiBold) },
+                title = {
+                    Text(
+                        if (showCropEditor) "调整边缘" else when (sourceMode) {
+                            SourceMode.CAMERA -> "扫描打印"
+                            SourceMode.IMAGE -> "图片打印"
+                            SourceMode.PDF -> "PDF 打印"
+                            SourceMode.TEXT -> "文字打印"
+                            SourceMode.TODO -> "待办打印"
+                        },
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = { leaveScreen() }, enabled = !savingDraft) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
+                    }
+                },
+                actions = {
+                    if (sourceMode == SourceMode.CAMERA && showCropEditor) {
+                        IconButton(onClick = { launchCamera() }) {
+                            Icon(painterResource(R.drawable.ic_camera), contentDescription = "重新拍摄")
+                        }
+                        IconButton(onClick = { scanImagePicker.launch(arrayOf("image/*")) }) {
+                            Icon(painterResource(R.drawable.ic_quick_image), contentDescription = "从相册选择")
+                        }
                     }
                 },
             )
@@ -630,7 +632,7 @@ fun QuickPrintScreen(
                             },
                             enabled = cameraQuadDraft.isReasonable(),
                             modifier = Modifier.weight(1.5f),
-                        ) { Text(if (sourceMode == SourceMode.IMAGE) "应用校正" else "使用此区域") }
+                        ) { Text(if (sourceMode == SourceMode.IMAGE) "完成" else "确认") }
                     }
                 }
             } else {
@@ -656,17 +658,6 @@ fun QuickPrintScreen(
         ) {
             Spacer(Modifier.height(4.dp))
             if (!showCropEditor) {
-                SourceSelector(
-                    sourceMode = sourceMode,
-                    onText = { switchMode(SourceMode.TEXT) },
-                    onImage = { chooseImageIntent() },
-                    onPdf = {
-                        if (sourceMode == SourceMode.PDF && uris.isNotEmpty()) switchMode(SourceMode.PDF)
-                        else pdfPicker.launch(arrayOf("application/pdf"))
-                    },
-                    onCamera = { chooseScanIntent() },
-                    onTodo = { switchMode(SourceMode.TODO) },
-                )
                 AnimatedVisibility(
                     visible = draftCandidate != null,
                     enter = fadeIn(tween(120)) + expandVertically(tween(150)),
@@ -713,9 +704,18 @@ fun QuickPrintScreen(
                 Spacer(Modifier.height(8.dp))
 
             } else {
-                Text(cameraScanLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                Text("拖动四角调整纸张范围。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(8.dp))
+                if (cameraScanning) {
+                    androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(8.dp))
+                }
+                cameraScanHint?.let { hint ->
+                    Text(
+                        hint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
             }
             AnimatedContent(
                 targetState = sourceMode,
@@ -747,37 +747,56 @@ fun QuickPrintScreen(
                                 placeholder = { Text("今日待办") },
                                 shape = MaterialTheme.shapes.large,
                             )
-                            Spacer(Modifier.height(8.dp))
+                            Spacer(Modifier.height(10.dp))
+                            Text("版式", style = MaterialTheme.typography.labelLarge)
+                            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                TodoPreset.entries.forEach { preset ->
+                                    FilterChip(
+                                        selected = todoPreset == preset,
+                                        onClick = { todoPreset = preset },
+                                        label = { Text(todoPresetLabel(preset)) },
+                                    )
+                                }
+                            }
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("显示日期", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                    if (todoShowDate) Text(todoDate, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(checked = todoShowDate, onCheckedChange = { todoShowDate = it })
+                            }
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text("标题居中", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                Switch(checked = todoCenterTitle, onCheckedChange = { todoCenterTitle = it })
+                            }
+                            Spacer(Modifier.height(4.dp))
                             OutlinedTextField(
                                 value = todoItems,
                                 onValueChange = { todoItems = it },
                                 modifier = Modifier.fillMaxWidth(),
-                                minLines = 6,
-                                maxLines = 14,
+                                minLines = 7,
+                                maxLines = 16,
                                 label = { Text("待办事项") },
                                 placeholder = { Text("每行一项，例如：\n整理错题\n背 30 个单词\n晚上跑步") },
                                 shape = MaterialTheme.shapes.large,
                             )
-                            Spacer(Modifier.height(6.dp))
-                            TextStyleSummary(textStyle, title = "字体与排版", onClick = { showTextSettings = true })
-                            Spacer(Modifier.height(4.dp))
-                            Text("字号、字体、行距和对齐都可以调整；打印历史会保留可编辑源内容。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         SourceMode.IMAGE -> {
                             if (uris.isEmpty()) {
                                 SelectedSourceCard(
                                     title = "选择图片",
-                                    subtitle = "照片、截图、插画按原图进入；不会擅自裁边",
+                                    subtitle = "",
                                     iconRes = R.drawable.ic_quick_image,
                                     action = "选择",
                                     onAction = { imagePicker.launch(arrayOf("image/*")) },
                                 )
                             } else if (showCropEditor && uris.size == 1) {
-                                Text("文档校正", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                Spacer(Modifier.height(5.dp))
-                                Text(cameraScanLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                                Text("只有点“应用校正”后才会改变图片；普通图片可以直接取消。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.height(8.dp))
                                 PhotoCropEditor(uri = uris.first(), quad = cameraQuadDraft, onQuadChange = { cameraQuadDraft = it })
                                 Spacer(Modifier.height(8.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -788,9 +807,9 @@ fun QuickPrintScreen(
                                 SelectedSourceCard(
                                     title = if (uris.size > 1) "已选择 ${uris.size} 张图片" else displayName(context, uris.firstOrNull()) ?: "图片",
                                     subtitle = when {
-                                        uris.size > 1 -> "多图会按顺序连续打印，每张都保持原图边界"
-                                        imageCorrectionApplied -> "已应用纸张校正；随时可以恢复原图"
-                                        else -> "按原图打印，不会自动裁边或改变构图"
+                                        uris.size > 1 -> "将按顺序连续打印"
+                                        imageCorrectionApplied -> "已校正"
+                                        else -> ""
                                     },
                                     iconRes = R.drawable.ic_quick_image,
                                     action = "更换",
@@ -810,8 +829,7 @@ fun QuickPrintScreen(
                                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                             ) {
                                                 Column(Modifier.weight(1f)) {
-                                                    Text("看起来像拍摄的纸张", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
-                                                    Text("需要的话可以拉正透视；不处理也完全没关系。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    Text("检测到纸张", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
                                                 }
                                                 TextButton(onClick = { openImageDocumentCorrection() }) { Text("校正") }
                                             }
@@ -823,7 +841,7 @@ fun QuickPrintScreen(
                                             TextButton(onClick = { restoreOriginalImage() }) { Text("恢复原图") }
                                         } else {
                                             TextButton(onClick = { openImageDocumentCorrection() }) { Text("文档校正") }
-                                            if (imageSuggestionScanning) Text("正在判断是否需要校正…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            if (imageSuggestionScanning) Text("识别中…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
                                 }
@@ -878,7 +896,7 @@ fun QuickPrintScreen(
                             if (uris.isEmpty()) {
                                 SelectedSourceCard(
                                     title = "扫描纸张",
-                                    subtitle = "试卷、小票、讲义、手写纸张：自动找边后再由你确认",
+                                    subtitle = "",
                                     iconRes = R.drawable.ic_camera,
                                     action = "拍照",
                                     onAction = { launchCamera() },
@@ -890,11 +908,6 @@ fun QuickPrintScreen(
                                     ) { Text("从相册选择纸张") }
                                 }
                             } else if (showCropEditor) {
-                                Text("确认纸张四角", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                Spacer(Modifier.height(4.dp))
-                                Text(cameraScanLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                                Text("拖动四角调整纸张范围。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.height(10.dp))
                                 PhotoCropEditor(
                                     uri = uris.first(),
                                     quad = cameraQuadDraft,
@@ -902,15 +915,13 @@ fun QuickPrintScreen(
                                 )
                                 Spacer(Modifier.height(8.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    TextButton(onClick = { cameraQuadDraft = DocumentQuad() }) { Text("恢复默认") }
-                                    TextButton(onClick = { launchCamera() }) { Text("重新拍摄") }
-                                    TextButton(onClick = { scanImagePicker.launch(arrayOf("image/*")) }) { Text("换相册图片") }
+                                    TextButton(onClick = { cameraQuadDraft = DocumentQuad() }) { Text("整张图片") }
+                                    TextButton(onClick = { chooseImageIntent() }) { Text("按原图打印") }
                                 }
-                                TextButton(onClick = { chooseImageIntent() }) { Text("按原图打印") }
                             } else {
                                 SelectedSourceCard(
                                     title = "纸张已校正",
-                                    subtitle = "透视和边缘已调整",
+                                    subtitle = "已校正",
                                     iconRes = R.drawable.ic_camera,
                                     action = "重拍",
                                     onAction = { launchCamera() },
@@ -918,7 +929,7 @@ fun QuickPrintScreen(
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     TextButton(onClick = { cameraQuadDraft = cameraQuadApplied; showCropEditor = true }) { Text("调整四角") }
                                     TextButton(onClick = { scanGeneration++; cameraQuadDraft = cameraQuadApplied; showCropEditor = true }) { Text("重新识别") }
-                                    TextButton(onClick = { scanImagePicker.launch(arrayOf("image/*")) }) { Text("换图片") }
+                                    TextButton(onClick = { scanImagePicker.launch(arrayOf("image/*")) }) { Text("从相册选择") }
                                 }
                                 TextButton(onClick = { chooseImageIntent() }) { Text("改为原图打印") }
                             }
@@ -977,11 +988,6 @@ fun QuickPrintScreen(
                     ) { Text("旋转 90°") }
                     OutlinedButton(onClick = { showAdjustments = true }, modifier = Modifier.weight(1f)) { Text("更多调整") }
                 }
-                Text(
-                    "先选最接近的效果即可；阈值、对比度、去红蓝笔等细项放在“更多调整”里。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
 
             if (sourceMode == SourceMode.PDF && !showCropEditor && uris.isNotEmpty()) {
@@ -1116,10 +1122,11 @@ fun QuickPrintScreen(
             image = image,
             initialMedia = MediaType.CONTINUOUS,
             onDismiss = { showPrint = false },
-            onPrinted = { copies, _ ->
+            onPrinted = { copies, media, feedBeforeDots, feedAfterDots ->
                 vm.recordPrinted(
                     title = if (sourceMode == SourceMode.TODO) todoTitle.ifBlank { "待办清单" } else quickHistoryTitle(context, sourceMode, text, uris),
-                    image = image, copies = copies,
+                    image = image, copies = copies, media = media,
+                    feedBeforeDots = feedBeforeDots, feedAfterDots = feedAfterDots,
                     source = sourceSnapshot(),
                 )
                 vm.clearDraft()
@@ -1147,39 +1154,6 @@ private fun SavedDocumentRow(document: SavedDocument, onOpen: () -> Unit, onDele
         TextButton(onClick = onOpen) { Text("打开") }
         TextButton(onClick = onDelete) { Text("删除") }
     }
-}
-
-@Composable
-private fun SourceSelector(
-    sourceMode: SourceMode,
-    onText: () -> Unit,
-    onImage: () -> Unit,
-    onPdf: () -> Unit,
-    onCamera: () -> Unit,
-    onTodo: () -> Unit,
-) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        SourceModeChip(sourceMode == SourceMode.IMAGE, "图片", onImage, Modifier.weight(1f))
-        SourceModeChip(sourceMode == SourceMode.PDF, "PDF", onPdf, Modifier.weight(1f))
-        SourceModeChip(sourceMode == SourceMode.TEXT, "文字", onText, Modifier.weight(1f))
-        SourceModeChip(sourceMode == SourceMode.CAMERA, "扫描", onCamera, Modifier.weight(1f))
-        SourceModeChip(sourceMode == SourceMode.TODO, "待办", onTodo, Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun SourceModeChip(selected: Boolean, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val scale by animateFloatAsState(
-        targetValue = if (selected) 1f else 0.985f,
-        animationSpec = tween(120),
-        label = "source-chip-$label",
-    )
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = { Text(label) },
-        modifier = modifier.graphicsLayer { scaleX = scale; scaleY = scale },
-    )
 }
 
 @Composable
@@ -1261,7 +1235,9 @@ private fun SelectedSourceCard(title: String, subtitle: String, iconRes: Int, ac
             Spacer(Modifier.size(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                if (subtitle.isNotBlank()) {
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
             TextButton(onClick = onAction) { Text(action) }
         }
@@ -1379,6 +1355,14 @@ private fun displayName(context: Context, uri: Uri?): String? {
         }
     }.getOrNull()
 }
+
+private fun todoPresetLabel(preset: TodoPreset): String = when (preset) {
+    TodoPreset.CLEAN -> "清爽"
+    TodoPreset.COMPACT -> "紧凑"
+    TodoPreset.FOCUS -> "重点"
+}
+
+private fun defaultTodoDate(): String = SimpleDateFormat("M月d日 E", Locale.CHINA).format(Date())
 
 private fun inferMode(mode: String, intent: Intent?): SourceMode {
     val mime = intent?.type.orEmpty()

@@ -41,4 +41,15 @@ class QuickPrintHistorySourceTest {
         assertEquals("GRAYSCALE", decoded.paperPreset)
         assertEquals(src.cameraQuad, decoded.cameraQuad)
     }
+    @Test
+    fun oldTodoHistoryGetsSafeNewDefaults() {
+        val decoded = json.decodeFromString<QuickPrintHistorySource>(
+            """{"mode":"TODO","todoTitle":"今天","todoItems":"一件事"}"""
+        )
+        assertEquals("CLEAN", decoded.todoPreset)
+        assertEquals(true, decoded.todoShowDate)
+        assertEquals("", decoded.todoDate)
+        assertEquals(true, decoded.todoCenterTitle)
+    }
+
 }

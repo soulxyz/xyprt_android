@@ -11,6 +11,9 @@ import io.github.soulxyz.xyprt.data.TodoHistorySource
 import io.github.soulxyz.xyprt.model.ImageElement
 import io.github.soulxyz.xyprt.model.LabelSpec
 import io.github.soulxyz.xyprt.render.MonoConverter
+import io.github.soulxyz.xyprt.printer.MediaType
+import io.github.soulxyz.xyprt.printer.MonoImage
+import io.github.soulxyz.xyprt.printer.estimatePrintedLengthMm
 import io.github.soulxyz.xyprt.ui.editor.ImageImport
 import java.util.UUID
 import kotlin.math.ceil
@@ -34,6 +37,45 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clear() {
         viewModelScope.launch { repo.clear() }
+    }
+
+    fun recordReprint(
+        entry: PrintHistoryEntry,
+        image: MonoImage,
+        copies: Int,
+        media: MediaType,
+        feedBeforeDots: Int,
+        feedAfterDots: Int,
+    ) {
+        viewModelScope.launch {
+            val totalLengthMm = estimatePrintedLengthMm(
+                image = image,
+                media = media,
+                copies = copies,
+                feedBeforeDots = feedBeforeDots,
+                feedAfterDots = feedAfterDots,
+            )
+            if (entry.rasterBase64 != null) {
+                repo.recordRaster(
+                    title = entry.templateName,
+                    image = image,
+                    copies = copies,
+                    sourceType = entry.sourceType,
+                    sourceJson = entry.sourceJson,
+                    printedLengthMm = totalLengthMm,
+                )
+            } else {
+                repo.record(
+                    templateId = entry.templateId,
+                    templateName = entry.templateName,
+                    spec = entry.spec.copy(media = media),
+                    resolvedElements = entry.elements,
+                    copies = copies,
+                    printedLengthMm = totalLengthMm,
+                )
+            }
+            container.printStats.recordSuccessfulPrint(copies, totalLengthMm)
+        }
     }
 
     /**
