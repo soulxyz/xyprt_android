@@ -56,19 +56,29 @@ gradlew.bat :app:assembleDebug :app:testDebugUnitTest
 
 ## 完全离线构建
 
-仓库支持 `ANDROID_OFFLINE_MAVEN_REPO`。把离线环境中的 Maven 仓库路径传入：
+2026-08-17 的离线环境已经包含 JDK、SDK、Gradle、本地 Maven 仓库和 Build Tools。不要直接运行 `./gradlew --offline`：Gradle Wrapper 的 distribution 缓存不是完整恢复介质，AGP 还会尝试从 Maven 解析 aapt2。仓库已经把正确恢复动作封装为脚本：
+
+Linux / macOS：
 
 ```bash
-export ANDROID_OFFLINE_MAVEN_REPO=/path/to/android-offline-env/maven
-./gradlew --offline :app:assembleDebug :app:testDebugUnitTest
+./tools/build-with-offline-env.sh /path/to/android_offline_build_environment_v1
 ```
+
+Windows PowerShell：
+
+```powershell
+.\tools\build-with-offline-env.ps1 C:\path\to\android_offline_build_environment_v1
+```
+
+脚本会使用离线环境自带 Gradle 8.11.1，并显式复用 SDK `build-tools/36.1.0/aapt2`，同时设置 `ANDROID_OFFLINE_MAVEN_REPO`。不传任务时默认执行 Kotlin 编译和 JVM 单测。
 
 顶层 `BUILD_ENVIRONMENT_SHA256SUMS.txt` 固化了 2026-08-17 验收用的六个离线环境分卷哈希。
 
-当前验收用离线 Maven 镜像缺少 `com.android.tools.lint:lint-gradle:31.9.2`，因此**严格 Release lint**需要联网补齐该依赖，或补进离线 Maven 镜像。仅做受控的离线恢复构建时可以显式：
+当前验收用离线 Maven 镜像缺少 `com.android.tools.lint:lint-gradle:31.9.2`，因此**严格 Release lint**需要联网补齐该依赖，或补进离线 Maven 镜像。仅做受控的离线恢复 Release 时可以显式：
 
 ```bash
-./gradlew --offline -PXYPRT_OFFLINE_SKIP_LINT=true :app:assembleRelease :app:bundleRelease
+./tools/build-with-offline-env.sh /path/to/android_offline_build_environment_v1 \
+  -PXYPRT_OFFLINE_SKIP_LINT=true :app:assembleRelease :app:bundleRelease
 ```
 
 项目本身没有永久关闭 Release lint。
