@@ -4,6 +4,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val includeOnnxRuntime = providers.gradleProperty("XYPRT_INCLUDE_ONNX").orElse("false").get().toBoolean()
+
 val localSerializationCompiler = rootProject.file(".local-build/jars/kotlin-serialization-compiler-plugin.jar")
 if (localSerializationCompiler.exists()) {
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
@@ -41,6 +43,7 @@ android {
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
         buildConfigField("String", "UPDATE_API_BASE_URL", "\"$updateApiBase\"")
+        buildConfigField("boolean", "ENHANCED_SCANNER_AVAILABLE", includeOnnxRuntime.toString())
         val requestedAbis = providers.gradleProperty("XYPRT_ABIS").orElse("arm64-v8a,armeabi-v7a").get()
             .split(',').map { it.trim() }.filter { it.isNotEmpty() }
         ndk { abiFilters += requestedAbis }
@@ -68,6 +71,12 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
         jniLibs.useLegacyPackaging = providers.gradleProperty("XYPRT_COMPRESS_JNI").orElse("false").get().toBoolean()
+    }
+
+    // The public/open-source build excludes ONNX completely. Co-creator builds opt in with
+    // -PXYPRT_INCLUDE_ONNX=true, while keeping the same Gradle task names and app id.
+    sourceSets.getByName("main").apply {
+        if (includeOnnxRuntime) java.srcDir("src/cocreator/kotlin")
     }
 
     // Public/online builds keep release lint enabled. The portable offline archive currently
@@ -114,8 +123,10 @@ dependencies {
     val localOpenCv = rootProject.file(".local-build/aar/opencv-4.13.0.aar")
     if (localOpenCv.exists()) implementation(files(localOpenCv)) else implementation("org.opencv:opencv:4.13.0")
 
-    val localOrt = rootProject.file(".local-build/aar/onnxruntime-android-1.24.1.aar")
-    if (localOrt.exists()) implementation(files(localOrt)) else implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.1")
+    if (includeOnnxRuntime) {
+        val localOrt = rootProject.file(".local-build/aar/onnxruntime-android-1.24.1.aar")
+        if (localOrt.exists()) implementation(files(localOrt)) else implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.1")
+    }
 
     testImplementation("junit:junit:4.13.2")
 }

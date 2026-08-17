@@ -141,10 +141,14 @@ fun QuickPrintScreen(
     var pendingCameraUriText by rememberSaveable { mutableStateOf<String?>(null) }
     var cameraQuadDraft by remember { mutableStateOf(DocumentQuad()) }
     var cameraQuadApplied by remember { mutableStateOf(DocumentQuad()) }
-    var cameraScanLabel by remember { mutableStateOf("标准识别（内置）") }
+    var cameraScanLabel by remember { mutableStateOf("标准识别（开源内置）") }
     var cameraScanning by remember { mutableStateOf(false) }
     var scanGeneration by remember { mutableIntStateOf(0) }
-    var showCropEditor by remember { mutableStateOf(historyId == null && inferred == SourceMode.IMAGE && uris.size == 1) }
+    var imageSuggestionGeneration by remember { mutableIntStateOf(0) }
+    var imageSuggestionQuad by remember { mutableStateOf<DocumentQuad?>(null) }
+    var imageSuggestionScanning by remember { mutableStateOf(false) }
+    // Ordinary gallery images enter as images. Cropping/perspective is an explicit document action.
+    var showCropEditor by remember { mutableStateOf(false) }
     var imageCorrectionApplied by remember { mutableStateOf(false) }
     var savingDraft by remember { mutableStateOf(false) }
     var draftCandidate by remember { mutableStateOf<QuickPrintDraft?>(null) }
@@ -233,6 +237,7 @@ fun QuickPrintScreen(
             cameraQuadDraft = DocumentQuad()
         }
         imageCorrectionApplied = draft?.imageCorrectionApplied ?: (sourceMode == SourceMode.IMAGE && source.cameraQuad.size == 8)
+        imageSuggestionQuad = null
         showCropEditor = draft?.showCropEditor ?: false
         if (sourceMode == SourceMode.CAMERA && source.cameraQuad.size == 8 && draft == null) showCropEditor = false
     }
@@ -251,13 +256,26 @@ fun QuickPrintScreen(
             cameraQuadDraft = DocumentQuad()
             cameraQuadApplied = DocumentQuad()
             imageCorrectionApplied = false
-            if (picked.size == 1) {
-                cameraScanLabel = "正在识别纸张边缘…"
-                showCropEditor = true
-                scanGeneration++
-            } else {
-                showCropEditor = false
-            }
+            imageSuggestionQuad = null
+            showCropEditor = false
+            if (picked.size == 1) imageSuggestionGeneration++
+            error = null
+        }
+    }
+
+    val scanImagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { picked ->
+        if (picked != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(picked, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            sourceMode = SourceMode.CAMERA
+            adjustments = defaultAdjustments(SourceMode.CAMERA)
+            uris = listOf(picked)
+            cameraQuadDraft = DocumentQuad()
+            cameraQuadApplied = DocumentQuad()
+            imageCorrectionApplied = false
+            imageSuggestionQuad = null
+            cameraScanLabel = "正在识别纸张边缘…"
+            showCropEditor = true
+            scanGeneration++
             error = null
         }
     }
@@ -279,6 +297,7 @@ fun QuickPrintScreen(
             uris = listOf(uri)
             cameraQuadDraft = DocumentQuad()
             cameraQuadApplied = DocumentQuad()
+            imageSuggestionQuad = null
             cameraScanLabel = "正在识别纸张边缘…"
             scanGeneration++
             showCropEditor = true
@@ -298,6 +317,72 @@ fun QuickPrintScreen(
         runCatching { cameraLauncher.launch(uri) }.onFailure {
             pendingCameraUriText = null
             error = "无法打开相机"
+        }
+    }
+
+    fun openImageDocumentCorrection() {
+        if (sourceMode != SourceMode.IMAGE || uris.size != 1) return
+        cameraQuadDraft = imageSuggestionQuad ?: if (imageCorrectionApplied) cameraQuadApplied else DocumentQuad()
+        cameraScanLabel = if (imageSuggestionQuad != null) "检测到纸张 · 可手动微调" else "正在识别纸张边缘…"
+        showCropEditor = true
+        scanGeneration++
+    }
+
+    fun restoreOriginalImage() {
+        imageCorrectionApplied = false
+        cameraQuadDraft = DocumentQuad()
+        cameraQuadApplied = DocumentQuad()
+        showCropEditor = false
+        preparedCache.clear()
+        if (uris.size == 1) imageSuggestionGeneration++
+    }
+
+    fun chooseImageIntent() {
+        // A photo captured for scanning is still a perfectly valid ordinary image. Reinterpret the
+        // same source instead of forcing the user back through a picker just to change intent.
+        if (sourceMode == SourceMode.CAMERA && uris.size == 1) {
+            sourceMode = SourceMode.IMAGE
+            adjustments = defaultAdjustments(SourceMode.IMAGE)
+            imageCorrectionApplied = false
+            imageSuggestionQuad = null
+            cameraQuadDraft = DocumentQuad()
+            cameraQuadApplied = DocumentQuad()
+            showCropEditor = false
+            preparedCache.clear()
+            imageSuggestionGeneration++
+            error = null
+        } else if (sourceMode != SourceMode.IMAGE || uris.isEmpty()) {
+            imagePicker.launch(arrayOf("image/*"))
+        }
+    }
+
+    fun chooseScanIntent() {
+        // If the user already has one gallery image open, "扫描" means "treat this same image as
+        // paper". This keeps source acquisition separate from document treatment and avoids a
+        // surprising camera launch. Multi-image/PDF/text sources start from the scan landing card.
+        if (sourceMode == SourceMode.IMAGE && uris.size == 1) {
+            sourceMode = SourceMode.CAMERA
+            adjustments = defaultAdjustments(SourceMode.CAMERA)
+            cameraQuadDraft = imageSuggestionQuad ?: DocumentQuad()
+            cameraQuadApplied = DocumentQuad()
+            imageSuggestionQuad = null
+            imageCorrectionApplied = false
+            cameraScanLabel = "正在识别纸张边缘…"
+            showCropEditor = true
+            preparedCache.clear()
+            scanGeneration++
+            error = null
+        } else if (sourceMode != SourceMode.CAMERA) {
+            sourceMode = SourceMode.CAMERA
+            adjustments = defaultAdjustments(SourceMode.CAMERA)
+            uris = emptyList()
+            imageSuggestionQuad = null
+            imageCorrectionApplied = false
+            cameraQuadDraft = DocumentQuad()
+            cameraQuadApplied = DocumentQuad()
+            showCropEditor = false
+            preparedCache.clear()
+            error = null
         }
     }
 
@@ -343,6 +428,21 @@ fun QuickPrintScreen(
         }
     }
 
+    // Gallery images remain full-frame by default. A low-priority standard-detector pass only
+    // decides whether to offer a "document correction" shortcut; it never opens the crop UI itself.
+    LaunchedEffect(imageSuggestionGeneration) {
+        val uri = uris.singleOrNull() ?: return@LaunchedEffect
+        if (sourceMode != SourceMode.IMAGE || imageCorrectionApplied || showCropEditor) return@LaunchedEffect
+        imageSuggestionScanning = true
+        val result = runCatching {
+            withContext(Dispatchers.IO) { QuickPrintRenderer.previewBitmap(context, uri, 1400) }.let { bmp ->
+                try { scanner.detect(bmp, preferEnhanced = false) } finally { bmp.recycle() }
+            }
+        }.getOrNull()
+        imageSuggestionQuad = result?.takeIf(::shouldSuggestDocumentCorrection)?.quad
+        imageSuggestionScanning = false
+    }
+
     // Automatic detection is asynchronous. The UI stays interactive and the user can always move the four corners.
     LaunchedEffect(sourceMode, uris, scanGeneration) {
         val uri = uris.firstOrNull() ?: return@LaunchedEffect
@@ -355,7 +455,11 @@ fun QuickPrintScreen(
         }.getOrNull()
         if (result != null) {
             cameraQuadDraft = result.quad
-            cameraScanLabel = if (result.engine == ScanEngine.ENHANCED) "增强识别 · 可手动微调" else "标准识别（内置）· 可手动微调"
+            cameraScanLabel = when {
+                result.confidence < .50f -> "没有可靠识别到纸张 · 请手动调整四角"
+                result.engine == ScanEngine.ENHANCED -> "增强识别 · 可手动微调"
+                else -> "标准识别（开源内置）· 可手动微调"
+            }
         } else {
             cameraScanLabel = "标准框选 · 请手动调整四角"
         }
@@ -478,8 +582,8 @@ fun QuickPrintScreen(
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 ),
                 title = { Text(when (sourceMode) {
-                    SourceMode.CAMERA -> "拍照打印"
-                    SourceMode.IMAGE -> "图片编辑"
+                    SourceMode.CAMERA -> "扫描打印"
+                    SourceMode.IMAGE -> "图片打印"
                     SourceMode.TODO -> "待办打印"
                     else -> "快速打印"
                 }, fontWeight = FontWeight.SemiBold) },
@@ -497,16 +601,31 @@ fun QuickPrintScreen(
                         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).navigationBarsPadding(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        OutlinedButton(onClick = { scanGeneration++ }, enabled = !cameraScanning, modifier = Modifier.weight(1f)) { Text(if (cameraScanning) "识别中" else "重新识别") }
+                        if (sourceMode == SourceMode.IMAGE) {
+                            OutlinedButton(
+                                onClick = {
+                                    cameraQuadDraft = if (imageCorrectionApplied) cameraQuadApplied else DocumentQuad()
+                                    showCropEditor = false
+                                },
+                                modifier = Modifier.weight(1f),
+                            ) { Text("取消") }
+                        } else {
+                            OutlinedButton(onClick = { scanGeneration++ }, enabled = !cameraScanning, modifier = Modifier.weight(1f)) {
+                                Text(if (cameraScanning) "识别中" else "重新识别")
+                            }
+                        }
                         Button(
                             onClick = {
                                 cameraQuadApplied = cameraQuadDraft.clamped()
-                                if (sourceMode == SourceMode.IMAGE) imageCorrectionApplied = !cameraQuadDraft.isEffectivelyFullImage()
+                                if (sourceMode == SourceMode.IMAGE) {
+                                    imageCorrectionApplied = !cameraQuadDraft.isEffectivelyFullImage()
+                                    imageSuggestionQuad = null
+                                }
                                 showCropEditor = false
                             },
                             enabled = cameraQuadDraft.isReasonable(),
                             modifier = Modifier.weight(1.5f),
-                        ) { Text("使用此区域") }
+                        ) { Text(if (sourceMode == SourceMode.IMAGE) "应用校正" else "使用此区域") }
                     }
                 }
             } else {
@@ -535,15 +654,12 @@ fun QuickPrintScreen(
                 SourceSelector(
                     sourceMode = sourceMode,
                     onText = { switchMode(SourceMode.TEXT) },
-                    onImage = {
-                        if (sourceMode == SourceMode.IMAGE && uris.isNotEmpty()) switchMode(SourceMode.IMAGE)
-                        else imagePicker.launch(arrayOf("image/*"))
-                    },
+                    onImage = { chooseImageIntent() },
                     onPdf = {
                         if (sourceMode == SourceMode.PDF && uris.isNotEmpty()) switchMode(SourceMode.PDF)
                         else pdfPicker.launch(arrayOf("application/pdf"))
                     },
-                    onCamera = { launchCamera() },
+                    onCamera = { chooseScanIntent() },
                     onTodo = { switchMode(SourceMode.TODO) },
                 )
                 draftCandidate?.let { draft ->
@@ -585,7 +701,12 @@ fun QuickPrintScreen(
 
             } else {
                 Text(cameraScanLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                Text("拖动四角或边中点修正范围；自动识别只是起点。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    if (sourceMode == SourceMode.IMAGE) "这是可选的文档校正。拖动四角确认纸张范围；取消不会改变原图。"
+                    else "拖动四角或边中点修正范围；自动识别只是起点。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Spacer(Modifier.height(8.dp))
             }
             AnimatedContent(
@@ -638,32 +759,64 @@ fun QuickPrintScreen(
                             if (uris.isEmpty()) {
                                 SelectedSourceCard(
                                     title = "选择图片",
-                                    subtitle = "相册里的试卷、讲义和照片也可以先裁边再优化",
+                                    subtitle = "照片、截图、插画按原图进入；不会擅自裁边",
                                     iconRes = R.drawable.ic_quick_image,
                                     action = "选择",
                                     onAction = { imagePicker.launch(arrayOf("image/*")) },
                                 )
                             } else if (showCropEditor && uris.size == 1) {
-                                Text("裁切与校正", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text("文档校正", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.height(5.dp))
+                                Text(cameraScanLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                Text("只有点“应用校正”后才会改变图片；普通图片可以直接取消。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.height(8.dp))
                                 PhotoCropEditor(uri = uris.first(), quad = cameraQuadDraft, onQuadChange = { cameraQuadDraft = it })
                                 Spacer(Modifier.height(8.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     TextButton(onClick = { cameraQuadDraft = fullImageQuad() }) { Text("整张图片") }
-                                    TextButton(onClick = { imagePicker.launch(arrayOf("image/*")) }) { Text("重新选择") }
+                                    TextButton(onClick = { scanGeneration++ }, enabled = !cameraScanning) { Text(if (cameraScanning) "识别中" else "重新识别") }
                                 }
                             } else {
                                 SelectedSourceCard(
-                                    title = if (uris.size > 1) "已选择 ${uris.size} 张图片" else displayName(context, uris.firstOrNull()) ?: "图片编辑",
-                                    subtitle = if (uris.size > 1) "多图将连续打印；单图可裁边、透视和优化" else "已校正，可继续调整纸面效果",
+                                    title = if (uris.size > 1) "已选择 ${uris.size} 张图片" else displayName(context, uris.firstOrNull()) ?: "图片",
+                                    subtitle = when {
+                                        uris.size > 1 -> "多图会按顺序连续打印，每张都保持原图边界"
+                                        imageCorrectionApplied -> "已应用纸张校正；随时可以恢复原图"
+                                        else -> "按原图打印，不会自动裁边或改变构图"
+                                    },
                                     iconRes = R.drawable.ic_quick_image,
                                     action = "更换",
                                     onAction = { imagePicker.launch(arrayOf("image/*")) },
                                 )
                                 if (uris.size == 1) {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        TextButton(onClick = { cameraQuadDraft = cameraQuadApplied; showCropEditor = true }) { Text("重新裁剪") }
-                                        TextButton(onClick = { scanGeneration++; cameraQuadDraft = cameraQuadApplied; showCropEditor = true }) { Text("重新识别") }
+                                    Spacer(Modifier.height(2.dp))
+                                    if (!imageCorrectionApplied && imageSuggestionQuad != null) {
+                                        OutlinedCard(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                                        ) {
+                                            Row(
+                                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            ) {
+                                                Column(Modifier.weight(1f)) {
+                                                    Text("看起来像拍摄的纸张", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                                                    Text("需要的话可以拉正透视；不处理也完全没关系。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                                TextButton(onClick = { openImageDocumentCorrection() }) { Text("校正") }
+                                            }
+                                        }
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        if (imageCorrectionApplied) {
+                                            TextButton(onClick = { openImageDocumentCorrection() }) { Text("重新校正") }
+                                            TextButton(onClick = { restoreOriginalImage() }) { Text("恢复原图") }
+                                        } else {
+                                            TextButton(onClick = { openImageDocumentCorrection() }) { Text("文档校正") }
+                                            if (imageSuggestionScanning) Text("正在判断是否需要校正…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
                                     }
                                 }
                             }
@@ -716,17 +869,23 @@ fun QuickPrintScreen(
                         SourceMode.CAMERA -> {
                             if (uris.isEmpty()) {
                                 SelectedSourceCard(
-                                    title = "拍照获取内容",
-                                    subtitle = "拍下要打印的内容",
+                                    title = "扫描纸张",
+                                    subtitle = "试卷、小票、讲义、手写纸张：自动找边后再由你确认",
                                     iconRes = R.drawable.ic_camera,
                                     action = "拍照",
                                     onAction = { launchCamera() },
                                 )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    OutlinedButton(
+                                        onClick = { scanImagePicker.launch(arrayOf("image/*")) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) { Text("从相册选择纸张") }
+                                }
                             } else if (showCropEditor) {
                                 Text("确认纸张四角", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.height(4.dp))
                                 Text(cameraScanLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                                Text("自动识别只负责给出初始位置；拖动四个圆点可随时修正。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("识别不必完美：拖动四个圆点即可修正，最后以你看到的范围为准。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.height(10.dp))
                                 PhotoCropEditor(
                                     uri = uris.first(),
@@ -737,21 +896,26 @@ fun QuickPrintScreen(
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     TextButton(onClick = { cameraQuadDraft = DocumentQuad() }) { Text("恢复默认") }
                                     TextButton(onClick = { launchCamera() }) { Text("重新拍摄") }
+                                    TextButton(onClick = { scanImagePicker.launch(arrayOf("image/*")) }) { Text("换相册图片") }
                                 }
+                                TextButton(onClick = { chooseImageIntent() }) { Text("不是文档？按原图打印") }
                             } else {
                                 SelectedSourceCard(
-                                    title = "拍照编辑",
-                                    subtitle = "纸张已经校正，下方可以直接看效果并调整",
+                                    title = "纸张已校正",
+                                    subtitle = "已经拉正透视，下方就是接近实际热敏打印的效果",
                                     iconRes = R.drawable.ic_camera,
                                     action = "重拍",
                                     onAction = { launchCamera() },
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    TextButton(onClick = { cameraQuadDraft = cameraQuadApplied; showCropEditor = true }) { Text("重新裁剪") }
+                                    TextButton(onClick = { cameraQuadDraft = cameraQuadApplied; showCropEditor = true }) { Text("调整四角") }
                                     TextButton(onClick = { scanGeneration++; cameraQuadDraft = cameraQuadApplied; showCropEditor = true }) { Text("重新识别") }
+                                    TextButton(onClick = { scanImagePicker.launch(arrayOf("image/*")) }) { Text("换图片") }
                                 }
+                                TextButton(onClick = { chooseImageIntent() }) { Text("改为原图打印") }
                             }
                         }
+
                     }
                 }
             }
@@ -759,7 +923,7 @@ fun QuickPrintScreen(
             if ((sourceMode == SourceMode.CAMERA || sourceMode == SourceMode.IMAGE) && !showCropEditor && uris.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (sourceMode == SourceMode.CAMERA) "拍照效果" else "图片效果", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(if (sourceMode == SourceMode.CAMERA) "扫描效果" else "图片效果", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.weight(1f))
                     if (rendering) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                     else mono?.let { Text("约 ${(it.height + 7) / 8} mm", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -990,7 +1154,7 @@ private fun SourceSelector(
         FilterChip(selected = sourceMode == SourceMode.IMAGE, onClick = onImage, label = { Text("图片") }, modifier = Modifier.weight(1f))
         FilterChip(selected = sourceMode == SourceMode.PDF, onClick = onPdf, label = { Text("PDF") }, modifier = Modifier.weight(1f))
         FilterChip(selected = sourceMode == SourceMode.TEXT, onClick = onText, label = { Text("文字") }, modifier = Modifier.weight(1f))
-        FilterChip(selected = sourceMode == SourceMode.CAMERA, onClick = onCamera, label = { Text("拍照") }, modifier = Modifier.weight(1f))
+        FilterChip(selected = sourceMode == SourceMode.CAMERA, onClick = onCamera, label = { Text("扫描") }, modifier = Modifier.weight(1f))
         FilterChip(selected = sourceMode == SourceMode.TODO, onClick = onTodo, label = { Text("待办") }, modifier = Modifier.weight(1f))
     }
 }
@@ -1101,7 +1265,7 @@ private fun EmptyPreviewCard(sourceMode: SourceMode) {
                     SourceMode.TEXT -> "输入文字后，这里会显示实际打印效果"
                     SourceMode.IMAGE -> "选择图片后，这里会显示实际打印效果"
                     SourceMode.PDF -> "选择 PDF 后，这里会显示实际打印效果"
-                    SourceMode.CAMERA -> "拍照后预览打印效果"
+                    SourceMode.CAMERA -> "扫描纸张后预览校正与打印效果"
                     SourceMode.TODO -> "输入待办事项后，这里会生成勾选清单"
                 },
                 style = MaterialTheme.typography.bodyMedium,
@@ -1180,7 +1344,7 @@ private fun quickHistoryTitle(context: Context, mode: SourceMode, text: String, 
     SourceMode.TEXT -> text.trim().lineSequence().firstOrNull()?.take(24)?.takeIf { it.isNotBlank() } ?: "快速文字"
     SourceMode.IMAGE -> if (uris.size > 1) "图片打印（${uris.size}张）" else displayName(context, uris.firstOrNull()) ?: "图片打印"
     SourceMode.PDF -> displayName(context, uris.firstOrNull()) ?: "PDF 打印"
-    SourceMode.CAMERA -> "拍照打印"
+    SourceMode.CAMERA -> "扫描打印"
     SourceMode.TODO -> "待办清单"
 }
 
@@ -1192,21 +1356,6 @@ private fun displayName(context: Context, uri: Uri?): String? {
         }
     }.getOrNull()
 }
-
-private fun DocumentQuad.isEffectivelyFullImage(): Boolean {
-    val p = points()
-    return p[0].x < .01f && p[0].y < .01f &&
-        p[1].x > .99f && p[1].y < .01f &&
-        p[2].x > .99f && p[2].y > .99f &&
-        p[3].x < .01f && p[3].y > .99f
-}
-
-private fun fullImageQuad() = DocumentQuad(
-    topLeft = QuadPoint(0.001f, 0.001f),
-    topRight = QuadPoint(0.999f, 0.001f),
-    bottomRight = QuadPoint(0.999f, 0.999f),
-    bottomLeft = QuadPoint(0.001f, 0.999f),
-)
 
 private fun inferMode(mode: String, intent: Intent?): SourceMode {
     val mime = intent?.type.orEmpty()

@@ -13,9 +13,12 @@ import io.github.soulxyz.xyprt.data.UpdateRepository
 import io.github.soulxyz.xyprt.data.UpdateDownloadManager
 import io.github.soulxyz.xyprt.data.remote.CoCreatorRepository
 import io.github.soulxyz.xyprt.data.remote.DeviceIdentity
+import io.github.soulxyz.xyprt.data.remote.DeviceProfileRepository
+import io.github.soulxyz.xyprt.data.remote.RemoteAssetRepository
 import io.github.soulxyz.xyprt.data.remote.EnhancedModelRepository
 import io.github.soulxyz.xyprt.data.remote.ServerApi
 import io.github.soulxyz.xyprt.scanner.DocumentScanner
+import io.github.soulxyz.xyprt.scanner.EnhancedScanEngineFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -41,8 +44,11 @@ class AppContainer(context: Context) {
     val serverApi = ServerApi(json)
     val deviceIdentity = DeviceIdentity(context)
     val coCreator = CoCreatorRepository(context, serverApi, deviceIdentity, applicationScope)
+    val remoteAssets = RemoteAssetRepository(context, json, serverApi, deviceIdentity, coCreator, applicationScope)
+    val deviceProfiles = DeviceProfileRepository(context, json, serverApi, applicationScope)
     val enhancedModels = EnhancedModelRepository(context, serverApi, deviceIdentity, coCreator, applicationScope)
-    val scanner = DocumentScanner(enhancedModels)
+    private val enhancedScanEngine = EnhancedScanEngineFactory.create(enhancedModels)
+    val scanner = DocumentScanner(enhancedScanEngine)
     val templateRepository = TemplateRepository(database.templateDao, json)
     val historyRepository = HistoryRepository(database.printHistoryDao, json)
     val savedDocuments = SavedDocumentRepository(context, json)

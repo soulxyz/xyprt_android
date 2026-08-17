@@ -2,6 +2,8 @@ package io.github.soulxyz.xyprt.data.remote
 
 import io.github.soulxyz.xyprt.BuildConfig
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +58,71 @@ class ServerApi(private val json: Json) {
                 }
             }
             out.toByteArray()
+        } finally { c.disconnect() }
+    }
+
+
+    /**
+     * Streams a remote object into [target] without holding the resource in memory. A partially
+     * downloaded target is resumed with HTTP Range when the origin supports it; a 200 response
+     * automatically restarts from zero. Callers still verify the cryptographic hash before the
+     * file is promoted into the content-addressed cache.
+     */
+    suspend fun downloadAbsoluteToFile(
+        url: String,
+        target: File,
+        maxBytes: Long = 512L * 1024 * 1024,
+        expectedSize: Long? = null,
+    ): Long = withContext(Dispatchers.IO) {
+        target.parentFile?.mkdirs()
+        var existing = target.takeIf { it.isFile }?.length()?.coerceAtLeast(0L) ?: 0L
+        val c = (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10_000
+            readTimeout = 45_000
+            instanceFollowRedirects = true
+            requestMethod = "GET"
+            setRequestProperty("Accept-Encoding", "identity")
+            setRequestProperty("User-Agent", "xyprt-android/${BuildConfig.VERSION_NAME}")
+            if (existing > 0L) setRequestProperty("Range", "bytes=$existing-")
+        }
+        try {
+            val code = c.responseCode
+            if (code !in listOf(HttpURLConnection.HTTP_OK, HttpURLConnection.HTTP_PARTIAL)) error("下载服务返回 HTTP $code")
+            if (existing > 0L && code == HttpURLConnection.HTTP_OK) {
+                existing = 0L
+                target.delete()
+            } else if (existing > 0L && code == HttpURLConnection.HTTP_PARTIAL) {
+                val contentRange = c.getHeaderField("Content-Range").orEmpty()
+                val start = Regex("^bytes\\s+(\\d+)-").find(contentRange)?.groupValues?.getOrNull(1)?.toLongOrNull()
+                if (start != existing) error("断点续传响应范围无效")
+            }
+            val declared = c.contentLengthLong.takeIf { it >= 0L }
+            val total = when {
+                expectedSize != null && expectedSize > 0 -> expectedSize
+                declared != null -> existing + declared
+                else -> null
+            }
+            if (total != null && total > maxBytes) error("文件过大")
+            val raf = RandomAccessFile(target, "rw")
+            if (existing == 0L) raf.setLength(0L) else raf.seek(existing)
+            var downloaded = existing
+            val buffer = ByteArray(128 * 1024)
+            c.inputStream.use { input ->
+                raf.use { out ->
+                    while (true) {
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        downloaded += n
+                        if (downloaded > maxBytes) error("文件超过允许大小")
+                        out.write(buffer, 0, n)
+                    }
+                    out.fd.sync()
+                }
+            }
+            if (expectedSize != null && expectedSize > 0L && downloaded != expectedSize) {
+                error("下载大小不完整（$downloaded / $expectedSize）")
+            }
+            downloaded
         } finally { c.disconnect() }
     }
 

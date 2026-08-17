@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.soulxyz.xyprt.App
+import io.github.soulxyz.xyprt.BuildConfig
 import io.github.soulxyz.xyprt.data.remote.EnhancedCapability
 import kotlinx.coroutines.launch
 import java.text.DateFormat
@@ -49,14 +50,16 @@ import java.util.Date
 @Composable
 fun EnhancedCapabilitiesScreen(onBack:()->Unit){
     val context=LocalContext.current;val repo=remember{(context.applicationContext as App).container.enhancedModels};val state by repo.catalog.collectAsState();val scope=rememberCoroutineScope();var busyId by remember{mutableStateOf<String?>(null)}
-    LaunchedEffect(Unit){repo.refreshCatalog(silent=false)}
-    Scaffold(topBar={TopAppBar(title={Text("增强能力")},navigationIcon={IconButton(onClick=onBack){Icon(Icons.AutoMirrored.Filled.ArrowBack,null)}},actions={TextButton(onClick={scope.launch{repo.refreshCatalog(false)}}){Text("刷新")}})}){pad->
+    val runtimeAvailable = BuildConfig.ENHANCED_SCANNER_AVAILABLE
+    LaunchedEffect(runtimeAvailable){ if (runtimeAvailable) repo.refreshCatalog(silent=false) }
+    Scaffold(topBar={TopAppBar(title={Text("增强能力")},navigationIcon={IconButton(onClick=onBack){Icon(Icons.AutoMirrored.Filled.ArrowBack,null)}},actions={if(runtimeAvailable) TextButton(onClick={scope.launch{repo.refreshCatalog(false)}}){Text("刷新")}})}){pad->
         LazyColumn(Modifier.padding(pad).fillMaxSize(),contentPadding=androidx.compose.foundation.layout.PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
             item{Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.primaryContainer)){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(5.dp)){Text("标准文档识别",fontWeight=FontWeight.SemiBold);Text("内置 · 永久可用 · 无需联网",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary);Text("使用本地 OpenCV 进行纸张边缘识别、透视矫正和黑边清理。增强能力不可用时会自动回落到这里。",style=MaterialTheme.typography.bodySmall)}}}
-            if(state.refreshing)item{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center){CircularProgressIndicator()}}
-            state.lastError?.let{err->item{Text("增强能力目录暂时不可用：$err",color=MaterialTheme.colorScheme.error)}}
-            items(state.items,key={it.id}){item->CapabilityCard(item,busyId==item.id,onDownload={scope.launch{busyId=item.id;val r=repo.download(item);busyId=null;Toast.makeText(context,if(r.isSuccess)"增强能力已就绪" else r.exceptionOrNull()?.message?:"下载失败",Toast.LENGTH_LONG).show()}},onRemove={scope.launch{repo.remove(item);Toast.makeText(context,"已移除本地增强包",Toast.LENGTH_SHORT).show()}})}
-            if(!state.refreshing&&state.items.isEmpty()&&state.lastError==null)item{Text("服务器目前没有发布额外的增强能力。标准识别仍然可以正常使用。",style=MaterialTheme.typography.bodyMedium)}
+            if(!runtimeAvailable)item{Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceContainerLow)){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text("当前是开源轻量构建",fontWeight=FontWeight.SemiBold);Text("增强模型运行时没有塞进这个安装包，因此日常扫描不会背几十 MB 的额外体积。共创构建启用运行时后，这里才会允许下载和使用模型。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant);Text("开源版的自动找边、透视校正、手动四角和打印增强仍然完整可用。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.primary)}}}
+            if(runtimeAvailable&&state.refreshing)item{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center){CircularProgressIndicator()}}
+            if(runtimeAvailable) state.lastError?.let{err->item{Text("增强能力目录暂时不可用：$err",color=MaterialTheme.colorScheme.error)}}
+            if(runtimeAvailable) items(state.items,key={it.id}){item->CapabilityCard(item,busyId==item.id,onDownload={scope.launch{busyId=item.id;val r=repo.download(item);busyId=null;Toast.makeText(context,if(r.isSuccess)"增强能力已就绪" else r.exceptionOrNull()?.message?:"下载失败",Toast.LENGTH_LONG).show()}},onRemove={scope.launch{repo.remove(item);Toast.makeText(context,"已移除本地增强包",Toast.LENGTH_SHORT).show()}})}
+            if(runtimeAvailable&&!state.refreshing&&state.items.isEmpty()&&state.lastError==null)item{Text("服务器目前没有发布额外的增强能力。标准识别仍然可以正常使用。",style=MaterialTheme.typography.bodyMedium)}
             item{Spacer(Modifier.size(20.dp))}
         }
     }

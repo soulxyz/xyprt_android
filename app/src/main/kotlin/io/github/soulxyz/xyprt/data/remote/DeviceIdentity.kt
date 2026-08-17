@@ -51,7 +51,8 @@ class DeviceIdentity(private val context: Context) {
         }
     }
 
-    fun unwrapModelKey(wrappedBase64: String): ByteArray {
+    /** Unwraps a server envelope that was encrypted to this installation's Android Keystore key. */
+    fun unwrapDeviceKey(wrappedBase64: String): ByteArray {
         val wrapped = Base64.decode(wrappedBase64, Base64.DEFAULT)
         val privateKey = ensureKeyPair().getKey(alias, null)
         return Cipher.getInstance("RSA/ECB/OAEPWithSHA-1AndMGF1Padding").run {
@@ -59,6 +60,9 @@ class DeviceIdentity(private val context: Context) {
             doFinal(wrapped)
         }
     }
+
+    /** Compatibility name retained for the existing enhanced-model delivery path. */
+    fun unwrapModelKey(wrappedBase64: String): ByteArray = unwrapDeviceKey(wrappedBase64)
 
     private fun readOrCreateInstallationId(): String {
         val fromFile = runCatching { idFile.takeIf { it.isFile }?.readText()?.trim() }.getOrNull()

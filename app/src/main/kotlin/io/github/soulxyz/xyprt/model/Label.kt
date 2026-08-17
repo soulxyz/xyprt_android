@@ -77,6 +77,8 @@ data class TextElement(
     val align: LabelTextAlign = LabelTextAlign.LEFT,
     val font: LabelFont = LabelFont.SANS,
     val boxWidthPx: Float? = null,
+    /** Optional remote font asset slug. Bundled [font] remains the offline/failure fallback. */
+    val fontAssetId: String? = null,
 ) : LabelElement {
     override fun moved(dx: Float, dy: Float) = copy(x = x + dx, y = y + dy)
 }

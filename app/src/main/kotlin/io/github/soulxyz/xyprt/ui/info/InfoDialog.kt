@@ -187,7 +187,7 @@ fun InfoDialog(onDismiss: () -> Unit, onOpenCoCreator: () -> Unit = {}) {
                     }
                 }
                 Text(
-                    "支持文字、图片、PDF、拍照和自由排版，也可从其他应用直接分享打印。让打印更简单，也更顺手。",
+                    "支持文字、图片、PDF、纸张扫描和自由排版，也可从其他应用直接分享打印。让打印更简单，也更顺手。",
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
                 )

@@ -144,7 +144,7 @@ object LabelRenderer {
         isAntiAlias = true
         color = Color.BLACK
         textSize = e.fontSizePx
-        val base = FontRegistry.base(e.font)
+        val base = FontRegistry.base(e.font, e.fontAssetId)
         val style = when {
             e.bold && e.italic -> Typeface.BOLD_ITALIC
             e.bold -> Typeface.BOLD

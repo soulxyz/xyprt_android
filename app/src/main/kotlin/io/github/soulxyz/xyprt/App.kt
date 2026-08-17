@@ -21,8 +21,9 @@ class App : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        container = AppContainer(this)
+        // Bundled fallbacks are ready before the remote cache restores optional downloaded fonts.
         FontRegistry.init(this)
+        container = AppContainer(this)
         // Load the most recently used symbol/emoji tab from the settings into the cache.
         container.applicationScope.launch {
             lastSymbolTab = container.settings.lastSymbolTab.first()

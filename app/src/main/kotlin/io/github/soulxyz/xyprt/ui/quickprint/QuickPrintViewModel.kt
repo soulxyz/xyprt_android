@@ -125,12 +125,12 @@ class QuickPrintViewModel(app: Application) : AndroidViewModel(app) {
                     removeRedInk = adjustments.removeRedInk,
                     removeBlueInk = adjustments.removeBlueInk,
                 )
-                val name = LocalDateTime.now().format(DateTimeFormatter.ofPattern("拍照 yyyy-MM-dd HH:mm"))
+                val name = LocalDateTime.now().format(DateTimeFormatter.ofPattern("扫描 yyyy-MM-dd HH:mm"))
                 templates.createFrom(
                     name = name,
                     spec = LabelSpec(lengthMm = lengthMm, autoLength = false),
                     elements = listOf(element),
-                    defaultName = "拍照文档",
+                    defaultName = "扫描文档",
                 ).id
             }
             onResult(result)

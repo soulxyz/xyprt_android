@@ -54,9 +54,10 @@ class EnhancedModelRepository(
     private val _catalog = MutableStateFlow(EnhancedCatalogState(items = loadInstalledCatalog()))
     val catalog: StateFlow<EnhancedCatalogState> = _catalog
 
-    init { scope.launch { refreshCatalog(silent = true) } }
+    init { if (BuildConfig.ENHANCED_SCANNER_AVAILABLE) scope.launch { refreshCatalog(silent = true) } }
 
     suspend fun refreshCatalog(silent: Boolean = false) {
+        if (!BuildConfig.ENHANCED_SCANNER_AVAILABLE) return
         if (!silent) _catalog.value = _catalog.value.copy(refreshing = true, lastError = null)
         runCatching {
             coCreator.registerDevice()
@@ -68,6 +69,7 @@ class EnhancedModelRepository(
     }
 
     suspend fun download(item: EnhancedCapability): Result<Unit> = runCatching {
+        check(BuildConfig.ENHANCED_SCANNER_AVAILABLE) { "当前安装包未包含增强模型运行时" }
         require(item.downloadable && !item.locked) { item.reason ?: "当前不可下载" }
         val endpoint = item.downloadEndpoint ?: error("没有下载入口")
         coCreator.registerDevice()

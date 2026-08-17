@@ -215,7 +215,7 @@ fun HomeScreen(
             item {
                 QuickActionCard(
                     title = "图片",
-                    subtitle = "照片、截图、题目",
+                    subtitle = "照片、截图、插画",
                     iconRes = R.drawable.ic_quick_image,
                     featured = true,
                     onClick = onQuickImage,
@@ -232,8 +232,8 @@ fun HomeScreen(
             }
             item {
                 QuickActionCard(
-                    title = "拍照",
-                    subtitle = "拍题后裁剪打印",
+                    title = "扫描",
+                    subtitle = "试卷、小票、纸张",
                     iconRes = R.drawable.ic_camera,
                     onClick = onQuickCamera,
                 )
@@ -602,7 +602,7 @@ private fun EmptyDocumentsCard(searching: Boolean, onCreate: () -> Unit) {
             )
             if (!searching) {
                 Text(
-                    "日常打印直接用上面的图片、PDF 或文字即可。",
+                    "日常打印直接用上面的图片、扫描、PDF 或文字即可。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

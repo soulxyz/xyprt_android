@@ -60,6 +60,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -87,6 +88,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.soulxyz.xyprt.R
+import io.github.soulxyz.xyprt.data.remote.RemoteAsset
 import io.github.soulxyz.xyprt.model.BarcodeElement
 import io.github.soulxyz.xyprt.model.DrawingElement
 import io.github.soulxyz.xyprt.model.FrameElement
@@ -104,6 +106,7 @@ import io.github.soulxyz.xyprt.model.TableElement
 import io.github.soulxyz.xyprt.model.TextElement
 import io.github.soulxyz.xyprt.printer.dither.DitherMode
 import io.github.soulxyz.xyprt.printer.dither.OutlineMethod
+import io.github.soulxyz.xyprt.render.FontRegistry
 import io.github.soulxyz.xyprt.render.LabelRenderer
 import io.github.soulxyz.xyprt.ui.components.ClearButton
 import io.github.soulxyz.xyprt.ui.components.RasterEffectControls
@@ -131,6 +134,9 @@ fun EditorScreen(
     val guides by vm.guides.collectAsState()
     val canUndo by vm.canUndo.collectAsState()
     val canRedo by vm.canRedo.collectAsState()
+    val remoteAssetCatalog by vm.remoteAssetCatalog.collectAsState()
+    val remoteFontDownloads by vm.remoteFontDownloads.collectAsState()
+    val remoteFonts = remoteAssetCatalog.items.filter { it.type == "font" }
 
     var showPrintSheet by remember { mutableStateOf(false) }
     var showMetaDialog by remember { mutableStateOf(false) }
@@ -455,6 +461,12 @@ fun EditorScreen(
                 )
                 PropertiesPanel(
                     element = selected!!,
+                    remoteFonts = remoteFonts,
+                    remoteFontDownloads = remoteFontDownloads,
+                    remoteFontsRefreshing = remoteAssetCatalog.refreshing,
+                    onUseRemoteFont = vm::useRemoteFont,
+                    onCancelRemoteFont = vm::cancelRemoteFontSelection,
+                    onRefreshRemoteFonts = vm::refreshRemoteFonts,
                     onUpdate = vm::updateElement,
                     onDelete = {
                         vm.deleteSelected()
@@ -743,6 +755,19 @@ private fun GroupLabel(text: String) {
     )
 }
 
+private fun humanFileSize(bytes: Long): String = when {
+    bytes < 1024L -> "$bytes B"
+    bytes < 1024L * 1024 -> "%.1f KB".format(bytes / 1024.0)
+    else -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
+}
+
+private fun remoteFontLockReason(reason: String?): String = when (reason) {
+    "sponsor_required" -> "需要 Sponsor"
+    "login_required" -> "登录后可用"
+    "permission_required" -> "暂不可用"
+    else -> "暂不可用"
+}
+
 /** Filled "+ word" button for adding; clearly set apart from the selection chips. */
 @Composable
 private fun AddButton(label: String, onClick: () -> Unit) {
@@ -783,12 +808,27 @@ private fun ElementChipLabel(element: LabelElement) {
 @Composable
 private fun PropertiesPanel(
     element: LabelElement,
+    remoteFonts: List<RemoteAsset>,
+    remoteFontDownloads: Map<Int, RemoteFontDownloadState>,
+    remoteFontsRefreshing: Boolean,
+    onUseRemoteFont: (String, RemoteAsset) -> Unit,
+    onCancelRemoteFont: (String) -> Unit,
+    onRefreshRemoteFonts: () -> Unit,
     onUpdate: (LabelElement) -> Unit,
     onDelete: () -> Unit,
 ) {
     Column {
         when (element) {
-            is TextElement -> TextProperties(element, onUpdate)
+            is TextElement -> TextProperties(
+                element = element,
+                remoteFonts = remoteFonts,
+                remoteFontDownloads = remoteFontDownloads,
+                remoteFontsRefreshing = remoteFontsRefreshing,
+                onUseRemoteFont = onUseRemoteFont,
+                onCancelRemoteFont = onCancelRemoteFont,
+                onRefreshRemoteFonts = onRefreshRemoteFonts,
+                onUpdate = onUpdate,
+            )
             is IconElement -> IconProperties(element, onUpdate)
             is FrameElement -> FrameProperties(element, onUpdate)
             is TableElement -> TableProperties(element, onUpdate)
@@ -1293,7 +1333,25 @@ private fun ImageProperties(element: ImageElement, onUpdate: (LabelElement) -> U
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TextProperties(element: TextElement, onUpdate: (LabelElement) -> Unit) {
+private fun TextProperties(
+    element: TextElement,
+    remoteFonts: List<RemoteAsset>,
+    remoteFontDownloads: Map<Int, RemoteFontDownloadState>,
+    remoteFontsRefreshing: Boolean,
+    onUseRemoteFont: (String, RemoteAsset) -> Unit,
+    onCancelRemoteFont: (String) -> Unit,
+    onRefreshRemoteFonts: () -> Unit,
+    onUpdate: (LabelElement) -> Unit,
+) {
+    var showRemoteFonts by remember { mutableStateOf(false) }
+    var pendingRemoteSlug by remember { mutableStateOf<String?>(null) }
+    val selectedRemote = remoteFonts.firstOrNull { it.slug == element.fontAssetId }
+    LaunchedEffect(element.fontAssetId, pendingRemoteSlug) {
+        if (pendingRemoteSlug != null && element.fontAssetId == pendingRemoteSlug) {
+            pendingRemoteSlug = null
+            showRemoteFonts = false
+        }
+    }
     OutlinedTextField(
         value = element.text,
         onValueChange = { onUpdate(element.copy(text = it)) },
@@ -1316,8 +1374,12 @@ private fun TextProperties(element: TextElement, onUpdate: (LabelElement) -> Uni
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         LabelFont.entries.forEach { f ->
             ChoiceChip(
-                selected = element.font == f,
-                onClick = { onUpdate(element.copy(font = f)) },
+                selected = element.fontAssetId == null && element.font == f,
+                onClick = {
+                    onCancelRemoteFont(element.id)
+                    pendingRemoteSlug = null
+                    onUpdate(element.copy(font = f, fontAssetId = null))
+                },
                 label = {
                     Text(
                         when (f) {
@@ -1336,6 +1398,110 @@ private fun TextProperties(element: TextElement, onUpdate: (LabelElement) -> Uni
                 }
             )
         }
+    }
+
+    Spacer(Modifier.height(8.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(Modifier.weight(1f)) {
+            GroupLabel("在线字体")
+            Text(
+                selectedRemote?.let { "正在使用 · ${it.name}" } ?: "按需下载，不增加安装包体积",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        OutlinedButton(onClick = { showRemoteFonts = true }) {
+            Text(if (selectedRemote == null) "字体库" else "更换")
+        }
+    }
+
+    if (showRemoteFonts) {
+        AlertDialog(
+            onDismissRequest = { showRemoteFonts = false },
+            title = { Text("在线字体") },
+            text = {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 440.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Text(
+                        "字体只在你选择时下载；已经下载的字体离线也能继续使用。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 10.dp),
+                    )
+                    if (remoteFonts.isEmpty()) {
+                        Text(
+                            if (remoteFontsRefreshing) "正在同步字体目录…" else "暂时没有可用在线字体",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 16.dp),
+                        )
+                    } else {
+                        remoteFonts.forEachIndexed { index, font ->
+                            val state = remoteFontDownloads[font.id]
+                            val installed = FontRegistry.remote(font.slug) != null
+                            val active = element.fontAssetId == font.slug
+                            val enabled = font.downloadable && !font.locked && state?.loading != true
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(font.name, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
+                                    val sizeText = font.file?.size?.let(::humanFileSize).orEmpty()
+                                    Text(
+                                        listOfNotNull(
+                                            sizeText.takeIf { it.isNotEmpty() },
+                                            when {
+                                                active -> "使用中"
+                                                installed -> "已下载"
+                                                font.locked -> remoteFontLockReason(font.reason)
+                                                else -> null
+                                            },
+                                        ).joinToString(" · "),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (state?.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    state?.error?.let {
+                                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                                Button(
+                                    onClick = {
+                                        pendingRemoteSlug = font.slug
+                                        onUseRemoteFont(element.id, font)
+                                    },
+                                    enabled = enabled && !active,
+                                    contentPadding = PaddingValues(horizontal = 14.dp),
+                                ) {
+                                    if (state?.loading == true) {
+                                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    } else Text(if (installed) "使用" else "下载")
+                                }
+                            }
+                            if (index != remoteFonts.lastIndex) HorizontalDivider()
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = onRefreshRemoteFonts, enabled = !remoteFontsRefreshing) {
+                    Text(if (remoteFontsRefreshing) "同步中…" else "刷新")
+                }
+            },
+            dismissButton = { TextButton(onClick = { showRemoteFonts = false }) { Text("关闭") } },
+        )
     }
 
     Spacer(Modifier.height(6.dp))

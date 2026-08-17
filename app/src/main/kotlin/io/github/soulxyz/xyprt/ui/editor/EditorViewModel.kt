@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.soulxyz.xyprt.App
+import io.github.soulxyz.xyprt.data.remote.RemoteAsset
 import io.github.soulxyz.xyprt.model.BarcodeElement
 import io.github.soulxyz.xyprt.model.DrawingElement
 import io.github.soulxyz.xyprt.model.FrameElement
@@ -39,10 +40,19 @@ data class SnapGuides(val xLine: Float? = null, val yLine: Float? = null)
 private const val LABEL_SNAP_TOL = 4f // label center and borders
 private const val ELEM_SNAP_TOL = 3f  // small zone for aligning to other elements
 
+data class RemoteFontDownloadState(
+    val loading: Boolean = false,
+    val error: String? = null,
+)
+
 class EditorViewModel(app: Application, private val templateId: String) : AndroidViewModel(app) {
 
     private val container = (app as App).container
     private val repo = container.templateRepository
+    val remoteAssetCatalog = container.remoteAssets.catalog
+    private val _remoteFontDownloads = MutableStateFlow<Map<Int, RemoteFontDownloadState>>(emptyMap())
+    val remoteFontDownloads = _remoteFontDownloads.asStateFlow()
+    private val pendingRemoteFontAssetByElement = mutableMapOf<String, Int>()
 
     private val _template = MutableStateFlow<LabelTemplate?>(null)
     val template = _template.asStateFlow()
@@ -156,7 +166,8 @@ class EditorViewModel(app: Application, private val templateId: String) : Androi
         if (incoming !is TextElement) return incoming
         val old = t.elements.find { it.id == incoming.id } as? TextElement ?: return incoming
         val sameMetrics = old.text == incoming.text && old.fontSizePx == incoming.fontSizePx &&
-            old.bold == incoming.bold && old.italic == incoming.italic && old.font == incoming.font
+            old.bold == incoming.bold && old.italic == incoming.italic && old.font == incoming.font &&
+            old.fontAssetId == incoming.fontAssetId
         return if (sameMetrics) incoming else anchorText(old, incoming)
     }
 
@@ -174,6 +185,41 @@ class EditorViewModel(app: Application, private val templateId: String) : Androi
         }
         val dy = -(s1.height - s0.height) / 2f
         return updated.copy(x = updated.x + dx, y = updated.y + dy)
+    }
+
+    /**
+     * Download a remote font on demand and apply it only after the file has been hash-verified and
+     * registered successfully. Failure leaves the current text unchanged, so offline editing is safe.
+     */
+    fun useRemoteFont(elementId: String, asset: RemoteAsset) {
+        if (asset.type != "font") return
+        pendingRemoteFontAssetByElement[elementId] = asset.id
+        _remoteFontDownloads.value = _remoteFontDownloads.value +
+            (asset.id to RemoteFontDownloadState(loading = true))
+        viewModelScope.launch {
+            container.remoteAssets.ensure(asset).onSuccess {
+                // A user may choose another font while this download is in flight. Never let a
+                // stale completion unexpectedly overwrite their newer selection.
+                if (pendingRemoteFontAssetByElement[elementId] == asset.id) {
+                    val current = _template.value?.elements?.find { it.id == elementId } as? TextElement
+                    if (current != null) updateElement(current.copy(fontAssetId = asset.slug))
+                    pendingRemoteFontAssetByElement.remove(elementId)
+                }
+                _remoteFontDownloads.value = _remoteFontDownloads.value - asset.id
+            }.onFailure { error ->
+                if (pendingRemoteFontAssetByElement[elementId] == asset.id) pendingRemoteFontAssetByElement.remove(elementId)
+                _remoteFontDownloads.value = _remoteFontDownloads.value +
+                    (asset.id to RemoteFontDownloadState(error = error.message ?: "字体下载失败"))
+            }
+        }
+    }
+
+    fun cancelRemoteFontSelection(elementId: String) {
+        pendingRemoteFontAssetByElement.remove(elementId)
+    }
+
+    fun refreshRemoteFonts() {
+        viewModelScope.launch { container.remoteAssets.refresh(silent = false) }
     }
 
     fun deleteSelected() {
