@@ -72,6 +72,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import io.github.soulxyz.xyprt.App
+import io.github.soulxyz.xyprt.ui.components.SimpleMarkdown
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -108,8 +109,8 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                 return@launch
             }
             when (openWechat(context)) {
-                WechatOpenResult.APP -> Toast.makeText(context, "二维码已保存到 图片/口袋小印，已尝试打开微信", Toast.LENGTH_LONG).show()
-                WechatOpenResult.FAILED -> Toast.makeText(context, "二维码已保存到 图片/口袋小印。没能自动打开微信，请手动打开微信即可", Toast.LENGTH_LONG).show()
+                WechatOpenResult.APP -> Toast.makeText(context, "二维码已保存，正在打开微信", Toast.LENGTH_LONG).show()
+                WechatOpenResult.FAILED -> Toast.makeText(context, "二维码已保存，请手动打开微信", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -132,7 +133,7 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("共创者计划") },
+                title = { Text("共创计划") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
             )
         },
@@ -155,36 +156,41 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                             Box(contentAlignment = Alignment.Center) { Text(if (state.active) "🎉" else "✦", style = MaterialTheme.typography.headlineMedium) }
                         }
                         Text(
-                            if (state.active) "欢迎回来，共创者" else "一起把口袋小印慢慢做好",
+                            if (state.active) "已加入共创计划" else "共创计划",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center,
                         )
                         Text(
-                            if (state.active) "这台设备已经激活。新东西可以先试，有问题也欢迎直接告诉我们。"
-                            else "稳定版会一直正常维护。共创计划给愿意一起试新功能、反馈问题的人一个更近的入口。",
+                            if (state.active) "这台设备已获得当前共创资格。可用的测试功能会显示在这里。"
+                            else "部分正在测试的功能，会先在这里小范围开放。",
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .78f)) {
-                            Text(state.editionLabel, Modifier.padding(horizontal = 13.dp, vertical = 7.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                state.planBadge.ifBlank { "小范围开放" },
+                                Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
                         }
-                        if (state.active) Button(onClick = onOpenCapabilities, modifier = Modifier.fillMaxWidth()) { Text("看看增强能力") }
+                        if (state.active) Button(onClick = onOpenCapabilities, modifier = Modifier.fillMaxWidth()) { Text("查看可用功能") }
                     }
                 }
 
                 if (!state.active) {
                     Card(shape = RoundedCornerShape(22.dp)) {
                         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("已经有卡密？", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text("填进去就可以激活这台设备，不需要额外注册账号。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("已有共创码？", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text("输入共创码，为这台设备开通共创资格。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             OutlinedTextField(
                                 value = code,
                                 onValueChange = { code = it.uppercase() },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
-                                label = { Text("卡密") },
+                                label = { Text("共创码") },
                                 placeholder = { Text("XXXX-XXXX-XXXX-XXXX") },
                                 shape = RoundedCornerShape(16.dp),
                             )
@@ -203,25 +209,30 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                                     }
                                 },
                             ) {
-                                if (activating) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("激活这台设备")
+                                if (activating) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("加入共创")
                             }
                         }
                     }
                 }
 
                 Card(shape = RoundedCornerShape(22.dp)) {
-                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                        Text("能多得到什么？", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text("• 一些还在打磨的新功能，可以更早试到\n• 设备适配、问题和建议，我们会优先看\n• 可以更直接地聊使用体验和开发想法\n• 偶尔会有额外模板、实验资源或增强能力", style = MaterialTheme.typography.bodyMedium)
-                        Text("新功能会边试边改，只有真正好用的才留下；稳定版的正常更新不受影响。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("当前开放", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        if (state.planMarkdown.isBlank()) Text("暂时没有新的共创公告。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) else SimpleMarkdown(state.planMarkdown)
                     }
                 }
 
                 Card(shape = RoundedCornerShape(22.dp)) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("为什么会有这个计划？", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text("适配、测试、服务器和下载分发都需要持续投入；增强识别还会有模型训练与算力成本。支持完全自愿，不影响稳定版正常使用和更新。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        TextButton(onClick = { showSupport = !showSupport }) { Text(if (showSupport) "先收起来" else "没有卡密？想顺手支持一下") }
+                        Text("为什么是小范围开放？", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "增强识别和部分试验功能会占用额外的服务器、测试和维护资源，因此共创码会优先提供给参与支持或受邀测试的用户。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        TextButton(onClick = { showSupport = !showSupport }) {
+                            Text(if (showSupport) "收起" else "查看支持方式")
+                        }
                     }
                 }
 
@@ -232,8 +243,14 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            Text("请我们喝杯奶茶 ☕", fontWeight = FontWeight.SemiBold)
-                            Text("完全自愿。点二维码后，我们会先保存到相册，再尝试打开微信。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                            Text("支持口袋小印", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                if (state.active) "共创资格已经生效。如果口袋小印对你有帮助，也欢迎继续支持项目维护。"
+                                else "支持完全自愿。相关资源会继续用于服务器、设备适配和测试。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                            )
                             when {
                                 qrLoading -> CircularProgressIndicator()
                                 qrBytes != null -> {
@@ -257,8 +274,8 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
     if (confirmQr) {
         AlertDialog(
             onDismissRequest = { confirmQr = false },
-            title = { Text("保存二维码并尝试打开微信？") },
-            text = { Text("会先把二维码保存到“图片/口袋小印”，然后尝试打开微信。如果系统或微信没有响应，直接手动打开微信就可以。") },
+            title = { Text("保存二维码？") },
+            text = { Text("保存到相册后，会尝试打开微信。") },
             confirmButton = {
                 TextButton(onClick = {
                     confirmQr = false
@@ -279,26 +296,53 @@ private fun ConfettiCelebration(onFinished: () -> Unit) {
     val progress = remember { Animatable(0f) }
     val primary = MaterialTheme.colorScheme.primary
     val secondary = MaterialTheme.colorScheme.tertiary
-    val particles = remember { Random(731).let { r -> List(72) { ConfettiParticle(r.nextFloat(), r.nextFloat(), r.nextFloat(), r.nextFloat(), r.nextBoolean()) } } }
-    LaunchedEffect(Unit) { progress.animateTo(1f, tween(1900)); onFinished() }
+    val sparks = remember {
+        Random(731).let { r ->
+            List(48) {
+                CelebrationSpark(
+                    angle = r.nextFloat() * (PI * 2).toFloat(),
+                    reach = .65f + r.nextFloat() * .45f,
+                    delay = r.nextFloat() * .12f,
+                    dot = r.nextBoolean(),
+                )
+            }
+        }
+    }
+    LaunchedEffect(Unit) { progress.animateTo(1f, tween(920)); onFinished() }
     Canvas(Modifier.fillMaxSize()) {
-        particles.forEachIndexed { i, p ->
-            val t = progress.value
-            val startX = size.width * (.15f + .7f * p.x)
-            val startY = size.height * .38f
-            val angle = (-PI * .92 + PI * .84 * p.angle).toFloat()
-            val speed = size.minDimension * (.30f + .65f * p.speed)
-            val x = startX + cos(angle) * speed * t
-            val y = startY + sin(angle) * speed * t + size.height * .42f * t * t
-            val alpha = (1f - t * .72f).coerceIn(0f, 1f)
-            val c = if (i % 3 == 0) secondary else primary
-            if (p.circle) drawCircle(c.copy(alpha = alpha), radius = 3.dp.toPx() + (i % 4), center = Offset(x, y))
-            else drawLine(c.copy(alpha = alpha), Offset(x, y), Offset(x + 7.dp.toPx(), y + 11.dp.toPx()), strokeWidth = 3.dp.toPx())
+        val center = Offset(size.width * .5f, size.height * .26f)
+        sparks.forEachIndexed { index, spark ->
+            val t = ((progress.value - spark.delay) / (1f - spark.delay)).coerceIn(0f, 1f)
+            if (t <= 0f) return@forEachIndexed
+            val eased = 1f - (1f - t) * (1f - t)
+            val radius = size.minDimension * .30f * spark.reach * eased
+            val ux = cos(spark.angle)
+            val uy = sin(spark.angle)
+            val alpha = ((1f - t) * 1.25f).coerceIn(0f, 1f)
+            val color = if (index % 4 == 0) secondary else primary
+            val point = Offset(center.x + ux * radius, center.y + uy * radius)
+            if (spark.dot) {
+                drawCircle(color.copy(alpha = alpha), radius = 3.dp.toPx(), center = point)
+            } else {
+                val inner = radius * .82f
+                drawLine(
+                    color.copy(alpha = alpha),
+                    Offset(center.x + ux * inner, center.y + uy * inner),
+                    point,
+                    strokeWidth = 2.dp.toPx(),
+                )
+            }
         }
     }
 }
 
-private data class ConfettiParticle(val x: Float, val angle: Float, val speed: Float, val spin: Float, val circle: Boolean)
+private data class CelebrationSpark(
+    val angle: Float,
+    val reach: Float,
+    val delay: Float,
+    val dot: Boolean,
+)
+
 
 private fun friendlyActivationError(message: String?): String = when {
     message.isNullOrBlank() -> "激活没成功，请稍后再试"

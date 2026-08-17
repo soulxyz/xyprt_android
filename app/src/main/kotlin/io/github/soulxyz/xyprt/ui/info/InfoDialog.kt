@@ -57,6 +57,7 @@ import io.github.soulxyz.xyprt.R
 import io.github.soulxyz.xyprt.data.UpdateState
 import io.github.soulxyz.xyprt.data.UpdateDownloadMode
 import io.github.soulxyz.xyprt.data.UpdateDownloadState
+import io.github.soulxyz.xyprt.ui.components.SimpleMarkdown
 import io.github.soulxyz.xyprt.ui.components.rememberBlePermissionRunner
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -83,7 +84,6 @@ fun InfoDialog(onDismiss: () -> Unit, onOpenCoCreator: () -> Unit = {}) {
     val updateState by container.updates.state.collectAsState()
     val updateDownloadState by container.updateDownloads.state.collectAsState()
     val coCreatorState by container.coCreator.state.collectAsState()
-
     val scope = rememberCoroutineScope()
     val backup = container.backup
     val requestPermissions = rememberBlePermissionRunner()
@@ -283,7 +283,6 @@ private fun UpdateCard(
                 state.latest?.let { info ->
                     Text("最新版本 ${info.versionName}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     if (info.notes.isNotBlank()) ReleaseNotes(info.notes)
-                    Text("更新信息来自${info.checkedVia}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 TextButton(onClick = onCheck) { Text("重新检查") }
             }
@@ -299,12 +298,11 @@ private fun UpdateCard(
                 val delta = info.delta
                 if (delta != null && info.fullSizeBytes != null && info.fullSizeBytes > 0) {
                     Text(
-                        "可用增量更新 ${formatBytes(delta.patchSize)} · 完整包 ${formatBytes(info.fullSizeBytes)}",
+                        "应用内约 ${formatBytes(delta.patchSize)}；浏览器下载 ${formatBytes(info.fullSizeBytes)}。",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
-                Text("更新信息来自${info.checkedVia}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 when (val d = downloadState) {
                     is UpdateDownloadState.Downloading -> if (d.info.versionCode == info.versionCode) {
                         val total = d.totalBytes
@@ -312,7 +310,7 @@ private fun UpdateCard(
                             LinearProgressIndicator(progress = { (d.downloadedBytes.toFloat() / total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
                         } else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                         Text(
-                            "${if (d.usingDelta) "增量更新" else "应用内下载"} · ${formatBytes(d.downloadedBytes)}${total?.let { " / ${formatBytes(it)}" }.orEmpty()}${if (d.bytesPerSecond > 0) " · ${formatBytes(d.bytesPerSecond)}/s" else ""}",
+                            "${formatBytes(d.downloadedBytes)}${total?.let { " / ${formatBytes(it)}" }.orEmpty()}${if (d.bytesPerSecond > 0) " · ${formatBytes(d.bytesPerSecond)}/s" else ""}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -320,21 +318,21 @@ private fun UpdateCard(
                     } else UpdateButtons(info, onDownload, onBrowser, onSource)
                     is UpdateDownloadState.Verifying -> if (d.info.versionCode == info.versionCode) {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        Text(if (d.usingDelta) "正在重建并校验完整安装包…" else "正在校验安装包…", style = MaterialTheme.typography.bodySmall)
+                        Text("正在准备安装…", style = MaterialTheme.typography.bodySmall)
                     } else UpdateButtons(info, onDownload, onBrowser, onSource)
                     is UpdateDownloadState.NeedsInstallPermission -> if (d.info.versionCode == info.versionCode) {
-                        Text("安装包已校验。请先允许“口袋小印”安装未知应用，然后回来继续安装。", style = MaterialTheme.typography.bodySmall)
+                        Text("请允许口袋小印安装更新，然后回来继续。", style = MaterialTheme.typography.bodySmall)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = onInstall) { Text("继续安装") }
                             TextButton(onClick = { onBrowser(info) }) { Text("浏览器下载") }
                         }
                     } else UpdateButtons(info, onDownload, onBrowser, onSource)
                     is UpdateDownloadState.ReadyToInstall -> if (d.info.versionCode == info.versionCode) {
-                        Text("安装包已校验，可以交给系统安装器。", style = MaterialTheme.typography.bodySmall)
+                        Text("更新已准备好。", style = MaterialTheme.typography.bodySmall)
                         Button(onClick = onInstall) { Text("安装更新") }
                     } else UpdateButtons(info, onDownload, onBrowser, onSource)
                     is UpdateDownloadState.Installing -> if (d.info.versionCode == info.versionCode) {
-                        Text("已交给系统安装器，请按系统提示完成更新。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        Text("请按系统提示完成更新。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                     } else UpdateButtons(info, onDownload, onBrowser, onSource)
                     is UpdateDownloadState.Failed -> if (d.info?.versionCode == info.versionCode) {
                         Text(d.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -358,9 +356,9 @@ private fun UpdateButtons(
     onSource: (io.github.soulxyz.xyprt.data.UpdateInfo) -> Unit,
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { onDownload(info) }) { Text("更新") }
+        Button(onClick = { onDownload(info) }) { Text("应用内") }
         OutlinedButton(onClick = { onBrowser(info) }) { Text("浏览器") }
-        TextButton(onClick = { onSource(info) }) { Text("源站") }
+        TextButton(onClick = { onSource(info) }) { Text("发布页") }
     }
 }
 

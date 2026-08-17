@@ -1,6 +1,7 @@
 package io.github.soulxyz.xyprt.data
 
 import android.content.Context
+import android.os.Build
 import io.github.soulxyz.xyprt.BuildConfig
 import io.github.soulxyz.xyprt.data.remote.CoCreatorRepository
 import io.github.soulxyz.xyprt.data.remote.DeviceIdentity
@@ -94,29 +95,32 @@ class UpdateRepository(
             put("version", BuildConfig.VERSION_NAME)
             put("versionCode", BuildConfig.VERSION_CODE)
             put("edition", if (coCreator.state.value.active) "cocreator" else "community")
+            put("abi", Build.SUPPORTED_ABIS.firstOrNull().orEmpty())
             put("androidIdHash", identity.androidIdHash)
             put("deviceKeyFingerprint", identity.publicKeyFingerprint)
             put("devicePublicKey", identity.publicKeyBase64)
         })
-        if (root.boolean("updateAvailable") != true) return null
-        val release = root["release"]?.jsonObject ?: return null
+        val updateAvailable = root.boolean("updateAvailable") == true
+        val release = root["release"]?.let { runCatching { it.jsonObject }.getOrNull() } ?: return null
         val channel = root.string("channel") ?: "opensource"
         val version = release.string("version") ?: return null
         return if (channel == "sponsor") {
             val releaseId = release.int("id") ?: return null
+            val selectedAbi = release["download"]?.let { runCatching { it.jsonObject.string("abi") }.getOrNull() }.orEmpty()
+            val abiQuery = selectedAbi.takeIf { it.isNotBlank() }?.let { "&abi=$it" }.orEmpty()
             UpdateInfo(
                 versionName = version,
                 versionCode = release.int("versionCode") ?: semanticVersionCode(version),
-                title = release.string("title") ?: "口袋小印 共创预览 $version",
+                title = release.string("title") ?: "口袋小印 $version",
                 notes = release.string("notes").orEmpty().trim().take(6_000),
                 releaseUrl = REPOSITORY_URL,
-                sourceApkUrl = api.absolute("/v1/app/update-download.php?installationId=${identity.installationId}&releaseId=$releaseId"),
+                sourceApkUrl = if (updateAvailable) api.absolute("/v1/app/update-download.php?installationId=${identity.installationId}&releaseId=$releaseId$abiQuery") else null,
                 mirrorApkUrl = null,
                 digestSha256 = release["download"]?.let { runCatching { it.jsonObject.string("sha256") }.getOrNull() },
-                checkedVia = "口袋小印共创更新服务",
+                checkedVia = "口袋小印更新服务",
                 fullSizeBytes = release["download"]?.let { runCatching { it.jsonObject.long("size") }.getOrNull() },
                 serverDownloadMode = parseServerDownloadMode(root.string("downloadMode")),
-                delta = parseManagedDelta(root, api),
+                delta = if (updateAvailable) parseManagedDelta(root, api) else null,
             )
         } else parseOpenSourceRelease(release, parseServerDownloadMode(root.string("downloadMode")))
     }

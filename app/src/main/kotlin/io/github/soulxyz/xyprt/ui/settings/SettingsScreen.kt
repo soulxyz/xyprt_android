@@ -216,10 +216,10 @@ fun SettingsScreen(
                     if (coCreator.active || coCreator.entryEnabled) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(if (coCreator.active) "共创版" else "稳定版", style = MaterialTheme.typography.titleSmall)
-                                Text(if (coCreator.active) "已加入共创，可优先体验新能力" else "日常功能稳定更新", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("共创计划", style = MaterialTheme.typography.titleSmall)
+                                Text(if (coCreator.active) "已加入" else "小范围开放中", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            TextButton(onClick = onOpenCoCreator) { Text(if (coCreator.active) "共创中心" else "了解共创") }
+                            TextButton(onClick = onOpenCoCreator) { Text(if (coCreator.active) "查看" else "了解") }
                         }
                         HorizontalDivider()
                     }
@@ -227,19 +227,18 @@ fun SettingsScreen(
                         Column(Modifier.weight(1f)) {
                             Text("增强识别", style = MaterialTheme.typography.titleSmall)
                             val ready = modelCatalog.items.count { it.installed && !it.locked }
-                            Text("复杂纸张和弱边缘场景可获得更强的识别能力${if (ready > 0) " · $ready 个增强包已就绪" else ""}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(if (ready > 0) "已启用" else "复杂背景和浅色纸边时识别更稳定", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         TextButton(onClick = onOpenEnhanced) { Text("管理") }
                     }
                     HorizontalDivider()
                     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text("更新下载", style = MaterialTheme.typography.titleSmall)
-                        Text("应用内下载支持增量更新，通常只需下载变化部分，可明显减少更新流量。浏览器下载获取完整安装包，适合需要全量更新时使用。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilterChip(
                                 selected = updateDownloadMode == UpdateDownloadMode.INTERNAL,
                                 onClick = { scope.launch { appContainer.settings.saveUpdateDownloadMode(UpdateDownloadMode.INTERNAL) } },
-                                label = { Text("应用内（推荐）") },
+                                label = { Text("应用内") },
                             )
                             FilterChip(
                                 selected = updateDownloadMode == UpdateDownloadMode.EXTERNAL,
@@ -247,6 +246,11 @@ fun SettingsScreen(
                                 label = { Text("浏览器") },
                             )
                         }
+                        Text(
+                            if (updateDownloadMode == UpdateDownloadMode.EXTERNAL) "下载完整安装包。" else "优先下载变化部分。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }

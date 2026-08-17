@@ -18,6 +18,8 @@ data class CoCreatorState(
     val refreshing: Boolean = false,
     val lastError: String? = null,
     val entryEnabled: Boolean = false,
+    val planMarkdown: String = "",
+    val planBadge: String = "小范围开放",
 ) {
     val editionLabel: String get() = if (active) "共创版" else "稳定版"
 }
@@ -83,11 +85,25 @@ class CoCreatorRepository(
     private fun loadCached(): CoCreatorState {
         val exp = prefs.getLong("expires_at", 0L).takeIf { it > 0L }
         val active = prefs.getBoolean("active", false) && (exp == null || exp > System.currentTimeMillis() / 1000L)
-        return CoCreatorState(active = active, expiresAt = exp, label = prefs.getString("label", null), entryEnabled = prefs.getBoolean("entry_enabled", false))
+        return CoCreatorState(
+            active = active,
+            expiresAt = exp,
+            label = prefs.getString("label", null),
+            entryEnabled = prefs.getBoolean("entry_enabled", false),
+            planMarkdown = prefs.getString("plan_markdown", "").orEmpty(),
+            planBadge = prefs.getString("plan_badge", "小范围开放").orEmpty().ifBlank { "小范围开放" },
+        )
     }
 
     private fun cache(state: CoCreatorState) {
-        prefs.edit().putBoolean("active", state.active).putLong("expires_at", state.expiresAt ?: 0L).putString("label", state.label).putBoolean("entry_enabled", state.entryEnabled).apply()
+        prefs.edit()
+            .putBoolean("active", state.active)
+            .putLong("expires_at", state.expiresAt ?: 0L)
+            .putString("label", state.label)
+            .putBoolean("entry_enabled", state.entryEnabled)
+            .putString("plan_markdown", state.planMarkdown)
+            .putString("plan_badge", state.planBadge)
+            .apply()
     }
 
     private fun parseSponsor(o: kotlinx.serialization.json.JsonObject?, ui: kotlinx.serialization.json.JsonObject? = null): CoCreatorState {
@@ -97,6 +113,8 @@ class CoCreatorRepository(
             label = o?.string("label"),
             refreshing = false,
             entryEnabled = ui?.boolean("cocreatorEntryEnabled") ?: _state.value.entryEnabled,
+            planMarkdown = ui?.string("planMarkdown") ?: _state.value.planMarkdown,
+            planBadge = ui?.string("planBadge")?.ifBlank { "小范围开放" } ?: _state.value.planBadge,
         )
     }
 }

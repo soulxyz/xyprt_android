@@ -51,13 +51,17 @@ import kotlinx.coroutines.launch
 @Composable
 fun EnhancedCapabilitiesScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val repo = remember { (context.applicationContext as App).container.enhancedModels }
+    val container = remember { (context.applicationContext as App).container }
+    val repo = container.enhancedModels
+    val coCreatorRepo = container.coCreator
     val state by repo.catalog.collectAsState()
+    val coCreator by coCreatorRepo.state.collectAsState()
     val scope = rememberCoroutineScope()
     var busyId by remember { mutableStateOf<String?>(null) }
     val runtimeAvailable = BuildConfig.ENHANCED_SCANNER_AVAILABLE
 
     LaunchedEffect(runtimeAvailable) {
+        coCreatorRepo.refresh(silent = true)
         if (runtimeAvailable) repo.refreshCatalog(silent = false)
     }
 
@@ -85,10 +89,9 @@ fun EnhancedCapabilitiesScreen(onBack: () -> Unit) {
         ) {
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text("标准识别", fontWeight = FontWeight.SemiBold)
-                        Text("自动找边 · 透视校正 · 边缘清理", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                        Text("适合试卷、小票、讲义和日常纸张扫描。", style = MaterialTheme.typography.bodySmall)
+                    Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("日常扫描", fontWeight = FontWeight.SemiBold)
+                        Text("自动找边、透视校正和边缘清理，适合日常纸张扫描。", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -96,10 +99,17 @@ fun EnhancedCapabilitiesScreen(onBack: () -> Unit) {
             if (!runtimeAvailable) {
                 item {
                     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("共创增强识别", fontWeight = FontWeight.SemiBold)
-                            Text("针对复杂背景、弱边缘和倾斜纸张提供更强的识别能力。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("参与共创后可体验更多增强能力。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("增强识别", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "复杂背景、浅色纸边或拍摄角度较大时，识别会更稳定。",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                if (coCreator.active) "需要更新应用后使用。" else "目前在共创计划中小范围开放。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
                         }
                     }
                 }
@@ -123,7 +133,7 @@ fun EnhancedCapabilitiesScreen(onBack: () -> Unit) {
                                 busyId = null
                                 Toast.makeText(
                                     context,
-                                    if (result.isSuccess) "增强识别已就绪" else result.exceptionOrNull()?.message ?: "下载失败",
+                                    if (result.isSuccess) "增强识别已启用" else result.exceptionOrNull()?.message ?: "下载失败",
                                     Toast.LENGTH_LONG,
                                 ).show()
                             }
@@ -177,12 +187,12 @@ private fun CapabilityCard(
                 Text("下载约 ${formatBytes(it)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             when {
-                item.locked -> Text("该能力暂未对当前账号开放。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                item.locked -> Text("当前设备暂未开放。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 item.installed -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("已启用", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                     TextButton(onClick = onRemove) { Text("移除") }
                 }
-                item.downloadable -> Button(onClick = onDownload, enabled = !busy) { Text(if (busy) "准备中…" else "下载并启用") }
+                item.downloadable -> Button(onClick = onDownload, enabled = !busy) { Text(if (busy) "准备中…" else "启用") }
                 else -> OutlinedButton(onClick = {}, enabled = false) { Text("暂不可下载") }
             }
         }
