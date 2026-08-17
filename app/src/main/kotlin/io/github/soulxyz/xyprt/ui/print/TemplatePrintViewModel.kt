@@ -7,6 +7,7 @@ import io.github.soulxyz.xyprt.App
 import io.github.soulxyz.xyprt.model.LabelTemplate
 import io.github.soulxyz.xyprt.model.Placeholders
 import io.github.soulxyz.xyprt.printer.MediaType
+import io.github.soulxyz.xyprt.printer.estimatePrintedLengthMm
 import io.github.soulxyz.xyprt.render.LabelRenderer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -80,13 +81,23 @@ class TemplatePrintViewModel(app: Application) : AndroidViewModel(app) {
                 if (hasCounter) {
                     templateRepo.setCounter(template.id, template.counterValue + copies)
                 }
+                val totalLengthMm = images.sumOf { image ->
+                    estimatePrintedLengthMm(
+                        image = image,
+                        media = media,
+                        feedBeforeDots = feedBeforeDots,
+                        feedAfterDots = feedAfterDots,
+                    )
+                }
                 historyRepo.record(
                     templateId = template.id,
                     templateName = template.name,
                     spec = template.spec.copy(media = media),
                     resolvedElements = reanchored.first(),
                     copies = copies,
+                    printedLengthMm = totalLengthMm,
                 )
+                container.printStats.recordSuccessfulPrint(copies, totalLengthMm)
                 _done.value = true
             } catch (c: CancellationException) {
                 throw c

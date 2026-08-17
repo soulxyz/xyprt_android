@@ -23,6 +23,8 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import io.github.soulxyz.xyprt.printer.MonoImage
+import io.github.soulxyz.xyprt.printer.MediaType
+import io.github.soulxyz.xyprt.printer.estimatePrintedLengthMm
 import io.github.soulxyz.xyprt.render.MonoConverter
 import androidx.core.content.FileProvider
 import java.io.File
@@ -38,13 +40,30 @@ class QuickPrintViewModel(app: Application) : AndroidViewModel(app) {
 
     val documents: StateFlow<List<SavedDocument>> = savedDocs.documents
 
-    fun recordPrinted(title: String, image: MonoImage, copies: Int, source: QuickPrintHistorySource? = null) {
+    fun recordPrinted(
+        title: String,
+        image: MonoImage,
+        copies: Int,
+        media: MediaType,
+        feedBeforeDots: Int,
+        feedAfterDots: Int,
+        source: QuickPrintHistorySource? = null,
+    ) {
         viewModelScope.launch {
+            val totalLengthMm = estimatePrintedLengthMm(
+                image = image,
+                media = media,
+                copies = copies,
+                feedBeforeDots = feedBeforeDots,
+                feedAfterDots = feedAfterDots,
+            )
             history.recordRaster(
                 title = title.ifBlank { "快速打印" }, image = image, copies = copies,
                 sourceType = if (source != null) "quick" else null,
                 sourceJson = source?.let { container.json.encodeToString(it) },
+                printedLengthMm = totalLengthMm,
             )
+            container.printStats.recordSuccessfulPrint(copies, totalLengthMm)
         }
     }
 

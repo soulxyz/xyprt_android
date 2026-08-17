@@ -51,7 +51,7 @@ fun PrintSheet(
     image: MonoImage,
     initialMedia: MediaType,
     onDismiss: () -> Unit,
-    onPrinted: (copies: Int, media: MediaType) -> Unit = { _, _ -> },
+    onPrinted: (copies: Int, media: MediaType, feedBeforeDots: Int, feedAfterDots: Int) -> Unit = { _, _, _, _ -> },
     onOpenPrinterSettings: () -> Unit = {},
     vm: PrintViewModel = viewModel(),
 ) {
@@ -76,7 +76,7 @@ fun PrintSheet(
 
     LaunchedEffect(done) {
         if (done) {
-            onPrinted(copies, media)
+            onPrinted(copies, media, feedBefore, feedAfter)
             vm.reset()
             onDismiss()
         }

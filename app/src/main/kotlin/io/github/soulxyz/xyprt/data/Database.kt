@@ -52,6 +52,7 @@ data class PrintHistoryEntity(
     val elementsJson: String,
     val copies: Int,
     val printedAt: Long,
+    val printedLengthMm: Double? = null,
     val rasterBase64: String? = null,
     val rasterHeight: Int = 0,
     val sourceType: String? = null,
@@ -193,6 +194,7 @@ private fun encodeHistory(items: List<PrintHistoryEntity>): String {
             put("id", e.id); put("templateId", e.templateId ?: JSONObject.NULL); put("templateName", e.templateName)
             put("tapeWidthMm", e.tapeWidthMm); put("lengthMm", e.lengthMm); put("media", e.media); put("autoLength", e.autoLength)
             put("elementsJson", e.elementsJson); put("copies", e.copies); put("printedAt", e.printedAt)
+            if (e.printedLengthMm != null) put("printedLengthMm", e.printedLengthMm)
             if (e.rasterBase64 != null) put("rasterBase64", e.rasterBase64) else put("rasterBase64", JSONObject.NULL)
             put("rasterHeight", e.rasterHeight)
             if (e.sourceType != null) put("sourceType", e.sourceType) else put("sourceType", JSONObject.NULL)
@@ -214,6 +216,7 @@ private fun decodeHistory(raw: String?): List<PrintHistoryEntity> = runCatching 
                 lengthMm = o.optInt("lengthMm", 80), media = o.optString("media", "CONTINUOUS"),
                 autoLength = o.optBoolean("autoLength", true), elementsJson = o.optString("elementsJson", "[]"), copies = o.optInt("copies", 1),
                 printedAt = o.optLong("printedAt"),
+                printedLengthMm = if (o.has("printedLengthMm") && !o.isNull("printedLengthMm")) o.optDouble("printedLengthMm") else null,
                 rasterBase64 = if (o.isNull("rasterBase64")) null else o.optString("rasterBase64").takeIf { it.isNotBlank() },
                 rasterHeight = o.optInt("rasterHeight", 0),
                 sourceType = if (o.isNull("sourceType")) null else o.optString("sourceType").takeIf { it.isNotBlank() },

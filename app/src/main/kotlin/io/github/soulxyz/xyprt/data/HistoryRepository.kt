@@ -26,6 +26,8 @@ data class PrintHistoryEntry(
     val elements: List<LabelElement>,
     val copies: Int,
     val printedAt: Long,
+    /** Total physical paper length for this print action, including all copies when known. */
+    val printedLengthMm: Double? = null,
     /** Exact 1-bit quick-print snapshot. Normal template prints leave this null. */
     val rasterBase64: String? = null,
     val rasterHeight: Int = 0,
@@ -40,6 +42,11 @@ data class QuickPrintHistorySource(
     val text: String = "",
     val todoTitle: String = "",
     val todoItems: String = "",
+    /** New checklist layout preset. Missing in older history and therefore safely defaults to CLEAN. */
+    val todoPreset: String = "CLEAN",
+    val todoShowDate: Boolean = true,
+    val todoDate: String = "",
+    val todoCenterTitle: Boolean = true,
     val fontSizePx: Int = 30,
     val lineSpacingPercent: Int = 115,
     val font: String = "SANS",
@@ -84,6 +91,7 @@ class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json
         spec: LabelSpec,
         resolvedElements: List<LabelElement>,
         copies: Int,
+        printedLengthMm: Double? = null,
     ) {
         dao.insert(
             PrintHistoryEntity(
@@ -96,6 +104,7 @@ class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json
                 elementsJson = json.encodeToString(resolvedElements),
                 copies = copies,
                 printedAt = System.currentTimeMillis(),
+                printedLengthMm = printedLengthMm,
             )
         )
         dao.prune()
@@ -107,6 +116,7 @@ class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json
         copies: Int,
         sourceType: String? = null,
         sourceJson: String? = null,
+        printedLengthMm: Double? = null,
     ) {
         val approxMm = ceil(image.height / 8.0).toInt().coerceAtLeast(1)
         dao.insert(
@@ -120,6 +130,7 @@ class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json
                 elementsJson = "[]",
                 copies = copies,
                 printedAt = System.currentTimeMillis(),
+                printedLengthMm = printedLengthMm ?: (approxMm.toDouble() * copies.coerceAtLeast(1)),
                 rasterBase64 = encodeRaster(image),
                 rasterHeight = image.height,
                 sourceType = sourceType,
@@ -146,6 +157,7 @@ class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json
                     elementsJson = json.encodeToString(e.elements),
                     copies = e.copies,
                     printedAt = e.printedAt,
+                    printedLengthMm = e.printedLengthMm,
                     rasterBase64 = e.rasterBase64,
                     rasterHeight = e.rasterHeight,
                     sourceType = e.sourceType,
@@ -174,6 +186,7 @@ class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json
             .getOrDefault(emptyList()),
         copies = copies,
         printedAt = printedAt,
+        printedLengthMm = printedLengthMm,
         rasterBase64 = rasterBase64,
         rasterHeight = rasterHeight,
         sourceType = sourceType,

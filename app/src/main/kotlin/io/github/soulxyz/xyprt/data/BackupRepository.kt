@@ -40,11 +40,12 @@ data class BackupFile(
 private data class PortableBackup(
     val format: String = "xyprt",
     val formatVersion: Int = 2,
-    val appVersion: String = "1.2.0",
+    val appVersion: String = "1.2.4",
     val createdAt: Long = System.currentTimeMillis(),
     val templates: List<LabelTemplate> = emptyList(),
     val documents: List<SavedDocument> = emptyList(),
     val history: List<PrintHistoryEntry> = emptyList(),
+    val printStats: PrintStatsSnapshot? = null,
     val settings: BackupSettings = BackupSettings(),
 )
 
@@ -58,6 +59,7 @@ private data class PortableBackup(
 class BackupRepository(
     private val templates: TemplateRepository,
     private val history: HistoryRepository,
+    private val printStats: PrintStatsRepository,
     private val settings: SettingsRepository,
     private val documents: SavedDocumentRepository,
     private val json: Json,
@@ -79,6 +81,7 @@ class BackupRepository(
             templates = preparedTemplates,
             documents = documents.documents.value,
             history = preparedHistory,
+            printStats = printStats.stats.value,
             settings = BackupSettings(
                 defaultTapeWidthMm = settings.defaultTapeWidthMm.first(),
                 defaultLengthMm = settings.defaultLengthMm.first(),
@@ -130,6 +133,9 @@ class BackupRepository(
         }
         val hydratedHistory = backup.history.map { hydrateHistory(it, entries) }
         if (hydratedHistory.isNotEmpty() || replace) history.importEntries(hydratedHistory, replace)
+        if (replace) {
+            backup.printStats?.let(printStats::replace) ?: printStats.replaceFromHistory(hydratedHistory)
+        }
         applySettings(backup.settings)
     }
 
