@@ -5,10 +5,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -78,95 +83,113 @@ fun PrintSheet(
     }
 
     ModalBottomSheet(onDismissRequest = { if (!working) onDismiss() }) {
-        Column(Modifier.padding(horizontal = 16.dp)) {
-            Text(stringResource(R.string.action_print), style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(12.dp))
-
-            Text(
-                stringResource(R.string.print_preview, image.height / 8),
-                style = MaterialTheme.typography.bodySmall
-            )
-            Spacer(Modifier.height(4.dp))
-            MonoPaperPreview(
-                image = image,
-                minViewportHeight = 180.dp,
-                maxViewportHeight = 420.dp,
-            )
-            Spacer(Modifier.height(12.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.94f)
+                .navigationBarsPadding(),
+        ) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
             ) {
-                Text(stringResource(R.string.print_copies), style = MaterialTheme.typography.bodyMedium)
-                IconButton(
-                    onClick = { if (copies > 1) copies-- },
-                    enabled = !working && copies > 1
-                ) { Text("-", style = MaterialTheme.typography.titleLarge) }
-                Text("$copies", style = MaterialTheme.typography.titleMedium)
-                IconButton(
-                    onClick = { if (copies < 100) copies++ },
-                    enabled = !working && copies < 100
-                ) { Text("+", style = MaterialTheme.typography.titleLarge) }
-            }
-            Spacer(Modifier.height(4.dp))
-            PrintSpacingControls(
-                beforeDots = feedBefore,
-                afterDots = feedAfter,
-                enabled = !working,
-                onBeforeDots = { feedBefore = it },
-                onAfterDots = { feedAfter = it },
-            )
-            Spacer(Modifier.height(8.dp))
+                Text(stringResource(R.string.action_print), style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(12.dp))
 
-            (printerState as? PrinterState.Ready)?.let { ready ->
                 Text(
-                    if (ready.transport == PrinterTransport.CLASSIC) "当前打印通道：经典蓝牙（SPP，高速）" else "当前打印通道：低功耗蓝牙（BLE）",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(Modifier.height(6.dp))
-            }
-
-            if (printerState !is PrinterState.Printing) {
-                PrinterConnectSection(
-                    state = printerState,
-                    hasSavedPrinter = savedPrinter != null,
-                    onConnect = { vm.connect() },
-                    onOpenSettings = onOpenPrinterSettings,
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-
-            val printing = printerState as? PrinterState.Printing
-            if (printing != null) {
-                Text(
-                    stringResource(R.string.print_label_progress, printing.copy, printing.copies),
+                    stringResource(R.string.print_preview, image.height / 8),
                     style = MaterialTheme.typography.bodySmall
                 )
                 Spacer(Modifier.height(4.dp))
-                LinearProgressIndicator(
-                    progress = { printing.progress },
-                    modifier = Modifier.fillMaxWidth()
+                MonoPaperPreview(
+                    image = image,
+                    minViewportHeight = 180.dp,
+                    maxViewportHeight = 420.dp,
                 )
-            } else if (working) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-            }
+                Spacer(Modifier.height(12.dp))
 
-            error?.let {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(stringResource(R.string.print_copies), style = MaterialTheme.typography.bodyMedium)
+                    IconButton(
+                        onClick = { if (copies > 1) copies-- },
+                        enabled = !working && copies > 1
+                    ) { Text("-", style = MaterialTheme.typography.titleLarge) }
+                    Text("$copies", style = MaterialTheme.typography.titleMedium)
+                    IconButton(
+                        onClick = { if (copies < 100) copies++ },
+                        enabled = !working && copies < 100
+                    ) { Text("+", style = MaterialTheme.typography.titleLarge) }
+                }
+                Spacer(Modifier.height(4.dp))
+                PrintSpacingControls(
+                    beforeDots = feedBefore,
+                    afterDots = feedAfter,
+                    enabled = !working,
+                    onBeforeDots = { feedBefore = it },
+                    onAfterDots = { feedAfter = it },
+                )
                 Spacer(Modifier.height(8.dp))
-                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+
+                (printerState as? PrinterState.Ready)?.let { ready ->
+                    Text(
+                        if (ready.transport == PrinterTransport.CLASSIC) "经典蓝牙 · 高速" else "低功耗蓝牙",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                }
+
+                if (printerState !is PrinterState.Printing) {
+                    PrinterConnectSection(
+                        state = printerState,
+                        hasSavedPrinter = savedPrinter != null,
+                        onConnect = { vm.connect() },
+                        onOpenSettings = onOpenPrinterSettings,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                val printing = printerState as? PrinterState.Printing
+                if (printing != null) {
+                    Text(
+                        stringResource(R.string.print_label_progress, printing.copy, printing.copies),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    LinearProgressIndicator(
+                        progress = { printing.progress },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else if (working) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
+
+                error?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                }
+                Spacer(Modifier.height(12.dp))
             }
 
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Button(
                     onClick = { vm.print(image, media, copies, feedBefore, feedAfter) },
-                    enabled = !working && printerState is PrinterState.Ready
+                    enabled = !working && printerState is PrinterState.Ready,
+                    modifier = Modifier.weight(1f),
                 ) { Text(stringResource(R.string.action_print)) }
-                OutlinedButton(onClick = onDismiss, enabled = !working) { Text(stringResource(R.string.action_cancel)) }
+                OutlinedButton(onClick = onDismiss, enabled = !working, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.action_cancel))
+                }
             }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }

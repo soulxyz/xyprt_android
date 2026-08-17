@@ -69,9 +69,20 @@ object LegacyLabelAdapter {
 
     private fun fromLegacyNode(node: LabelElement): DocumentNode = when (node) {
         is TextElement -> DocumentText(
-            node.id, mm100(node.x), mm100(node.y), node.rotation, node.text, mm100(node.fontSizePx),
-            node.bold, node.italic, node.underline, node.align, node.font, node.fontAssetId,
-            node.boxWidthPx?.let(::mm100),
+            id = node.id,
+            xMm100 = mm100(node.x),
+            yMm100 = mm100(node.y),
+            rotation = node.rotation,
+            text = node.text,
+            fontSizeMm100 = mm100(node.fontSizePx),
+            bold = node.bold,
+            italic = node.italic,
+            underline = node.underline,
+            align = node.align,
+            fallbackFont = node.font,
+            fontAssetId = node.fontAssetId,
+            boxWidthMm100 = node.boxWidthPx?.let(::mm100),
+            lineSpacingPercent = node.lineSpacingPercent,
         )
         is IconElement -> DocumentIcon(
             node.id, mm100(node.x), mm100(node.y), node.rotation, node.glyph, mm100(node.sizePx),
@@ -106,9 +117,20 @@ object LegacyLabelAdapter {
 
     private fun toLegacyNode(node: DocumentNode): LabelElement = when (node) {
         is DocumentText -> TextElement(
-            node.id, dots(node.xMm100), dots(node.yMm100), node.rotation, node.text, dots(node.fontSizeMm100),
-            node.bold, node.italic, node.underline, node.align, node.fallbackFont,
-            node.boxWidthMm100?.let(::dots), node.fontAssetId,
+            id = node.id,
+            x = dots(node.xMm100),
+            y = dots(node.yMm100),
+            rotation = node.rotation,
+            text = node.text,
+            fontSizePx = dots(node.fontSizeMm100),
+            bold = node.bold,
+            italic = node.italic,
+            underline = node.underline,
+            align = node.align,
+            font = node.fallbackFont,
+            boxWidthPx = node.boxWidthMm100?.let(::dots),
+            fontAssetId = node.fontAssetId,
+            lineSpacingPercent = node.lineSpacingPercent,
         )
         is DocumentIcon -> IconElement(
             node.id, dots(node.xMm100), dots(node.yMm100), node.rotation, node.glyph, dots(node.sizeMm100),

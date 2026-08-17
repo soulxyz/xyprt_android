@@ -168,6 +168,7 @@ object LabelRenderer {
             .obtain(e.text, 0, e.text.length, paint, width.coerceAtLeast(1))
             .setAlignment(alignment)
             .setIncludePad(false)
+            .setLineSpacing(0f, e.lineSpacingPercent.coerceIn(80, 200) / 100f)
             .build()
     }
 

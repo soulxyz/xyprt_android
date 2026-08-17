@@ -79,6 +79,8 @@ data class TextElement(
     val boxWidthPx: Float? = null,
     /** Optional remote font asset slug. Bundled [font] remains the offline/failure fallback. */
     val fontAssetId: String? = null,
+    /** 100 = normal line spacing. Kept on the text element so quick-print text stays editable. */
+    val lineSpacingPercent: Int = 100,
 ) : LabelElement {
     override fun moved(dx: Float, dy: Float) = copy(x = x + dx, y = y + dy)
 }

@@ -19,7 +19,7 @@ data class CoCreatorState(
     val lastError: String? = null,
     val entryEnabled: Boolean = false,
 ) {
-    val editionLabel: String get() = if (active) "共创预览" else "开源稳定版"
+    val editionLabel: String get() = if (active) "共创版" else "稳定版"
 }
 
 class CoCreatorRepository(

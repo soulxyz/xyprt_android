@@ -8,12 +8,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -136,9 +139,16 @@ fun TemplatePrintSheet(
     ModalBottomSheet(onDismissRequest = { if (!working) onDismiss() }) {
         Column(
             Modifier
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState())
+                .fillMaxWidth()
+                .fillMaxHeight(0.94f)
+                .navigationBarsPadding(),
         ) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+            ) {
             Text(stringResource(R.string.print_title, template.name), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(12.dp))
 
@@ -259,15 +269,23 @@ fun TemplatePrintSheet(
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
             }
 
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Spacer(Modifier.height(12.dp))
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Button(
                     onClick = { vm.print(template, media, copies, answers, feedBefore, feedAfter) },
-                    enabled = !working && printerState is PrinterState.Ready
+                    enabled = !working && printerState is PrinterState.Ready,
+                    modifier = Modifier.weight(1f),
                 ) { Text(stringResource(R.string.action_print)) }
-                OutlinedButton(onClick = onDismiss, enabled = !working) { Text(stringResource(R.string.action_cancel)) }
+                OutlinedButton(onClick = onDismiss, enabled = !working, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.action_cancel))
+                }
             }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }

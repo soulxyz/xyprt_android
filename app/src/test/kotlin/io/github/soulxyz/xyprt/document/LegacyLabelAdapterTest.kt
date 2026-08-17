@@ -12,7 +12,7 @@ class LegacyLabelAdapterTest {
             id = "legacy-1", name = "兼容模板",
             spec = LabelSpec(lengthMm = 123, autoLength = false),
             elements = listOf(
-                TextElement("t", 12.25f, 30.5f, text = "你好", fontSizePx = 31.5f, bold = true, fontAssetId = "font-xiaolai", boxWidthPx = 201.25f),
+                TextElement("t", 12.25f, 30.5f, text = "你好", fontSizePx = 31.5f, bold = true, fontAssetId = "font-xiaolai", boxWidthPx = 201.25f, lineSpacingPercent = 135),
                 FrameElement("f", 3.5f, 5.25f, widthPx = 211.5f, heightPx = 72.25f, strokePx = 2f),
                 TableElement("g", 4f, 100f, rows = 4, columns = 5, widthPx = 300f, heightPx = 180f),
                 BarcodeElement("b", 10f, 290f, data = "https://example.com", widthPx = 88f, heightPx = 88f),
@@ -45,5 +45,6 @@ class LegacyLabelAdapterTest {
             assertEquals(a.rotation, b.rotation)
         }
         assertEquals("font-xiaolai", (restored.elements.first() as TextElement).fontAssetId)
+        assertEquals(135, (restored.elements.first() as TextElement).lineSpacingPercent)
     }
 }

@@ -87,6 +87,7 @@ data class DocumentText(
     /** Stable remote asset slug. Null means bundled/system fallback only. */
     val fontAssetId: String? = null,
     val boxWidthMm100: Int? = null,
+    val lineSpacingPercent: Int = 100,
 ) : DocumentNode
 
 @Serializable

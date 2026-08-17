@@ -162,7 +162,7 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                         )
                         Text(
                             if (state.active) "这台设备已经激活。新东西可以先试，有问题也欢迎直接告诉我们。"
-                            else "开源稳定版会一直正常维护。这个计划只是给愿意一起折腾、一起试新东西的人，多留一条近一点的通道。",
+                            else "稳定版会一直正常维护。共创计划给愿意一起试新功能、反馈问题的人一个更近的入口。",
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -212,15 +212,15 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                 Card(shape = RoundedCornerShape(22.dp)) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                         Text("能多得到什么？", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text("• 一些还在打磨的新功能，可以更早试到\n• 设备适配、问题和建议，我们会优先看\n• 合理范围内聊使用、开发、AI Coding、Vibe Coding\n• 偶尔会有额外模板、实验资源或增强能力", style = MaterialTheme.typography.bodyMedium)
-                        Text("实验功能不一定都会留下：好用就继续做，不够好就改，实在不合适就换方案。开源稳定版该有的正常更新不会因此少掉。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("• 一些还在打磨的新功能，可以更早试到\n• 设备适配、问题和建议，我们会优先看\n• 可以更直接地聊使用体验和开发想法\n• 偶尔会有额外模板、实验资源或增强能力", style = MaterialTheme.typography.bodyMedium)
+                        Text("新功能会边试边改，只有真正好用的才留下；稳定版的正常更新不受影响。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
 
                 Card(shape = RoundedCornerShape(22.dp)) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("为什么会有这个计划？", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text("适配、测试、服务器、存储和下载分发都会花时间和成本。以后如果继续训练和升级识别模型，还会多出算力和电力开销。支持完全自愿，不支持也不影响开源稳定版正常使用和更新。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("适配、测试、服务器和下载分发都需要持续投入；增强识别还会有模型训练与算力成本。支持完全自愿，不影响稳定版正常使用和更新。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         TextButton(onClick = { showSupport = !showSupport }) { Text(if (showSupport) "先收起来" else "没有卡密？想顺手支持一下") }
                     }
                 }

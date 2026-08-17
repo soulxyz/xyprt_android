@@ -9,10 +9,14 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -68,6 +72,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -102,7 +107,7 @@ private enum class SourceMode { TEXT, IMAGE, PDF, CAMERA, TODO }
 
 private fun defaultAdjustments(mode: SourceMode) = when (mode) {
     SourceMode.IMAGE -> QuickImageAdjustments(mode = DitherMode.FLOYD_STEINBERG, threshold = 155)
-    SourceMode.CAMERA -> QuickImageAdjustments(mode = DitherMode.THRESHOLD, paperPreset = PaperPreset.DOCUMENT, threshold = 188, contrast = 8)
+    SourceMode.CAMERA -> QuickImageAdjustments(mode = DitherMode.THRESHOLD, paperPreset = PaperPreset.SHARPEN, threshold = 188, contrast = 8)
     SourceMode.PDF -> QuickImageAdjustments(mode = DitherMode.THRESHOLD, threshold = 190, contrast = 10)
     SourceMode.TEXT, SourceMode.TODO -> QuickImageAdjustments(mode = DitherMode.THRESHOLD, threshold = 170)
 }
@@ -141,7 +146,7 @@ fun QuickPrintScreen(
     var pendingCameraUriText by rememberSaveable { mutableStateOf<String?>(null) }
     var cameraQuadDraft by remember { mutableStateOf(DocumentQuad()) }
     var cameraQuadApplied by remember { mutableStateOf(DocumentQuad()) }
-    var cameraScanLabel by remember { mutableStateOf("标准识别（开源内置）") }
+    var cameraScanLabel by remember { mutableStateOf("标准识别") }
     var cameraScanning by remember { mutableStateOf(false) }
     var scanGeneration by remember { mutableIntStateOf(0) }
     var imageSuggestionGeneration by remember { mutableIntStateOf(0) }
@@ -323,7 +328,7 @@ fun QuickPrintScreen(
     fun openImageDocumentCorrection() {
         if (sourceMode != SourceMode.IMAGE || uris.size != 1) return
         cameraQuadDraft = imageSuggestionQuad ?: if (imageCorrectionApplied) cameraQuadApplied else DocumentQuad()
-        cameraScanLabel = if (imageSuggestionQuad != null) "检测到纸张 · 可手动微调" else "正在识别纸张边缘…"
+        cameraScanLabel = if (imageSuggestionQuad != null) "已检测到纸张" else "正在识别纸张边缘…"
         showCropEditor = true
         scanGeneration++
     }
@@ -456,12 +461,12 @@ fun QuickPrintScreen(
         if (result != null) {
             cameraQuadDraft = result.quad
             cameraScanLabel = when {
-                result.confidence < .50f -> "没有可靠识别到纸张 · 请手动调整四角"
-                result.engine == ScanEngine.ENHANCED -> "增强识别 · 可手动微调"
-                else -> "标准识别（开源内置）· 可手动微调"
+                result.confidence < .50f -> "没有识别到完整纸张，请手动调整四角"
+                result.engine == ScanEngine.ENHANCED -> "增强识别"
+                else -> "标准识别"
             }
         } else {
-            cameraScanLabel = "标准框选 · 请手动调整四角"
+            cameraScanLabel = "请手动调整四角"
         }
         cameraScanning = false
     }
@@ -662,27 +667,35 @@ fun QuickPrintScreen(
                     onCamera = { chooseScanIntent() },
                     onTodo = { switchMode(SourceMode.TODO) },
                 )
-                draftCandidate?.let { draft ->
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text("有未完成的编辑", fontWeight = FontWeight.SemiBold)
-                                Text("上次中途退出的内容已经保存，可以接着调，不用重新选图或拍照。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                AnimatedVisibility(
+                    visible = draftCandidate != null,
+                    enter = fadeIn(tween(120)) + expandVertically(tween(150)),
+                    exit = fadeOut(tween(90)) + shrinkVertically(tween(120)),
+                ) {
+                    draftCandidate?.let { draft ->
+                        Column {
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("有未完成的编辑", fontWeight = FontWeight.SemiBold)
+                                        Text("上次中途退出的内容已经保存。是否继续编辑？", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    TextButton(onClick = {
+                                        applySource(draft.source, draft)
+                                        draftCandidate = null
+                                        pickerOpened = true
+                                    }) { Text("继续") }
+                                    TextButton(onClick = {
+                                        vm.clearDraft()
+                                        draftCandidate = null
+                                    }) { Text("放弃") }
+                                }
                             }
-                            TextButton(onClick = {
-                                applySource(draft.source, draft)
-                                draftCandidate = null
-                                pickerOpened = true
-                            }) { Text("继续") }
-                            TextButton(onClick = {
-                                vm.clearDraft()
-                                draftCandidate = null
-                            }) { Text("放弃") }
                         }
                     }
                 }
@@ -701,12 +714,7 @@ fun QuickPrintScreen(
 
             } else {
                 Text(cameraScanLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                Text(
-                    if (sourceMode == SourceMode.IMAGE) "这是可选的文档校正。拖动四角确认纸张范围；取消不会改变原图。"
-                    else "拖动四角或边中点修正范围；自动识别只是起点。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Text("拖动四角调整纸张范围。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(8.dp))
             }
             AnimatedContent(
@@ -885,7 +893,7 @@ fun QuickPrintScreen(
                                 Text("确认纸张四角", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.height(4.dp))
                                 Text(cameraScanLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                                Text("识别不必完美：拖动四个圆点即可修正，最后以你看到的范围为准。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("拖动四角调整纸张范围。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.height(10.dp))
                                 PhotoCropEditor(
                                     uri = uris.first(),
@@ -898,11 +906,11 @@ fun QuickPrintScreen(
                                     TextButton(onClick = { launchCamera() }) { Text("重新拍摄") }
                                     TextButton(onClick = { scanImagePicker.launch(arrayOf("image/*")) }) { Text("换相册图片") }
                                 }
-                                TextButton(onClick = { chooseImageIntent() }) { Text("不是文档？按原图打印") }
+                                TextButton(onClick = { chooseImageIntent() }) { Text("按原图打印") }
                             } else {
                                 SelectedSourceCard(
                                     title = "纸张已校正",
-                                    subtitle = "已经拉正透视，下方就是接近实际热敏打印的效果",
+                                    subtitle = "透视和边缘已调整",
                                     iconRes = R.drawable.ic_camera,
                                     action = "重拍",
                                     onAction = { launchCamera() },
@@ -1151,12 +1159,27 @@ private fun SourceSelector(
     onTodo: () -> Unit,
 ) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        FilterChip(selected = sourceMode == SourceMode.IMAGE, onClick = onImage, label = { Text("图片") }, modifier = Modifier.weight(1f))
-        FilterChip(selected = sourceMode == SourceMode.PDF, onClick = onPdf, label = { Text("PDF") }, modifier = Modifier.weight(1f))
-        FilterChip(selected = sourceMode == SourceMode.TEXT, onClick = onText, label = { Text("文字") }, modifier = Modifier.weight(1f))
-        FilterChip(selected = sourceMode == SourceMode.CAMERA, onClick = onCamera, label = { Text("扫描") }, modifier = Modifier.weight(1f))
-        FilterChip(selected = sourceMode == SourceMode.TODO, onClick = onTodo, label = { Text("待办") }, modifier = Modifier.weight(1f))
+        SourceModeChip(sourceMode == SourceMode.IMAGE, "图片", onImage, Modifier.weight(1f))
+        SourceModeChip(sourceMode == SourceMode.PDF, "PDF", onPdf, Modifier.weight(1f))
+        SourceModeChip(sourceMode == SourceMode.TEXT, "文字", onText, Modifier.weight(1f))
+        SourceModeChip(sourceMode == SourceMode.CAMERA, "扫描", onCamera, Modifier.weight(1f))
+        SourceModeChip(sourceMode == SourceMode.TODO, "待办", onTodo, Modifier.weight(1f))
     }
+}
+
+@Composable
+private fun SourceModeChip(selected: Boolean, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1f else 0.985f,
+        animationSpec = tween(120),
+        label = "source-chip-$label",
+    )
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label) },
+        modifier = modifier.graphicsLayer { scaleX = scale; scaleY = scale },
+    )
 }
 
 @Composable

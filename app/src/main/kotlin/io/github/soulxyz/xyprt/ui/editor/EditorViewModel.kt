@@ -167,7 +167,7 @@ class EditorViewModel(app: Application, private val templateId: String) : Androi
         val old = t.elements.find { it.id == incoming.id } as? TextElement ?: return incoming
         val sameMetrics = old.text == incoming.text && old.fontSizePx == incoming.fontSizePx &&
             old.bold == incoming.bold && old.italic == incoming.italic && old.font == incoming.font &&
-            old.fontAssetId == incoming.fontAssetId
+            old.fontAssetId == incoming.fontAssetId && old.lineSpacingPercent == incoming.lineSpacingPercent
         return if (sameMetrics) incoming else anchorText(old, incoming)
     }
 

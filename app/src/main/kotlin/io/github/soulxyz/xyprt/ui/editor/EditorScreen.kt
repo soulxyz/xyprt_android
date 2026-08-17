@@ -1368,6 +1368,13 @@ private fun TextProperties(
         onDecrease = { onUpdate(element.copy(fontSizePx = (element.fontSizePx - 4).coerceAtLeast(8f))) },
         onIncrease = { onUpdate(element.copy(fontSizePx = (element.fontSizePx + 4).coerceAtMost(96f))) }
     )
+    Spacer(Modifier.height(4.dp))
+    Stepper(
+        label = "行距: ",
+        value = "${element.lineSpacingPercent}%",
+        onDecrease = { onUpdate(element.copy(lineSpacingPercent = (element.lineSpacingPercent - 5).coerceAtLeast(80))) },
+        onIncrease = { onUpdate(element.copy(lineSpacingPercent = (element.lineSpacingPercent + 5).coerceAtMost(200))) },
+    )
 
     Spacer(Modifier.height(6.dp))
     GroupLabel(stringResource(R.string.group_font))
@@ -1409,7 +1416,7 @@ private fun TextProperties(
         Column(Modifier.weight(1f)) {
             GroupLabel("在线字体")
             Text(
-                selectedRemote?.let { "正在使用 · ${it.name}" } ?: "按需下载，不增加安装包体积",
+                selectedRemote?.let { "正在使用 · ${it.name}" } ?: "需要时再下载，下载后可离线使用",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
