@@ -134,3 +134,5 @@ py -3 .\tools\verify-local-build.py
 ```
 
 恢复脚本会先验证 Vault ZIP CRC，再验证 OpenCV、ONNX Runtime、ZXing 和 Kotlin serialization 本地依赖的固定 SHA-256，校验全部通过后才写入 `.local-build`。日常联网构建不要求存在 `.local-build`，Gradle 会使用公开 Maven 坐标；共创 ONNX 构建需显式传入 `-PXYPRT_INCLUDE_ONNX=true`。
+
+当前本地 OpenCV 依赖为 `PocketPrint Minimal OpenCV r1`。它固定 `core + imgproc + Java/Android JNI`，arm64 启用 KleidiCV 0.7.0；正常 App 开发直接复用 AAR，不需要 NDK。详见 `docs/CV_RUNTIME.md`、`docs/DEPENDENCY_ARCHIVE.md` 和 `docs/COMMUNITY_EDITION.md`。

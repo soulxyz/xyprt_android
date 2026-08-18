@@ -16,3 +16,5 @@ jobs:
           python-version: '3.x'
       - name: Audit tracked files and Git history
         run: python3 tools/audit-public-source.py
+      - name: Verify Minimal OpenCV r1 usage boundary
+        run: python3 tools/verify-opencv-min-r1-usage.py app/src

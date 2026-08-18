@@ -11,13 +11,13 @@
 - compileSdk / targetSdk: 36
 - Build Tools: 36.1.0
 - minSdk: 26
-- OpenCV: 4.13.0
+- CV Runtime: PocketPrint Minimal OpenCV r1（OpenCV 4.13.0；arm64 含 KleidiCV 0.7.0）
 - ONNX Runtime（共创版）: 1.24.1
 
 ## 第一次在新机器构建
 
 1. 安装 JDK 17 与 Android SDK 36 / Build Tools 36.1.0。
-2. 保留本 PRIVATE 完整包中的 `.local-build/`。它包含已验证的大型本地 AAR/JAR；普通 Git 不追踪该目录是为了避免 GitHub 100 MB 单文件限制。
+2. 从匹配版本的 Deps Vault 恢复 `.local-build/`。普通 Git 不追踪大型 AAR/JAR；关键自编依赖的源码、配方和 SHA 随 Deps Vault 归档。
 3. 先验证本地二进制：
 
 ```bash
@@ -86,3 +86,14 @@ Windows PowerShell：
 ## 私密文件
 
 `private-signing/`、`private-ml/` 不应推到公开 GitHub。PRIVATE 归档可以用于灾难恢复，但生产签名/密钥应另有加密备份。
+
+
+## CV Runtime 变更保护
+
+普通业务开发不重编 OpenCV。涉及 `org.opencv.*` import 的变更先运行：
+
+```bash
+python3 tools/verify-opencv-min-r1-usage.py app/src
+```
+
+详细边界见 `docs/CV_RUNTIME.md`；依赖与工具链分层见 `docs/DEPENDENCY_ARCHIVE.md`。
