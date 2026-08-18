@@ -61,7 +61,7 @@ class EnhancedModelRepository(
         if (!silent) _catalog.value = _catalog.value.copy(refreshing = true, lastError = null)
         runCatching {
             coCreator.registerDevice()
-            val rootJson = api.getJson("/v1/models/list.php?installationId=${identity.installationId}&appVersionCode=${BuildConfig.VERSION_CODE}")
+            val rootJson = api.signedGet("/v1/models/list.php?appVersionCode=${BuildConfig.VERSION_CODE}")
             val list = rootJson["items"]?.jsonArray ?: JsonArray(emptyList())
             list.mapNotNull { e -> runCatching { parseItem(e.jsonObject) }.getOrNull() }
         }.onSuccess { items -> _catalog.value = EnhancedCatalogState(items.map(::withInstalled)) }
@@ -74,11 +74,11 @@ class EnhancedModelRepository(
         val endpoint = item.downloadEndpoint ?: error("没有下载入口")
         coCreator.registerDevice()
         val sep = if ('?' in endpoint) '&' else '?'
-        val issue = api.getJson("$endpoint${sep}installationId=${identity.installationId}&appVersionCode=${BuildConfig.VERSION_CODE}")
+        val issue = api.signedGet("$endpoint${sep}appVersionCode=${BuildConfig.VERSION_CODE}")
         val grant = issue["download"]?.jsonObject ?: error("未获得下载票据")
         val ticket = grant.string("ticket") ?: error("下载票据为空")
-        val redeem = api.postJson(grant.string("redeemEndpoint") ?: "/v1/download/redeem.php", buildJsonObject {
-            put("installationId", identity.installationId); put("ticket", ticket)
+        val redeem = api.signedPost(grant.string("redeemEndpoint") ?: "/v1/download/redeem.php", buildJsonObject {
+            put("ticket", ticket)
         })
         val redeemed = redeem["download"]?.jsonObject ?: error("下载兑换失败")
         val url = redeemed.string("url") ?: error("下载地址为空")
@@ -111,8 +111,7 @@ class EnhancedModelRepository(
 
     suspend fun ensureLease(modelId: String): Boolean = runCatching {
         coCreator.registerDevice()
-        val root = api.postJson("/v1/models/lease.php", buildJsonObject {
-            put("installationId", identity.installationId)
+        val root = api.signedPost("/v1/models/lease.php", buildJsonObject {
             put("modelId", modelId)
             put("appVersionCode", BuildConfig.VERSION_CODE)
         })

@@ -2,6 +2,7 @@ package io.github.soulxyz.xyprt.ui.cocreator
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -82,13 +84,17 @@ fun EnhancedCapabilitiesScreen(onBack: () -> Unit) {
             )
         },
     ) { padding ->
-        LazyColumn(
+        Box(
             modifier = Modifier.padding(padding).fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentAlignment = Alignment.TopCenter,
         ) {
+            LazyColumn(
+                modifier = Modifier.widthIn(max = 900.dp).fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
             item {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                     Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text("日常扫描", fontWeight = FontWeight.SemiBold)
                         Text("自动找边、透视校正和边缘清理，适合日常纸张扫描。", style = MaterialTheme.typography.bodySmall)
@@ -98,7 +104,7 @@ fun EnhancedCapabilitiesScreen(onBack: () -> Unit) {
 
             if (!runtimeAvailable) {
                 item {
-                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
                         Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("增强识别", fontWeight = FontWeight.SemiBold)
                             Text(
@@ -150,7 +156,8 @@ fun EnhancedCapabilitiesScreen(onBack: () -> Unit) {
                     item { Text("当前没有可下载的增强能力。", style = MaterialTheme.typography.bodyMedium) }
                 }
             }
-            item { Spacer(Modifier.size(20.dp)) }
+                item { Spacer(Modifier.size(20.dp)) }
+            }
         }
     }
 }
@@ -162,7 +169,7 @@ private fun CapabilityCard(
     onDownload: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    Card {
+    Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

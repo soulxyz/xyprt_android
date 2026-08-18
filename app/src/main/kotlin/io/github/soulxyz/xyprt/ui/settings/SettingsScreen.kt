@@ -3,10 +3,13 @@ package io.github.soulxyz.xyprt.ui.settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -81,8 +84,6 @@ fun SettingsScreen(
     var showForgetConfirm by remember { mutableStateOf(false) }
     var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
-    LaunchedEffect(Unit) { appContainer.coCreator.refresh(silent = true) }
-
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
@@ -112,9 +113,14 @@ fun SettingsScreen(
             )
         }
     ) { padding ->
+        Box(
+            modifier = Modifier.padding(padding).fillMaxSize(),
+            contentAlignment = Alignment.TopCenter,
+        ) {
         Column(
             Modifier
-                .padding(padding)
+                .widthIn(max = 900.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 10.dp)
                 .verticalScroll(rememberScrollState())
         ) {
@@ -213,16 +219,14 @@ fun SettingsScreen(
             Spacer(Modifier.height(6.dp))
             Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (coCreator.active || coCreator.entryEnabled) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text("共创计划", style = MaterialTheme.typography.titleSmall)
-                                Text(if (coCreator.active) "已加入" else "小范围开放中", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            TextButton(onClick = onOpenCoCreator) { Text(if (coCreator.active) "查看" else "了解") }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("共创计划", style = MaterialTheme.typography.titleSmall)
+                            Text(if (coCreator.active) "已加入" else "小范围开放中", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        HorizontalDivider()
+                        TextButton(onClick = onOpenCoCreator) { Text(if (coCreator.active) "查看" else "了解") }
                     }
+                    HorizontalDivider()
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("增强识别", style = MaterialTheme.typography.titleSmall)
@@ -262,6 +266,7 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(24.dp))
+        }
         }
     }
 

@@ -18,3 +18,7 @@ jobs:
         run: python3 tools/audit-public-source.py
       - name: Verify Minimal OpenCV r1 usage boundary
         run: python3 tools/verify-opencv-min-r1-usage.py app/src
+      - name: Audit responsive page-width invariants
+        run: python3 tools/audit-responsive-ui.py
+      - name: Audit Security r2 source boundaries
+        run: python3 tools/audit-security-r2-source.py

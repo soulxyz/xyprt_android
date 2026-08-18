@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -101,9 +102,13 @@ fun HistoryScreen(onBack: () -> Unit, onEditQuick: (Long) -> Unit = {}, onOpenTe
             return@Scaffold
         }
 
+        Box(
+            modifier = Modifier.padding(padding).fillMaxSize(),
+            contentAlignment = Alignment.TopCenter,
+        ) {
         LazyColumn(
-            Modifier.padding(padding).fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            Modifier.widthIn(max = 900.dp).fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(entries, key = { it.id }) { entry ->
@@ -120,6 +125,7 @@ fun HistoryScreen(onBack: () -> Unit, onEditQuick: (Long) -> Unit = {}, onOpenTe
                     onConvertLayout = if (entry.rasterBase64 != null) ({ vm.convertQuickToTemplate(entry.id) { id -> if (id != null) onOpenTemplate(id) } }) else null,
                 )
             }
+        }
         }
     }
 

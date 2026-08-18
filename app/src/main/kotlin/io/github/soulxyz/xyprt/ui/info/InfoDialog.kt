@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -90,7 +91,7 @@ fun InfoDialog(onDismiss: () -> Unit, onOpenCoCreator: () -> Unit = {}) {
     var showBackupMenu by remember { mutableStateOf(false) }
     var pendingImport by remember { mutableStateOf<ByteArray?>(null) }
 
-    LaunchedEffect(Unit) { container.coCreator.refresh(silent = true); container.updates.check() }
+    LaunchedEffect(Unit) { container.updates.check() }
 
     fun toast(res: Int) = Toast.makeText(context, context.getString(res), Toast.LENGTH_SHORT).show()
     fun openUrl(url: String) {
@@ -157,7 +158,7 @@ fun InfoDialog(onDismiss: () -> Unit, onOpenCoCreator: () -> Unit = {}) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.fillMaxWidth(0.92f),
+        modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
         properties = DialogProperties(usePlatformDefaultWidth = false),
         icon = {
             Box(
@@ -176,15 +177,14 @@ fun InfoDialog(onDismiss: () -> Unit, onOpenCoCreator: () -> Unit = {}) {
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text("版本 $version · Soulxyz", style = MaterialTheme.typography.labelMedium, color = muted)
-                    if (coCreatorState.active || coCreatorState.entryEnabled) {
-                        Text(
-                            coCreatorState.editionLabel,
-                            modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(MaterialTheme.colorScheme.primaryContainer)
-                                .clickable { onDismiss(); onOpenCoCreator() }.padding(horizontal = 10.dp, vertical = 5.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                    }
+                    Text(
+                        coCreatorState.editionLabel,
+                        modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(MaterialTheme.colorScheme.primaryContainer)
+                            .clickable { onDismiss(); onOpenCoCreator() }
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
                 }
                 Text(
                     "支持文字、图片、PDF、纸张扫描和自由排版，也可从其他应用直接分享打印。让打印更简单，也更顺手。",

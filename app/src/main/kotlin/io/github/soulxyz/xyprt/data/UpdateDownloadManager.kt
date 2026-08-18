@@ -1,5 +1,7 @@
 package io.github.soulxyz.xyprt.data
 
+import io.github.soulxyz.xyprt.data.remote.ServerApi
+
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -72,6 +74,7 @@ class UpdateDownloadManager(
     private val context: Context,
     private val settings: SettingsRepository,
     private val scope: CoroutineScope,
+    private val api: ServerApi,
 ) {
     private val _state = MutableStateFlow<UpdateDownloadState>(UpdateDownloadState.Idle)
     val state: StateFlow<UpdateDownloadState> = _state
@@ -217,6 +220,7 @@ class UpdateDownloadManager(
                 setRequestProperty("User-Agent", "xyprt-android-updater")
                 if (existing > 0) setRequestProperty("Range", "bytes=$existing-")
             }
+            if (info.requiresDeviceAuth && api.isFirstParty(url)) api.applyDeviceAuthHeaders(connection, "GET", url)
             val code = connection.responseCode
             if (code in 300..399 && redirects++ < 6) {
                 val location = connection.getHeaderField("Location") ?: error("更新下载重定向无地址")

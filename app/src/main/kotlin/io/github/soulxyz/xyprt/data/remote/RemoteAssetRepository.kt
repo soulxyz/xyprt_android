@@ -135,12 +135,14 @@ class RemoteAssetRepository(
     suspend fun refresh(silent: Boolean = false) {
         if (!silent) _catalog.value = _catalog.value.copy(refreshing = true, lastError = null)
         runCatching {
-            coCreator.registerDevice()
             val ctx = snapshot.context?.let { "&context=${urlEncode(it)}" }.orEmpty()
-            val rootJson = api.getJson(
-                "/v1/assets/manifest.php?installationId=${urlEncode(identity.installationId)}" +
-                    "&appVersionCode=${BuildConfig.VERSION_CODE}&sinceRevision=${snapshot.revision}$ctx",
-            )
+            val path = "/v1/assets/manifest.php?appVersionCode=${BuildConfig.VERSION_CODE}&sinceRevision=${snapshot.revision}$ctx"
+            val rootJson = if (coCreator.state.value.active) {
+                coCreator.registerDevice()
+                api.signedGet(path)
+            } else {
+                api.getJson(path)
+            }
             applyManifest(rootJson["manifest"]?.jsonObject ?: error("素材清单为空"))
         }.onSuccess { next ->
             snapshot = next
@@ -186,31 +188,36 @@ class RemoteAssetRepository(
 
         cachedHandle(asset)?.let { return@runCatching it }
 
-        coCreator.registerDevice()
+        val authenticateDevice = remote.encryptionMode != "none" || coCreator.state.value.active
+        if (authenticateDevice) coCreator.registerDevice()
         // Binary delta is intentionally only used for plaintext objects. GCM ciphertext is not a
         // useful diff base; encrypted packs should update at the logical small-asset/chunk level.
         val previousSha = if (remote.encryptionMode == "none") {
             prefs.getString("asset_sha:${asset.id}", null)?.lowercase(Locale.ROOT)
                 ?.takeIf { it.isSha256() && cachedObject(it) != null }
         } else null
-        val resolutionRoot = api.postJson("/v1/assets/resolve.php", buildJsonObject {
-            put("installationId", identity.installationId)
+        val resolutionBody = buildJsonObject {
             put("appVersionCode", BuildConfig.VERSION_CODE)
             put("assetId", asset.id)
             if (previousSha != null) put("localSha256", previousSha)
-        })
+        }
+        val resolutionRoot = if (authenticateDevice) {
+            api.signedPost("/v1/assets/resolve.php", resolutionBody)
+        } else {
+            api.postJson("/v1/assets/resolve.php", resolutionBody)
+        }
         val resolution = resolutionRoot["resolution"]?.jsonObject ?: error("资源解析响应无效")
         val mode = resolution.string("mode") ?: "full"
         val handle = when {
             mode == "up_to_date" && previousSha != null -> {
                 cachedObject(previousSha)?.let { PlainCachedRemoteAsset(asset, it, remote.sha256, remote.size) }
-                    ?: downloadFull(asset, remote)
+                    ?: downloadFull(asset, remote, authenticateDevice)
             }
             mode == "delta" && remote.encryptionMode == "none" -> runCatching {
-                val file = applyDelta(asset, remote, previousSha, resolution)
+                val file = applyDelta(asset, remote, previousSha, resolution, authenticateDevice)
                 PlainCachedRemoteAsset(asset, file, remote.sha256, remote.size)
-            }.getOrElse { downloadFull(asset, remote) }
-            else -> downloadFull(asset, remote)
+            }.getOrElse { downloadFull(asset, remote, authenticateDevice) }
+            else -> downloadFull(asset, remote, authenticateDevice)
         }
         rememberInstalled(asset, remote)
         handle.plainFile?.let { registerFontIfNeeded(asset, it) }
@@ -258,12 +265,14 @@ class RemoteAssetRepository(
     suspend fun loadCollectionPage(collectionId: Int, cursor: String? = null, limit: Int = 20): Result<RemoteCollectionPage> = runCatching {
         require(collectionId > 0) { "合集 ID 无效" }
         val safeLimit = limit.coerceIn(1, 40)
-        coCreator.registerDevice()
         val cursorQuery = cursor?.takeIf { it.isNotBlank() }?.let { "&cursor=${urlEncode(it)}" }.orEmpty()
-        val rootJson = api.getJson(
-            "/v1/collections/items.php?id=$collectionId&installationId=${urlEncode(identity.installationId)}" +
-                "&appVersionCode=${BuildConfig.VERSION_CODE}&limit=$safeLimit$cursorQuery",
-        )
+        val path = "/v1/collections/items.php?id=$collectionId&appVersionCode=${BuildConfig.VERSION_CODE}&limit=$safeLimit$cursorQuery"
+        val rootJson = if (coCreator.state.value.active) {
+            coCreator.registerDevice()
+            api.signedGet(path)
+        } else {
+            api.getJson(path)
+        }
         RemoteCollectionPage(
             collection = parseCollection(rootJson["collection"]?.jsonObject ?: error("合集信息为空")),
             items = (rootJson["items"]?.jsonArray ?: JsonArray(emptyList())).mapNotNull { parseAsset(it.jsonObject) },
@@ -277,6 +286,7 @@ class RemoteAssetRepository(
         remote: RemoteAssetFile,
         previousSha: String?,
         resolution: JsonObject,
+        authenticateDevice: Boolean,
     ): File = withContext(Dispatchers.IO) {
         val fromSha = previousSha ?: error("缺少本地增量基线")
         val old = cachedObject(fromSha) ?: error("本地增量基线不存在")
@@ -287,10 +297,11 @@ class RemoteAssetRepository(
         val patch = File(temp, "asset-${asset.id}-$patchSha.xydelta.part")
         if (!preparePartForResume(patch, patchSize, patchSha)) {
             api.downloadAbsoluteToFile(
-                api.absolute(endpoint + (if ('?' in endpoint) "&" else "?") + "installationId=${urlEncode(identity.installationId)}"),
+                api.absolute(endpoint),
                 patch,
                 maxBytes = minOf(512L * 1024 * 1024, (patchSize * 2).coerceAtLeast(8L * 1024 * 1024)),
                 expectedSize = patchSize,
+                authenticateFirstParty = authenticateDevice,
             )
         }
         require(sha256(patch).equals(patchSha, ignoreCase = true)) { "素材增量包校验失败" }
@@ -307,10 +318,10 @@ class RemoteAssetRepository(
         }
     }
 
-    private suspend fun downloadFull(asset: RemoteAsset, remote: RemoteAssetFile): CachedRemoteAsset {
+    private suspend fun downloadFull(asset: RemoteAsset, remote: RemoteAssetFile, authenticateDevice: Boolean): CachedRemoteAsset {
         return when (remote.encryptionMode) {
             "none" -> {
-                val part = downloadBlob(asset, remote)
+                val part = downloadBlob(asset, remote, authenticateDevice)
                 require(remote.blobSha256.equals(remote.sha256, ignoreCase = true)) { "未加密素材的内容哈希与对象哈希不一致" }
                 require(remote.blobSize == remote.size) { "未加密素材的逻辑大小与对象大小不一致" }
                 val file = promoteToCache(part, remote.sha256)
@@ -320,7 +331,7 @@ class RemoteAssetRepository(
                 require(remote.blobSize >= 32L) { "加密资源包过小" }
                 // A lost/rotated key envelope must not force a second download of a valid ciphertext
                 // object. Reuse the verified encrypted CAS blob and only refresh the device envelope.
-                val blob = cachedEncrypted(remote) ?: promoteEncrypted(downloadBlob(asset, remote), remote.blobSha256)
+                val blob = cachedEncrypted(remote) ?: promoteEncrypted(downloadBlob(asset, remote, authenticateDevice), remote.blobSha256)
                 val wrapped = ensureEnvelope(asset, remote)
                 EncryptedCachedRemoteAsset(asset, blob, wrapped, identity, remote.sha256, remote.size).also { handle ->
                     // Verify GCM tag + plaintext hash now, before reporting a download as installed.
@@ -334,18 +345,16 @@ class RemoteAssetRepository(
         }
     }
 
-    private suspend fun downloadBlob(asset: RemoteAsset, remote: RemoteAssetFile): File {
+    private suspend fun downloadBlob(asset: RemoteAsset, remote: RemoteAssetFile, authenticateDevice: Boolean): File {
         val endpoint = remote.downloadEndpoint
         val sep = if ('?' in endpoint) '&' else '?'
-        val issued = api.getJson(
-            "$endpoint${sep}installationId=${urlEncode(identity.installationId)}&appVersionCode=${BuildConfig.VERSION_CODE}",
-        )
+        val ticketPath = "$endpoint${sep}appVersionCode=${BuildConfig.VERSION_CODE}"
+        val issued = if (authenticateDevice) api.signedGet(ticketPath) else api.getJson(ticketPath)
         val grant = issued["download"]?.jsonObject ?: error("未获得素材下载票据")
         val ticket = grant.string("ticket") ?: error("素材下载票据为空")
-        val redeem = api.postJson(grant.string("redeemEndpoint") ?: "/v1/download/redeem.php", buildJsonObject {
-            put("installationId", identity.installationId)
-            put("ticket", ticket)
-        })
+        val redeemEndpoint = grant.string("redeemEndpoint") ?: "/v1/download/redeem.php"
+        val redeemBody = buildJsonObject { put("ticket", ticket) }
+        val redeem = if (authenticateDevice) api.signedPost(redeemEndpoint, redeemBody) else api.postJson(redeemEndpoint, redeemBody)
         val download = redeem["download"]?.jsonObject ?: error("素材下载兑换失败")
         val url = download.string("url") ?: error("素材下载地址为空")
         val part = File(temp, "asset-${asset.id}-${remote.blobSha256}.part")
@@ -361,8 +370,7 @@ class RemoteAssetRepository(
         cachedEnvelope(remote)?.takeIf(::canUnwrap)?.let { return it }
         val endpoint = remote.keyEnvelopeEndpoint ?: error("加密资源缺少 key envelope 入口")
         coCreator.registerDevice()
-        val rootJson = api.postJson(endpoint, buildJsonObject {
-            put("installationId", identity.installationId)
+        val rootJson = api.signedPost(endpoint, buildJsonObject {
             put("appVersionCode", BuildConfig.VERSION_CODE)
             put("assetId", asset.id)
         })

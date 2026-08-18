@@ -10,6 +10,7 @@ import io.github.soulxyz.xyprt.data.remote.boolean
 import io.github.soulxyz.xyprt.data.remote.int
 import io.github.soulxyz.xyprt.data.remote.long
 import io.github.soulxyz.xyprt.data.remote.string
+import io.github.soulxyz.xyprt.security.ReleaseContract
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.CoroutineScope
@@ -46,6 +47,7 @@ data class UpdateInfo(
     val fullSizeBytes: Long? = null,
     val serverDownloadMode: ServerDownloadMode = ServerDownloadMode.AUTO,
     val delta: DeltaUpdateInfo? = null,
+    val requiresDeviceAuth: Boolean = false,
 )
 
 /**
@@ -88,39 +90,42 @@ class UpdateRepository(
     fun currentVersionCode(): Int = BuildConfig.VERSION_CODE
 
     private suspend fun fetchManaged(): UpdateInfo? {
-        // Refreshing device state is cheap and makes an activation effective without reinstalling the app.
-        runCatching { coCreator.registerDevice() }
-        val root = api.postJson("/v1/app/update-check.php", buildJsonObject {
-            put("installationId", identity.installationId)
+        // Community/public release lookup stays anonymous. Device authentication is only
+        // established once a co-creator entitlement is already active locally or the user enters
+        // the co-creator flow; installationId is never a public-update credential.
+        val body = buildJsonObject {
             put("version", BuildConfig.VERSION_NAME)
             put("versionCode", BuildConfig.VERSION_CODE)
-            put("edition", if (coCreator.state.value.active) "cocreator" else "community")
+            put("edition", ReleaseContract.channel)
             put("abi", Build.SUPPORTED_ABIS.firstOrNull().orEmpty())
-            put("androidIdHash", identity.androidIdHash)
-            put("deviceKeyFingerprint", identity.publicKeyFingerprint)
-            put("devicePublicKey", identity.publicKeyBase64)
-        })
+        }
+        val root = if (coCreator.state.value.active) {
+            coCreator.registerDevice()
+            api.signedPost("/v1/app/update-check.php", body)
+        } else {
+            api.postJson("/v1/app/update-check.php", body)
+        }
         val updateAvailable = root.boolean("updateAvailable") == true
         val release = root["release"]?.let { runCatching { it.jsonObject }.getOrNull() } ?: return null
         val channel = root.string("channel") ?: "opensource"
         val version = release.string("version") ?: return null
         return if (channel == "sponsor") {
-            val releaseId = release.int("id") ?: return null
-            val selectedAbi = release["download"]?.let { runCatching { it.jsonObject.string("abi") }.getOrNull() }.orEmpty()
-            val abiQuery = selectedAbi.takeIf { it.isNotBlank() }?.let { "&abi=$it" }.orEmpty()
+            val download = release["download"]?.let { runCatching { it.jsonObject }.getOrNull() }
+            val protectedDownload = download?.string("endpoint")?.let(api::absolute)
             UpdateInfo(
                 versionName = version,
                 versionCode = release.int("versionCode") ?: semanticVersionCode(version),
                 title = release.string("title") ?: "口袋小印 $version",
                 notes = release.string("notes").orEmpty().trim().take(6_000),
                 releaseUrl = REPOSITORY_URL,
-                sourceApkUrl = if (updateAvailable) api.absolute("/v1/app/update-download.php?installationId=${identity.installationId}&releaseId=$releaseId$abiQuery") else null,
+                sourceApkUrl = if (updateAvailable) protectedDownload else null,
                 mirrorApkUrl = null,
                 digestSha256 = release["download"]?.let { runCatching { it.jsonObject.string("sha256") }.getOrNull() },
                 checkedVia = "口袋小印更新服务",
                 fullSizeBytes = release["download"]?.let { runCatching { it.jsonObject.long("size") }.getOrNull() },
                 serverDownloadMode = parseServerDownloadMode(root.string("downloadMode")),
                 delta = if (updateAvailable) parseManagedDelta(root, api) else null,
+                requiresDeviceAuth = true,
             )
         } else parseOpenSourceRelease(release, parseServerDownloadMode(root.string("downloadMode")))
     }

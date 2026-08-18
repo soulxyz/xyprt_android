@@ -5,6 +5,7 @@ plugins {
 }
 
 val includeOnnxRuntime = providers.gradleProperty("XYPRT_INCLUDE_ONNX").orElse("false").get().toBoolean()
+val releaseOverlayDir = providers.gradleProperty("XYPRT_RELEASE_OVERLAY_DIR").orNull?.takeIf { it.isNotBlank() }
 
 val localSerializationCompiler = rootProject.file(".local-build/jars/kotlin-serialization-compiler-plugin.jar")
 if (localSerializationCompiler.exists()) {
@@ -33,7 +34,7 @@ android {
         applicationId = "io.github.soulxyz.xyprt"
         minSdk = 26
         targetSdk = 36
-        versionCode = providers.gradleProperty("XYPRT_VERSION_CODE").orElse("1030004").get().toInt()
+        versionCode = providers.gradleProperty("XYPRT_VERSION_CODE").orElse("1030005").get().toInt()
         versionName = providers.gradleProperty("XYPRT_VERSION_NAME").orElse("1.2.4").get()
         manifestPlaceholders["appName"] = "口袋小印"
         val updateApiBase = providers.gradleProperty("XYPRT_UPDATE_API_BASE_URL")
@@ -44,6 +45,14 @@ android {
             .replace("\"", "\\\"")
         buildConfigField("String", "UPDATE_API_BASE_URL", "\"$updateApiBase\"")
         buildConfigField("boolean", "ENHANCED_SCANNER_AVAILABLE", includeOnnxRuntime.toString())
+        val distributionChannel = providers.gradleProperty("XYPRT_DISTRIBUTION_CHANNEL").orElse("community").get()
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+        val buildContractId = providers.gradleProperty("XYPRT_BUILD_CONTRACT_ID").orElse("source").get()
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+        buildConfigField("String", "DISTRIBUTION_CHANNEL", "\"$distributionChannel\"")
+        buildConfigField("String", "BUILD_CONTRACT_ID", "\"$buildContractId\"")
         val requestedAbis = providers.gradleProperty("XYPRT_ABIS").orElse("arm64-v8a,armeabi-v7a").get()
             .split(',').map { it.trim() }.filter { it.isNotEmpty() }
         ndk { abiFilters += requestedAbis }
@@ -77,6 +86,9 @@ android {
     // -PXYPRT_INCLUDE_ONNX=true, while keeping the same Gradle task names and app id.
     sourceSets.getByName("main").apply {
         if (includeOnnxRuntime) java.srcDir("src/cocreator/kotlin")
+        // Neutral release-contract hook. Public builds leave this unset; private release tooling may
+        // supply generated, build-specific assets without committing them into the public source tree.
+        if (releaseOverlayDir != null) assets.srcDir(releaseOverlayDir)
     }
 
     // Public/online builds keep release lint enabled. The portable offline archive currently

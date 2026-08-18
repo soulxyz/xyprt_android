@@ -26,10 +26,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -101,6 +103,9 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
     var confirmQr by remember { mutableStateOf(false) }
     var pendingSave by remember { mutableStateOf<ByteArray?>(null) }
 
+    // Community use stays anonymous until the user actually opens co-creator features.
+    LaunchedEffect(Unit) { repo.refresh(silent = true) }
+
     fun saveAndOpen(bytes: ByteArray) {
         scope.launch {
             val saved = withContext(Dispatchers.IO) { saveQr(context, bytes) }
@@ -138,12 +143,20 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
             )
         },
     ) { pad ->
-        Box(Modifier.padding(pad).fillMaxSize()) {
+        Box(
+            Modifier.padding(pad).fillMaxSize(),
+            contentAlignment = Alignment.TopCenter,
+        ) {
             Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 10.dp),
+                Modifier
+                    .widthIn(max = 900.dp)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 18.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Card(
+                    modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(28.dp),
                     colors = CardDefaults.cardColors(containerColor = if (state.active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
                 ) {
@@ -181,7 +194,7 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                 }
 
                 if (!state.active) {
-                    Card(shape = RoundedCornerShape(22.dp)) {
+                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
                         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text("已有共创码？", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                             Text("输入共创码，为这台设备开通共创资格。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -215,14 +228,14 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                     }
                 }
 
-                Card(shape = RoundedCornerShape(22.dp)) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("当前开放", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         if (state.planMarkdown.isBlank()) Text("暂时没有新的共创公告。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) else SimpleMarkdown(state.planMarkdown)
                     }
                 }
 
-                Card(shape = RoundedCornerShape(22.dp)) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("为什么是小范围开放？", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Text(
@@ -237,7 +250,7 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                 }
 
                 if (showSupport) {
-                    Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
                         Column(
                             Modifier.fillMaxWidth().padding(16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -255,7 +268,7 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                                 qrLoading -> CircularProgressIndicator()
                                 qrBytes != null -> {
                                     val bmp = remember(qrBytes) { BitmapFactory.decodeByteArray(qrBytes, 0, qrBytes!!.size) }
-                                    if (bmp != null) Image(bmp.asImageBitmap(), "支持二维码", Modifier.size(220.dp).clickable { confirmQr = true })
+                                    if (bmp != null) Image(bmp.asImageBitmap(), "支持二维码", Modifier.fillMaxWidth().sizeIn(maxWidth = 220.dp, maxHeight = 220.dp).clickable { confirmQr = true })
                                 }
                                 else -> {
                                     Text("二维码暂时没加载出来")

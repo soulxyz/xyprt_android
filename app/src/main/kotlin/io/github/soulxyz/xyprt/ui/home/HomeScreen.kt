@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -70,6 +72,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -231,14 +234,22 @@ fun HomeScreen(
             }
         },
     ) { padding ->
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 156.dp),
-            modifier = Modifier.padding(padding).fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            when (selectedTab) {
+        BoxWithConstraints(Modifier.padding(padding).fillMaxSize()) {
+            val compactPhone = maxWidth < 360.dp
+            val gridColumns = when (selectedTab) {
+                HomeTab.PRINT -> GridCells.Fixed(if (compactPhone) 1 else 2)
+                HomeTab.DOCUMENTS -> GridCells.Adaptive(minSize = if (maxWidth >= 720.dp) 220.dp else 156.dp)
+                HomeTab.ME -> GridCells.Fixed(1)
+            }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                LazyVerticalGrid(
+                    columns = gridColumns,
+                    modifier = Modifier.widthIn(max = 980.dp).fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    when (selectedTab) {
                 HomeTab.PRINT -> {
                     item {
                         QuickActionCard(
@@ -331,7 +342,9 @@ fun HomeScreen(
                     }
                 }
             }
-            item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(8.dp)) }
+                    item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(8.dp)) }
+                }
+            }
         }
     }
 
@@ -542,6 +555,7 @@ private fun PrinterStatusAction(
     savedName: String?,
     onClick: () -> Unit,
 ) {
+    val compact = LocalConfiguration.current.screenWidthDp < 360
     val connected = state is PrinterState.Ready
     val busy = state is PrinterState.Printing || state is PrinterState.Connecting
     val dot = when {
@@ -550,25 +564,64 @@ private fun PrinterStatusAction(
         state is PrinterState.Error -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.outline
     }
+    val primary = when (state) {
+        is PrinterState.Ready -> if (compact) "已连接" else state.name.removeSuffix("_BLE").ifBlank { "已连接" }
+        is PrinterState.Printing -> "打印中"
+        is PrinterState.Connecting -> "连接中"
+        is PrinterState.Error -> "需处理"
+        is PrinterState.Disconnected -> if (compact) "未连接" else savedName?.removeSuffix("_BLE")?.takeIf { it.isNotBlank() } ?: "未连接"
+    }
+    val secondary = if (compact) null else when (state) {
+        is PrinterState.Ready -> state.batteryPercent?.let { "$it%" }
+        is PrinterState.Disconnected -> if (savedName.isNullOrBlank()) null else "未连接"
+        else -> null
+    }
     val status = when (state) {
-        is PrinterState.Ready -> "${state.name.removeSuffix("_BLE")}，已连接"
+        is PrinterState.Ready -> listOfNotNull(primary, secondary).joinToString("，")
         is PrinterState.Printing -> "正在打印"
         is PrinterState.Connecting -> "正在连接打印机"
         is PrinterState.Error -> "打印机需要处理"
-        is PrinterState.Disconnected -> savedName?.let { "$it，未连接" } ?: "打印机"
+        is PrinterState.Disconnected -> listOfNotNull(savedName, "未连接").joinToString("，")
     }
-    IconButton(onClick = onClick) {
-        Box {
-            Icon(
-                painterResource(R.drawable.ic_print),
-                contentDescription = status,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Surface(
-                color = dot,
-                shape = RoundedCornerShape(999.dp),
-                modifier = Modifier.size(8.dp).align(Alignment.BottomEnd),
-            ) {}
+    Surface(
+        modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable(onClick = onClick),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Box {
+                Icon(
+                    painterResource(R.drawable.ic_print),
+                    contentDescription = status,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp),
+                )
+                Surface(
+                    color = dot,
+                    shape = RoundedCornerShape(999.dp),
+                    modifier = Modifier.size(7.dp).align(Alignment.BottomEnd),
+                ) {}
+            }
+            Column(Modifier.widthIn(max = if (compact) 72.dp else 128.dp)) {
+                Text(
+                    primary,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (secondary != null) {
+                    Text(
+                        secondary,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+            }
         }
     }
 }
@@ -579,13 +632,23 @@ private fun CompactPrintActions(
     onTodo: () -> Unit,
     onPdf: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        CompactPrintAction("文字", R.drawable.ic_quick_text, onText, Modifier.weight(1f))
-        CompactPrintAction("待办", R.drawable.ic_quick_todo, onTodo, Modifier.weight(1f))
-        CompactPrintAction("PDF", R.drawable.ic_quick_pdf, onPdf, Modifier.weight(1f))
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth < 330.dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                CompactPrintAction("文字", R.drawable.ic_quick_text, onText, Modifier.fillMaxWidth())
+                CompactPrintAction("待办", R.drawable.ic_quick_todo, onTodo, Modifier.fillMaxWidth())
+                CompactPrintAction("PDF", R.drawable.ic_quick_pdf, onPdf, Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                CompactPrintAction("文字", R.drawable.ic_quick_text, onText, Modifier.weight(1f))
+                CompactPrintAction("待办", R.drawable.ic_quick_todo, onTodo, Modifier.weight(1f))
+                CompactPrintAction("PDF", R.drawable.ic_quick_pdf, onPdf, Modifier.weight(1f))
+            }
+        }
     }
 }
 

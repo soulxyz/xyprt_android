@@ -19,6 +19,7 @@ import io.github.soulxyz.xyprt.data.remote.RemoteAssetRepository
 import io.github.soulxyz.xyprt.data.remote.EnhancedModelRepository
 import io.github.soulxyz.xyprt.data.remote.ServerApi
 import io.github.soulxyz.xyprt.scanner.DocumentScanner
+import io.github.soulxyz.xyprt.security.AppIntegritySignal
 import io.github.soulxyz.xyprt.scanner.EnhancedScanEngineFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,8 +43,9 @@ class AppContainer(context: Context) {
     private val database = LocalDatabase(context)
 
     val settings = SettingsRepository(context)
-    val serverApi = ServerApi(json)
     val deviceIdentity = DeviceIdentity(context)
+    val appIntegritySignal = AppIntegritySignal(context)
+    val serverApi = ServerApi(json, deviceIdentity, appIntegritySignal)
     val coCreator = CoCreatorRepository(context, serverApi, deviceIdentity, applicationScope)
     val remoteAssets = RemoteAssetRepository(context, json, serverApi, deviceIdentity, coCreator, applicationScope)
     val deviceProfiles = DeviceProfileRepository(context, json, serverApi, applicationScope)
@@ -55,7 +57,7 @@ class AppContainer(context: Context) {
     val printStats = PrintStatsRepository(context, json)
     val savedDocuments = SavedDocumentRepository(context, json)
     val updates = UpdateRepository(context, settings, json, applicationScope, serverApi, deviceIdentity, coCreator)
-    val updateDownloads = UpdateDownloadManager(context, settings, applicationScope)
+    val updateDownloads = UpdateDownloadManager(context, settings, applicationScope, serverApi)
     val templateJson = TemplateJson(json)
     val backup = BackupRepository(templateRepository, historyRepository, printStats, settings, savedDocuments, json)
     val printerManager = PrinterManager(context, settings, applicationScope)
