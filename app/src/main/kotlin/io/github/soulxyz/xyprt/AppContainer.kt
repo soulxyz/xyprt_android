@@ -50,7 +50,7 @@ class AppContainer(context: Context) {
     val remoteAssets = RemoteAssetRepository(context, json, serverApi, deviceIdentity, coCreator, applicationScope)
     val deviceProfiles = DeviceProfileRepository(context, json, serverApi, applicationScope)
     val enhancedModels = EnhancedModelRepository(context, serverApi, deviceIdentity, coCreator, applicationScope)
-    private val enhancedScanEngine = EnhancedScanEngineFactory.create(enhancedModels)
+    private val enhancedScanEngine = EnhancedScanEngineFactory.create(enhancedModels, settings)
     val scanner = DocumentScanner(enhancedScanEngine)
     val templateRepository = TemplateRepository(database.templateDao, json)
     val historyRepository = HistoryRepository(database.printHistoryDao, json)

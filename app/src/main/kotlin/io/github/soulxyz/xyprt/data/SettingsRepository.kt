@@ -1,6 +1,7 @@
 package io.github.soulxyz.xyprt.data
 
 import android.content.Context
+import io.github.soulxyz.xyprt.BuildConfig
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -12,6 +13,13 @@ import kotlinx.coroutines.flow.map
 private val Context.dataStore by preferencesDataStore(name = "settings")
 
 data class SavedPrinter(val address: String, val name: String, val transport: String? = null)
+
+enum class ScanRecognitionMode { BASIC, ENHANCED }
+
+internal fun resolveScanRecognitionMode(raw: String?, enhancedAvailable: Boolean): ScanRecognitionMode {
+    if (!enhancedAvailable) return ScanRecognitionMode.BASIC
+    return if (raw == "basic") ScanRecognitionMode.BASIC else ScanRecognitionMode.ENHANCED
+}
 
 class SettingsRepository(private val context: Context) {
 
@@ -27,6 +35,7 @@ class SettingsRepository(private val context: Context) {
         val PRINT_FEED_AFTER = intPreferencesKey("print_feed_after_dots")
         val LAST_SEEN_UPDATE_CODE = intPreferencesKey("last_seen_update_code")
         val UPDATE_DOWNLOAD_MODE = stringPreferencesKey("update_download_mode")
+        val SCAN_RECOGNITION_MODE = stringPreferencesKey("scan_recognition_mode")
     }
 
     val savedPrinter: Flow<SavedPrinter?> = context.dataStore.data.map { prefs ->
@@ -73,6 +82,10 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    val scanRecognitionMode: Flow<ScanRecognitionMode> = context.dataStore.data.map { prefs ->
+        resolveScanRecognitionMode(prefs[Keys.SCAN_RECOGNITION_MODE], BuildConfig.ENHANCED_SCANNER_AVAILABLE)
+    }
+
     suspend fun savePrintSpacing(beforeDots: Int, afterDots: Int) {
         context.dataStore.edit {
             it[Keys.PRINT_FEED_BEFORE] = beforeDots.coerceIn(0, 240)
@@ -83,6 +96,13 @@ class SettingsRepository(private val context: Context) {
     suspend fun saveUpdateDownloadMode(mode: UpdateDownloadMode) {
         context.dataStore.edit { prefs ->
             prefs[Keys.UPDATE_DOWNLOAD_MODE] = if (mode == UpdateDownloadMode.EXTERNAL) "external" else "internal"
+        }
+    }
+
+    suspend fun saveScanRecognitionMode(mode: ScanRecognitionMode) {
+        val safe = if (BuildConfig.ENHANCED_SCANNER_AVAILABLE) mode else ScanRecognitionMode.BASIC
+        context.dataStore.edit { prefs ->
+            prefs[Keys.SCAN_RECOGNITION_MODE] = if (safe == ScanRecognitionMode.BASIC) "basic" else "enhanced"
         }
     }
 

@@ -56,10 +56,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.soulxyz.xyprt.App
+import io.github.soulxyz.xyprt.BuildConfig
 import io.github.soulxyz.xyprt.R
 import io.github.soulxyz.xyprt.ble.BlePermissions
 import io.github.soulxyz.xyprt.ble.PrinterState
 import io.github.soulxyz.xyprt.data.UpdateDownloadMode
+import io.github.soulxyz.xyprt.data.ScanRecognitionMode
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,6 +77,7 @@ fun SettingsScreen(
     val coCreator by appContainer.coCreator.state.collectAsState()
     val modelCatalog by appContainer.enhancedModels.catalog.collectAsState()
     val updateDownloadMode by appContainer.settings.updateDownloadMode.collectAsState(initial = UpdateDownloadMode.INTERNAL)
+    val scanRecognitionMode by appContainer.settings.scanRecognitionMode.collectAsState(initial = if (BuildConfig.ENHANCED_SCANNER_AVAILABLE) ScanRecognitionMode.ENHANCED else ScanRecognitionMode.BASIC)
     val scope = rememberCoroutineScope()
     val state by vm.printerState.collectAsState()
     val info by vm.printerInfo.collectAsState()
@@ -227,13 +230,40 @@ fun SettingsScreen(
                         TextButton(onClick = onOpenCoCreator) { Text(if (coCreator.active) "查看" else "了解") }
                     }
                     HorizontalDivider()
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("增强识别", style = MaterialTheme.typography.titleSmall)
-                            val ready = modelCatalog.items.count { it.installed && !it.locked }
-                            Text(if (ready > 0) "已启用" else "复杂背景和浅色纸边时识别更稳定", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("扫描识别", style = MaterialTheme.typography.titleSmall)
+                                val ready = modelCatalog.items.count { it.installed && !it.locked }
+                                Text(
+                                    when {
+                                        !BuildConfig.ENHANCED_SCANNER_AVAILABLE -> "当前使用基础识别"
+                                        scanRecognitionMode == ScanRecognitionMode.BASIC -> "当前使用基础识别"
+                                        ready > 0 -> "增强识别已启用"
+                                        else -> "默认使用增强识别；模型不可用时仍会回落到基础识别"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (BuildConfig.ENHANCED_SCANNER_AVAILABLE) {
+                                TextButton(onClick = onOpenEnhanced) { Text("管理") }
+                            }
                         }
-                        TextButton(onClick = onOpenEnhanced) { Text("管理") }
+                        if (BuildConfig.ENHANCED_SCANNER_AVAILABLE) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = scanRecognitionMode == ScanRecognitionMode.ENHANCED,
+                                    onClick = { scope.launch { appContainer.settings.saveScanRecognitionMode(ScanRecognitionMode.ENHANCED) } },
+                                    label = { Text("增强识别") },
+                                )
+                                FilterChip(
+                                    selected = scanRecognitionMode == ScanRecognitionMode.BASIC,
+                                    onClick = { scope.launch { appContainer.settings.saveScanRecognitionMode(ScanRecognitionMode.BASIC) } },
+                                    label = { Text("基础识别") },
+                                )
+                            }
+                        }
                     }
                     HorizontalDivider()
                     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
