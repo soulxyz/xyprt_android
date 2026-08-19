@@ -130,7 +130,7 @@ fun EnhancedCapabilitiesScreen(onBack: () -> Unit) {
                     Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
                         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                             Text("增强能力自检", fontWeight = FontWeight.SemiBold)
-                            Text("检查私有运行时；若已下载 LiteRT 测试模型，也会验证解密、Lease 与模型加载。", style = MaterialTheme.typography.bodySmall)
+                            Text("检查 LiteRT 私有运行时；若已下载页面几何或扫描增强模型，会验证解密、Lease、Tensor Contract 与真实推理。", style = MaterialTheme.typography.bodySmall)
                             probeResult?.let {
                                 Text(it.title, color = if (it.ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelLarge)
                                 Text(it.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

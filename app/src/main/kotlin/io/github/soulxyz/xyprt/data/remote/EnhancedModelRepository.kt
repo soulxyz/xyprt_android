@@ -136,7 +136,7 @@ class EnhancedModelRepository(
         return runCatching { decryptPackage(pkg, identity.unwrapModelKey(wrapped)) }.getOrNull()
     }
 
-    fun bestInstalled(): EnhancedCapability? = bestInstalledForEngine("quad_heatmap_mask_v1")
+    fun bestInstalled(): EnhancedCapability? = bestInstalledForEngine("litert_freeform_v1")
 
     fun bestInstalledForEngine(engine: String): EnhancedCapability? =
         _catalog.value.items
