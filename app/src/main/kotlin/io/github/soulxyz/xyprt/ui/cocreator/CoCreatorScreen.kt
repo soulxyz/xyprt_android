@@ -291,6 +291,28 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                     }
                 }
 
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("加入共创的福利", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "· 你的名字会出现在项目首页的感谢名单中\n· 第一时间体验新功能和新版本\n· 直接与开发者交流，提出建议和意见\n· 与开发者深度交流开发知识和思路",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("如何获得共创码？", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "通过支持方式（含闲鱼购买支持套餐）获得邀请码。以前在闲鱼购买过的老用户，可以直接联系客服免费领取一个共创码。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
                 if (showSupport) {
                     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
                         Column(
@@ -302,6 +324,12 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                             Text(
                                 if (state.active) "共创资格已经生效。如果口袋小印对你有帮助，也欢迎继续支持项目维护。"
                                 else "支持完全自愿。相关资源会继续用于服务器、设备适配和测试。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                            )
+                            Text(
+                                "说实话，这个项目我们投入了大量时间和心血，方案也经历了无数次推倒重来。大家的支持常常连电费、服务器和云储存的费用都难以分摊——它更像一个非盈利的爱好，而不是一门生意。正因为有你们，我们才愿意一直把它做下去。",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
