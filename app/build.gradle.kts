@@ -150,13 +150,11 @@ dependencies {
     if (localOpenCv.exists()) implementation(files(localOpenCv)) else implementation("org.opencv:opencv:4.13.0")
 
     if (rootProject.file("private-features/scan-pro").isDirectory) {
-        val localOrt = rootProject.file(".local-build/aar/onnxruntime-android-1.24.1.aar")
-        if (localOrt.exists()) add("cocreatorImplementation", files(localOrt))
-        else add("cocreatorImplementation", "com.microsoft.onnxruntime:onnxruntime-android:1.24.1")
-
-        // PRIVATE-only LiteRT runtime. The public OpenSource graph never resolves this file.
+        // PRIVATE-only LiteRT runtime. ONNX sources may remain archived in Scan Pro, but are not
+        // part of the current source set or dependency graph. OpenSource never resolves this AAR.
         val localLiteRt = rootProject.file("private-features/scan-pro/runtime/litert-2.1.5-java-compat.aar")
         if (localLiteRt.exists()) add("cocreatorImplementation", files(localLiteRt))
+        else throw GradleException("PRIVATE Scan Pro is present but LiteRT compat AAR is missing")
     }
 
     testImplementation("junit:junit:4.13.2")

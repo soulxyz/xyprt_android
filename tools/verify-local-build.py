@@ -6,7 +6,6 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED = {
-    ".local-build/aar/onnxruntime-android-1.24.1.aar": "133134e2b01ffb91f8f66d46a3149f7fe402ac2e3e2d1df4f8fc679e999689f6",
     ".local-build/aar/opencv-4.13.0.aar": "4d9cc797cb2bafb685dc2953aaf9ac9f983b9c7b98cf68fbc701d4490556ebf7",
     ".local-build/jars/core-3.5.3.jar": "8d8064c1636fdaef7189dd9055c7d59950a8940a12f2293956446ec3c109fd82",
     ".local-build/jars/kotlin-serialization-compiler-plugin.jar": "0ae65b5473d81f6bc5beb8de3752586e2211f87ba2c19179c41d71f188c7501f",
