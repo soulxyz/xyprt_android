@@ -1,7 +1,9 @@
 package io.github.soulxyz.xyprt.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlinx.serialization.json.Json
 
@@ -30,5 +32,6 @@ class UpdateGatewayPayloadTest {
         assertEquals(1_020_300, info.versionCode)
         assertEquals("https://api.xyprt.5am.top/v1/update/download.php?tag=v1.2.3", info.sourceApkUrl)
         assertNull(info.mirrorApkUrl)
+        assertFalse(info.editionSwitch)
     }
 }

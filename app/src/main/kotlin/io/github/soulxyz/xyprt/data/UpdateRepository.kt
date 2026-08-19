@@ -51,7 +51,7 @@ data class UpdateInfo(
     val requiresDeviceAuth: Boolean = false,
     val serverInstallAvailable: Boolean = false,
     val releaseChannelLabel: String = "社区版",
-    val channel: String? = null,
+    val editionSwitch: Boolean = false,
 )
 
 /**
@@ -111,8 +111,7 @@ class UpdateRepository(
 
     private fun resolveAvailable(latest: UpdateInfo?): UpdateState {
         if (latest == null) return UpdateState.Current(null)
-        val switch = isChannelSwitch(latest)
-        val versionOk = if (switch) latest.versionCode >= currentVersionCode() else latest.versionCode > currentVersionCode()
+        val versionOk = if (latest.editionSwitch) latest.versionCode >= currentVersionCode() else latest.versionCode > currentVersionCode()
         return if (versionOk || latest.serverInstallAvailable) UpdateState.Available(latest) else UpdateState.Current(latest)
     }
 
@@ -176,14 +175,14 @@ class UpdateRepository(
                 requiresDeviceAuth = true,
                 serverInstallAvailable = updateAvailable,
                 releaseChannelLabel = "共创版",
-                channel = channel,
+                editionSwitch = root.boolean("editionSwitch") == true,
             )
-        } else parseOpenSourceRelease(release, parseServerDownloadMode(root.string("downloadMode")), channel)
+        } else parseOpenSourceRelease(release, parseServerDownloadMode(root.string("downloadMode")), root.boolean("editionSwitch") == true)
     }
 
     private suspend fun fetchGateway(): UpdateInfo? = withContext(Dispatchers.IO) { parseGatewayUpdate(httpGet(API_LATEST), json) }
 
-    private fun parseOpenSourceRelease(latest: JsonObject, mode: ServerDownloadMode = ServerDownloadMode.AUTO, channel: String = "opensource"): UpdateInfo? {
+    private fun parseOpenSourceRelease(latest: JsonObject, mode: ServerDownloadMode = ServerDownloadMode.AUTO, editionSwitch: Boolean = false): UpdateInfo? {
         val version = latest.string("version") ?: return null
         return UpdateInfo(
             versionName = version,
@@ -196,7 +195,7 @@ class UpdateRepository(
             fullSizeBytes = latest.long("size"),
             serverDownloadMode = mode,
             releaseChannelLabel = "社区版",
-            channel = channel,
+            editionSwitch = editionSwitch,
         )
     }
 
@@ -214,18 +213,6 @@ class UpdateRepository(
 
 internal fun shouldFallbackManagedFailure(coCreatorActive: Boolean, recoverableDeviceAuthFailure: Boolean): Boolean =
     !(coCreatorActive && recoverableDeviceAuthFailure)
-
-internal fun isChannelSwitch(info: UpdateInfo): Boolean {
-    val target = info.channel?.lowercase()?.takeIf { it.isNotBlank() } ?: return false
-    val current = ReleaseContract.channel.lowercase()
-    return channelGroup(target) != channelGroup(current)
-}
-
-internal fun channelGroup(c: String): String = when (c.lowercase()) {
-    "opensource", "community", "public" -> "public"
-    "cocreator", "sponsor", "internal", "beta" -> "private"
-    else -> c.lowercase()
-}
 
 internal fun parseGatewayUpdate(raw: String, json: Json): UpdateInfo? {
     val root = json.parseToJsonElement(raw).jsonObject

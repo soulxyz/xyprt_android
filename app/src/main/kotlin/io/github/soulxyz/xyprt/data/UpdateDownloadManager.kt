@@ -289,7 +289,11 @@ class UpdateDownloadManager(
         require(archive.packageName == context.packageName) { "安装包包名不匹配" }
         val archiveCode = if (Build.VERSION.SDK_INT >= 28) archive.longVersionCode else @Suppress("DEPRECATION") archive.versionCode.toLong()
         require(archiveCode == info.versionCode.toLong()) { "安装包版本号不匹配（$archiveCode != ${info.versionCode}）" }
-        require(archiveCode > currentVersionCode()) { "安装包版本并不高于当前版本" }
+        if (info.editionSwitch) {
+            require(archiveCode >= currentVersionCode()) { "安装包版本低于当前版本，无法完成渠道切换" }
+        } else {
+            require(archiveCode > currentVersionCode()) { "安装包版本并不高于当前版本" }
+        }
         require(signingCompatible(archive)) { "安装包签名与当前口袋小印不兼容" }
     }
 
