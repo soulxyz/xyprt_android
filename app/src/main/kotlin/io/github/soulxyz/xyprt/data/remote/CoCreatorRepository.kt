@@ -19,6 +19,7 @@ data class CoCreatorState(
     val label: String? = null,
     val refreshing: Boolean = false,
     val lastError: String? = null,
+    val recoveryRequired: Boolean = false,
     val entryEnabled: Boolean = false,
     val planMarkdown: String = "",
     val planBadge: String = "小范围开放",
@@ -42,6 +43,7 @@ class CoCreatorRepository(
      * used. installationId alone is never treated as authentication.
      */
     suspend fun registerDevice() {
+        reconcilePendingKeyOperation()
         val init = api.postJson("/v1/device/challenge.php", buildJsonObject {
             put("installationId", identity.installationId)
             put("purpose", "register")
@@ -70,17 +72,14 @@ class CoCreatorRepository(
             encryptionKeyFingerprint = material.encryptionKeyFingerprint,
             authKeyFingerprint = material.authKeyFingerprint,
         )
-        try {
-            api.postJson("/v1/device/register-complete.php", buildJsonObject {
-                deviceFields(this, material)
-                put("challengeId", challengeId)
-                put("challengeSignature", signature)
-            })
-            if (version > identity.keyVersion) identity.commitRotation(version)
-        } catch (t: Throwable) {
-            if (version > identity.keyVersion) identity.discardPreparedRotation(version)
-            throw t
-        }
+        api.postJson("/v1/device/register-complete.php", buildJsonObject {
+            deviceFields(this, material)
+            put("challengeId", challengeId)
+            put("challengeSignature", signature)
+        })
+        // Never delete a future key merely because the response was lost. The server may already
+        // have committed. A later DeviceAuth failure goes through explicit in-app recovery.
+        if (version > identity.keyVersion) identity.commitRotation(version)
     }
 
     suspend fun refresh(silent: Boolean = false) {
@@ -90,7 +89,15 @@ class CoCreatorRepository(
             val root = api.signedGet("/v1/sponsor/status.php")
             parseSponsor(root["sponsor"]?.jsonObject, root["ui"]?.jsonObject)
         }.onSuccess { _state.value = it; cache(it) }
-            .onFailure { if (!silent) _state.value = _state.value.copy(refreshing = false, lastError = it.message) }
+            .onFailure { t ->
+                if (!silent) {
+                    _state.value = _state.value.copy(
+                        refreshing = false,
+                        lastError = t.message,
+                        recoveryRequired = isRecoverableDeviceAuthFailure(t) || _state.value.recoveryRequired,
+                    )
+                }
+            }
     }
 
     suspend fun activate(code: String): Result<CoCreatorState> {
@@ -104,6 +111,10 @@ class CoCreatorRepository(
             }
             val root = api.signedPost("/v1/sponsor/activate.php", buildJsonObject { put("code", clean) })
             parseSponsor(root["sponsor"]?.jsonObject, root["ui"]?.jsonObject).also { _state.value = it; cache(it) }
+        }.onFailure { t ->
+            if (isRecoverableDeviceAuthFailure(t) || t.message.orEmpty().contains("recovery_review_required", true)) {
+                _state.value = _state.value.copy(recoveryRequired = true, lastError = t.message)
+            }
         }
     }
 
@@ -112,6 +123,20 @@ class CoCreatorRepository(
      * device signal, rate limit and a new challenge are required; ambiguous cases stay manual.
      */
     private suspend fun recoverDevice(code: String) {
+        val before = identity.pendingKeyOperation
+        if (before != null) {
+            when (reconcilePendingKeyOperation()) {
+                PendingReconcile.COMMITTED -> return
+                PendingReconcile.NOT_APPLIED -> identity.discardPendingKeyOperation(before)
+                PendingReconcile.CONFLICT -> {
+                    // This is an explicit, sponsor-code-gated recovery path. Abandoning only the
+                    // future pending key is safe; the current active key is never deleted here.
+                    identity.discardPendingKeyOperation(before)
+                }
+                PendingReconcile.NONE -> Unit
+            }
+        }
+
         val init = api.postJson("/v1/device/challenge.php", buildJsonObject {
             put("installationId", identity.installationId)
             put("purpose", "recovery")
@@ -120,7 +145,8 @@ class CoCreatorRepository(
         })
         val challenge = init["challenge"]?.jsonObject ?: error("设备恢复初始化失败")
         val version = challenge.int("keyVersion") ?: error("设备恢复版本为空")
-        val material = if (version > identity.keyVersion) identity.prepareRotation(version) else identity.keyMaterial(version)
+        require(version > identity.keyVersion) { "设备恢复版本无效" }
+        val (pending, material) = identity.preparePendingKeyOperation("recovery", version)
         val challengeText = challenge.string("challenge") ?: error("设备恢复挑战为空")
         val challengeId = challenge.string("challengeId") ?: error("设备恢复挑战编号为空")
         val signature = identity.signChallenge(
@@ -131,30 +157,70 @@ class CoCreatorRepository(
             encryptionKeyFingerprint = material.encryptionKeyFingerprint,
             authKeyFingerprint = material.authKeyFingerprint,
         )
-        try {
-            api.postJson("/v1/device/recover.php", buildJsonObject {
-                deviceFields(this, material)
-                put("code", code)
-                put("challengeId", challengeId)
-                put("challengeSignature", signature)
-            })
-            identity.commitRotation(version)
-        } catch (t: Throwable) {
-            if (version > identity.keyVersion) identity.discardPreparedRotation(version)
-            throw t
-        }
+        // Never delete the pending key on an HTTP exception: the server may already have committed.
+        api.postJson("/v1/device/recover.php", buildJsonObject {
+            deviceFields(this, material)
+            put("operationId", pending.operationId)
+            put("code", code)
+            put("challengeId", challengeId)
+            put("challengeSignature", signature)
+        })
+        identity.commitPendingKeyOperation(pending)
     }
 
     /** Explicit maintenance hook; normal app startup never rotates keys. */
     suspend fun rotateDeviceKeys(): Result<Unit> = runCatching {
+        val existing = identity.pendingKeyOperation
+        if (existing != null) {
+            when (reconcilePendingKeyOperation()) {
+                PendingReconcile.COMMITTED -> return@runCatching
+                PendingReconcile.CONFLICT -> error("设备密钥变更状态冲突，请先恢复设备身份")
+                PendingReconcile.NOT_APPLIED -> {
+                    if (existing.purpose != "rotation") error("设备恢复尚未完成")
+                }
+                PendingReconcile.NONE -> Unit
+            }
+        }
         registerDevice()
-        val material = identity.prepareRotation()
-        try {
-            api.signedPost("/v1/device/rotate.php", deviceBody(material))
-            identity.commitRotation(material.version)
-        } catch (t: Throwable) {
-            identity.discardPreparedRotation(material.version)
-            throw t
+        val pendingNow = identity.pendingKeyOperation
+        val (pending, material) = if (pendingNow?.purpose == "rotation") {
+            pendingNow to identity.keyMaterial(pendingNow.version)
+        } else {
+            identity.preparePendingKeyOperation("rotation", identity.keyVersion + 1)
+        }
+        // The operation id makes a retry idempotent; an exception leaves the pending key intact.
+        api.signedPost("/v1/device/rotate.php", buildJsonObject {
+            deviceFields(this, material)
+            put("operationId", pending.operationId)
+        })
+        identity.commitPendingKeyOperation(pending)
+    }
+
+    private enum class PendingReconcile { NONE, COMMITTED, NOT_APPLIED, CONFLICT }
+
+    /**
+     * Resolves the ambiguous-commit window without requiring the old private key. The random
+     * operationId is only a reconciliation capability; this endpoint never grants entitlement or
+     * returns content keys.
+     */
+    private suspend fun reconcilePendingKeyOperation(): PendingReconcile {
+        val pending = identity.pendingKeyOperation ?: return PendingReconcile.NONE
+        val material = identity.keyMaterial(pending.version)
+        val root = api.postJson("/v1/device/binding-status.php", buildJsonObject {
+            put("installationId", identity.installationId)
+            put("operationId", pending.operationId)
+            put("purpose", pending.purpose)
+            put("keyVersion", pending.version)
+            put("authKeyFingerprint", material.authKeyFingerprint)
+            put("deviceKeyFingerprint", material.encryptionKeyFingerprint)
+        })
+        return when (root["binding"]?.jsonObject?.string("state")) {
+            "committed" -> {
+                identity.commitPendingKeyOperation(pending)
+                PendingReconcile.COMMITTED
+            }
+            "not_applied" -> PendingReconcile.NOT_APPLIED
+            else -> PendingReconcile.CONFLICT
         }
     }
 
@@ -187,6 +253,10 @@ class CoCreatorRepository(
             "device_recovery_required",
             "device encryption key unavailable",
             "device auth key unavailable",
+            "device_operation_conflict",
+            "device_rotation_conflict",
+            "device_recovery_conflict",
+            "recovery_review_required",
         ).any { msg.contains(it, ignoreCase = true) }
     }
 
@@ -219,6 +289,7 @@ class CoCreatorRepository(
         expiresAt = o?.long("expiresAt"),
         label = o?.string("label"),
         refreshing = false,
+        recoveryRequired = false,
         entryEnabled = ui?.boolean("cocreatorEntryEnabled") ?: _state.value.entryEnabled,
         planMarkdown = ui?.string("planMarkdown") ?: _state.value.planMarkdown,
         planBadge = ui?.string("planBadge")?.ifBlank { "小范围开放" } ?: _state.value.planBadge,

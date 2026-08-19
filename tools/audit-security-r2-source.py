@@ -32,6 +32,16 @@ if 'val authenticateDevice = remote.encryptionMode != "none" || coCreator.state.
     fail.append('asset public/protected auth split missing')
 for n in ('/v1/models/list.php','/v1/models/lease.php'):
     if n not in models or 'signed' not in models: fail.append('protected model request guard missing')
+
+# Recoverability is part of the security boundary: ambiguous network outcomes must not require
+# clearing app data/reinstalling, and a cached Sponsor state must still expose in-app recovery.
+for n in ('PendingKeyOperation','binding-status.php','recoveryRequired','discardPendingKeyOperation'):
+    if n not in (device+cc): fail.append('recoverability primitive missing '+n)
+if 'discardPreparedRotation' in device:
+    fail.append('ambiguous future-key deletion helper returned')
+ui=text('app/src/main/kotlin/io/github/soulxyz/xyprt/ui/cocreator/CoCreatorScreen.kt')
+for n in ('需要重新验证这台设备','不需要清数据或重装应用','重新验证'):
+    if n not in ui: fail.append('in-app recovery UI missing '+n)
 for forbidden in ('SPONSOR_KEY','PREMIUM_TOKEN','SPONSOR_SECRET','GLOBAL_CONTENT_KEY'):
     if forbidden in (device+api+cc+assets+models): fail.append('forbidden reusable client secret marker: '+forbidden)
 

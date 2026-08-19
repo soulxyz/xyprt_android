@@ -193,11 +193,32 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                     }
                 }
 
-                if (!state.active) {
+                if (state.recoveryRequired) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(22.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = .45f)),
+                    ) {
+                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("需要重新验证这台设备", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "不会影响社区功能和离线打印。输入原共创码即可重新绑定，不需要清数据或重装应用。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+
+                if (!state.active || state.recoveryRequired) {
                     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
                         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("已有共创码？", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text("输入共创码，为这台设备开通共创资格。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(if (state.recoveryRequired) "重新验证设备" else "已有共创码？", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                if (state.recoveryRequired) "输入原共创码，恢复这台设备的受保护功能。" else "输入共创码，为这台设备开通共创资格。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                             OutlinedTextField(
                                 value = code,
                                 onValueChange = { code = it.uppercase() },
@@ -222,7 +243,7 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                                     }
                                 },
                             ) {
-                                if (activating) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("加入共创")
+                                if (activating) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(if (state.recoveryRequired) "重新验证" else "加入共创")
                             }
                         }
                     }
@@ -363,7 +384,9 @@ private fun friendlyActivationError(message: String?): String = when {
     message.contains("sponsor_code_disabled", true) -> "这张卡密目前已经停用"
     message.contains("sponsor_code_expired", true) -> "这张卡密已经过期"
     message.contains("device_limit", true) -> "这张卡密已经达到可激活设备数量"
-    message.contains("device_identity_mismatch", true) -> "设备身份没有同步成功。App 已经尝试自动修复，请再点一次；如果仍失败再联系维护者"
+    message.contains("device_identity_mismatch", true) -> "设备身份没有同步成功，可以在当前页面重新验证，不需要重装应用"
+    message.contains("recovery_review_required", true) -> "这次恢复需要人工确认。社区功能和离线打印不受影响，可以联系维护者处理"
+    message.contains("device_operation_conflict", true) || message.contains("device_recovery_conflict", true) -> "设备身份状态需要重新确认，请在当前页面重新验证"
     else -> "激活没成功：$message"
 }
 

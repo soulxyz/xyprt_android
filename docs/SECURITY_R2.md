@@ -69,3 +69,18 @@ DeviceAuth header 只发给配置的第一方 API origin；跟随 CDN 重定向�
 ## Release Overlay Hook
 
 公开源码只提供中性的 `BUILD_CONTRACT_ID` 与可选 `XYPRT_RELEASE_OVERLAY_DIR` 构建入口；默认值为 `source` 且不影响独立公开构建。正式 Release 的随机 Canary、诱饵资源/模型/Endpoint 由 PRIVATE Release 工具生成，不能把真实生成规则或 token 提交到公开 Android Git。
+
+
+## Key rotation / recovery 的模糊提交处理
+
+设备换 Key 是分布式提交：HTTP 超时并不能证明服务端没有成功。Android 在发送 rotation/recovery 前先持久化 pending key version + 随机 operationId；异常时保留新 Keystore Key。下次进入受保护流程先查询 `device/binding-status.php`，`committed` 就完成本地 commit，明确 `not_applied` 才允许重试或切换流程时丢弃 pending key。
+
+## Recoverability invariant
+
+安全机制不能把正常用户逼进“清数据 / 重装 App 才能恢复”的死状态：
+
+- pending Rotation / Recovery 先持久化；网络中断后通过 `binding-status` 对账，不因一次 IOException 删除未来 Key；
+- 明确进入 Recovery 时，只允许丢弃尚未成为 active identity 的 pending Key，当前 active Keystore Key 不被客户端自动删除；
+- DeviceAuth 需要恢复时，共创页在当前安装内直接提供重新验证入口，社区功能和离线打印保持可用；
+- Shadow Detection 不自动撤销设备或 entitlement；服务端人工撤销必须存在对应恢复动作；
+- `recovery_review_required` 表示转人工复核，不表示永久拒绝或要求重装。
