@@ -37,6 +37,7 @@ fun PrinterConnectSection(
     state: PrinterState,
     hasSavedPrinter: Boolean,
     onConnect: () -> Unit,
+    onRefresh: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -71,9 +72,10 @@ fun PrinterConnectSection(
             Text(statusText, style = MaterialTheme.typography.bodyMedium)
         }
 
-        if (state !is PrinterState.Ready && state !is PrinterState.Printing) {
-            Spacer(Modifier.height(6.dp))
-            if (!perm.granted) {
+        when {
+            state is PrinterState.Printing -> Unit
+            !perm.granted -> {
+                Spacer(Modifier.height(6.dp))
                 Text(
                     stringResource(R.string.perm_bluetooth_missing),
                     style = MaterialTheme.typography.bodySmall,
@@ -88,9 +90,19 @@ fun PrinterConnectSection(
                         Text(stringResource(R.string.print_printer_settings))
                     }
                 }
-            } else {
+            }
+            state is PrinterState.Ready -> {
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onRefresh) { Text(stringResource(R.string.action_refresh_printer)) }
+                    OutlinedButton(onClick = onOpenSettings) { Text(stringResource(R.string.print_printer_settings)) }
+                }
+            }
+            else -> {
+                Spacer(Modifier.height(6.dp))
                 Text(
-                    stringResource(R.string.print_need_printer),
+                    if (state is PrinterState.Error) stringResource(R.string.print_reconnect_hint)
+                    else stringResource(R.string.print_need_printer),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -98,11 +110,11 @@ fun PrinterConnectSection(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (hasSavedPrinter) {
                         Button(onClick = onConnect, enabled = !connecting) {
-                            Text(stringResource(R.string.action_connect))
+                            Text(stringResource(R.string.action_reconnect))
                         }
-                        OutlinedButton(onClick = onOpenSettings) { Text("更换打印机") }
+                        OutlinedButton(onClick = onOpenSettings) { Text(stringResource(R.string.print_printer_settings)) }
                     } else {
-                        Button(onClick = onOpenSettings) { Text("连接打印机") }
+                        Button(onClick = onOpenSettings) { Text(stringResource(R.string.action_connect_printer)) }
                     }
                 }
             }

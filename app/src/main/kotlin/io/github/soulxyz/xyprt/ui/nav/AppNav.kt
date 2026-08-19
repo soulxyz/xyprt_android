@@ -94,6 +94,7 @@ fun AppNav(startDestination: String = "home") {
                 onBack = { nav.popBackStack() },
                 onEditQuick = { id -> nav.navigate("quick/history/$id") },
                 onOpenTemplate = { id -> nav.navigate("editor/$id") },
+                onOpenPrinterSettings = { nav.navigate("settings") },
             )
         }
 

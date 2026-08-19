@@ -62,7 +62,13 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HistoryScreen(onBack: () -> Unit, onEditQuick: (Long) -> Unit = {}, onOpenTemplate: (String) -> Unit = {}, vm: HistoryViewModel = viewModel()) {
+fun HistoryScreen(
+    onBack: () -> Unit,
+    onEditQuick: (Long) -> Unit = {},
+    onOpenTemplate: (String) -> Unit = {},
+    onOpenPrinterSettings: () -> Unit = {},
+    vm: HistoryViewModel = viewModel(),
+) {
     val entries by vm.entries.collectAsState()
     var reprint by remember { mutableStateOf<Pair<MonoImage, PrintHistoryEntry>?>(null) }
     val withBlePermissions = rememberBlePermissionRunner()
@@ -136,6 +142,10 @@ fun HistoryScreen(onBack: () -> Unit, onEditQuick: (Long) -> Unit = {}, onOpenTe
             onDismiss = { reprint = null },
             onPrinted = { copies, media, feedBeforeDots, feedAfterDots ->
                 vm.recordReprint(entry, image, copies, media, feedBeforeDots, feedAfterDots)
+            },
+            onOpenPrinterSettings = {
+                reprint = null
+                onOpenPrinterSettings()
             },
         )
     }

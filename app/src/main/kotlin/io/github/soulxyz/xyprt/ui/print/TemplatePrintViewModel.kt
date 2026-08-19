@@ -29,7 +29,15 @@ class TemplatePrintViewModel(app: Application) : AndroidViewModel(app) {
     val feedBeforeDots = container.settings.printFeedBeforeDots
     val feedAfterDots = container.settings.printFeedAfterDots
 
-    fun connect() = manager.connectSavedActive()
+    fun connect() {
+        _error.value = null
+        manager.connectSavedActive()
+    }
+
+    fun refreshPrinter() {
+        _error.value = null
+        manager.refreshSavedActive()
+    }
 
     fun cancelConnect() = manager.cancelConnect()
 
@@ -107,6 +115,10 @@ class TemplatePrintViewModel(app: Application) : AndroidViewModel(app) {
                 _working.value = false
             }
         }
+    }
+
+    fun clearError() {
+        _error.value = null
     }
 
     fun reset() {

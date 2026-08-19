@@ -129,6 +129,14 @@ fun TemplatePrintSheet(
         onDispose { view.keepScreenOn = false }
     }
 
+    LaunchedEffect(Unit) {
+        vm.refreshPrinter()
+    }
+
+    LaunchedEffect(printerState) {
+        if (printerState is PrinterState.Ready) vm.clearError()
+    }
+
     LaunchedEffect(done) {
         if (done) {
             vm.reset()
@@ -247,6 +255,7 @@ fun TemplatePrintSheet(
                     state = printerState,
                     hasSavedPrinter = savedPrinter != null,
                     onConnect = { vm.connect() },
+                    onRefresh = { vm.refreshPrinter() },
                     onOpenSettings = { onDismiss(); onOpenSettings() },
                 )
                 Spacer(Modifier.height(8.dp))

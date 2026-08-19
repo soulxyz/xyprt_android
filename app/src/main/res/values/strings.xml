@@ -182,6 +182,11 @@
     <string name="err_printer_no_response">打印机没有响应，请重试</string>
     <string name="err_not_connected">未连接打印机</string>
     <string name="err_print_failed">打印失败</string>
+    <string name="err_printer_connection_lost">打印机连接已断开，重新连接后可以再次打印。</string>
+    <string name="print_reconnect_hint">连接中断了，当前内容还在。重新连接后可以继续打印。</string>
+    <string name="action_reconnect">重新连接</string>
+    <string name="action_refresh_printer">刷新状态</string>
+    <string name="action_connect_printer">连接打印机</string>
     <string name="about_description">支持文字、图片、PDF、拍照和自由排版，也可从其他应用直接分享打印。让打印更简单，也更顺手。</string>
     <string name="about_version">版本 %1$s</string>
     <string name="action_close">关闭</string>

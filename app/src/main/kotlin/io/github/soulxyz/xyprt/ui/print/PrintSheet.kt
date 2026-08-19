@@ -82,6 +82,14 @@ fun PrintSheet(
         }
     }
 
+    LaunchedEffect(Unit) {
+        vm.refreshPrinter()
+    }
+
+    LaunchedEffect(printerState) {
+        if (printerState is PrinterState.Ready) vm.clearError()
+    }
+
     ModalBottomSheet(onDismissRequest = { if (!working) onDismiss() }) {
         Column(
             Modifier
@@ -149,6 +157,7 @@ fun PrintSheet(
                         state = printerState,
                         hasSavedPrinter = savedPrinter != null,
                         onConnect = { vm.connect() },
+                        onRefresh = { vm.refreshPrinter() },
                         onOpenSettings = onOpenPrinterSettings,
                     )
                     Spacer(Modifier.height(8.dp))

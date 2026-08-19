@@ -86,24 +86,61 @@ class PrinterManager(
 
     fun connectSavedActive() {
         if (_state.value is PrinterState.Ready) return
+        reconnectJob?.cancel()
+        connectJob?.cancel()
+        connectJob = scope.launch { connectSavedSuspend(showConnecting = true) }
+    }
+
+    private suspend fun connectSavedSuspend(showConnecting: Boolean) {
+        val saved = settings.savedPrinter.first() ?: return
+        val a = adapter()
+        if (a == null || !a.isEnabled) {
+            showTransientError(context.getString(R.string.err_bt_off))
+            return
+        }
+        val preferred = PrinterTransport.fromSaved(saved.transport) ?: PrinterTransport.CLASSIC
+        val order = listOf(preferred) + PrinterTransport.entries.filterNot { it == preferred }
+        runCatching {
+            connectByTransports(
+                device = a.getRemoteDevice(saved.address),
+                name = saved.name,
+                transports = order,
+                showConnecting = showConnecting,
+                persist = true,
+            )
+        }
+    }
+
+    /**
+     * Re-check the live printer from the current screen. If the remembered link is stale, dispose
+     * it and reconnect without requiring the user to leave the print flow.
+     */
+    fun refreshSavedActive() {
+        val current = _state.value
+        if (current is PrinterState.Printing || current is PrinterState.Connecting) return
+        reconnectJob?.cancel()
         connectJob?.cancel()
         connectJob = scope.launch {
-            val saved = settings.savedPrinter.first() ?: return@launch
-            val a = adapter()
-            if (a == null || !a.isEnabled) {
-                showTransientError(context.getString(R.string.err_bt_off)); return@launch
+            val ready = _state.value as? PrinterState.Ready
+            val conn = connection
+            if (ready != null && conn != null) {
+                val alive = runCatching {
+                    ioExclusive.withLock {
+                        conn.query(
+                            io.github.soulxyz.xyprt.printer.Protocol.QUERY_STATUS,
+                            firstByteTimeoutMs = 800,
+                            quietMs = 100,
+                        ).isNotEmpty()
+                    }
+                }.getOrDefault(false)
+                if (alive) {
+                    fetchStatusOnce()
+                    return@launch
+                }
+                disconnectInternal()
+                _state.value = PrinterState.Disconnected
             }
-            val preferred = PrinterTransport.fromSaved(saved.transport) ?: PrinterTransport.CLASSIC
-            val order = listOf(preferred) + PrinterTransport.entries.filterNot { it == preferred }
-            runCatching {
-                connectByTransports(
-                    device = a.getRemoteDevice(saved.address),
-                    name = saved.name,
-                    transports = order,
-                    showConnecting = true,
-                    persist = true,
-                )
-            }
+            connectSavedSuspend(showConnecting = true)
         }
     }
 
@@ -245,16 +282,32 @@ class PrinterManager(
             } catch (c: CancellationException) {
                 throw c
             } catch (t: Throwable) {
-                // A rejected write does not necessarily mean the radio link died. Keep a live
-                // connection ready so a BLE status-13 retry does not turn into a forced reconnect.
-                if (conn.isConnected) {
+                val reconnect = PrinterConnectionFailure.requiresReconnect(
+                    transport = conn.transport,
+                    connectedHint = conn.isConnected,
+                    error = t,
+                )
+                if (!reconnect) {
+                    // BLE can reject an individual write while the GATT link is still healthy
+                    // (notably the status-13/chunk-size path). Do not tear that link down blindly.
                     runCatching { ioExclusive.withLock { conn.write(io.github.soulxyz.xyprt.printer.Protocol.PRINT_END) } }
                     _state.value = ready.copy(batteryPercent = lastBattery ?: ready.batteryPercent)
-                } else {
-                    disconnectInternal()
-                    showTransientError(t.message ?: context.getString(R.string.err_print_failed))
+                    throw t
                 }
-                throw t
+
+                disconnectInternal()
+                val message = context.getString(R.string.err_printer_connection_lost)
+                val errorState = PrinterState.Error(message)
+                _state.value = errorState
+                // One quick recovery attempt while the print sheet stays open. A manual reconnect
+                // wins the race because it changes the state away from this exact Error instance.
+                scope.launch {
+                    delay(700)
+                    if (_state.compareAndSet(errorState, PrinterState.Disconnected)) {
+                        connectSavedActive()
+                    }
+                }
+                throw PrinterConnectionLostException(message, t)
             }
         }
         job.await()
