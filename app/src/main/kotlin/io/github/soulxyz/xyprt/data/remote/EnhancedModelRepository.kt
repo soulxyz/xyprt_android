@@ -73,6 +73,7 @@ class EnhancedModelRepository(
         require(item.downloadable && !item.locked) { item.reason ?: "当前不可下载" }
         val endpoint = item.downloadEndpoint ?: error("没有下载入口")
         coCreator.registerDevice()
+        require(ensureLease(item.id)) { "获取使用许可失败" }
         val sep = if ('?' in endpoint) '&' else '?'
         val issue = api.signedGet("$endpoint${sep}appVersionCode=${BuildConfig.VERSION_CODE}")
         val grant = issue["download"]?.jsonObject ?: error("未获得下载票据")
@@ -86,6 +87,10 @@ class EnhancedModelRepository(
         val expected = item.fileSha256?.lowercase()?.takeIf { it.length == 64 }
         val actual = sha256(bytes)
         if (expected != null && !actual.equals(expected, true)) error("增强能力文件校验失败")
+        val wrapped = prefs.getString("lease:${item.id}", null) ?: error("本地未存到使用许可")
+        val testKey = identity.unwrapModelKey(wrapped)
+        val testPlaintext = decryptPackage(bytes, testKey)
+        testPlaintext.fill(0)
         val target = fileFor(item.id, item.version)
         val temp = File(target.parentFile, target.name + ".part")
         temp.outputStream().use { it.write(bytes); it.fdSync() }
@@ -97,7 +102,6 @@ class EnhancedModelRepository(
             file != target && file.name.startsWith(safeId(item.id) + "-") && file.extension == "xymodel"
         }?.forEach { it.delete() }
         rememberInstalled(item, actual)
-        ensureLease(item.id)
         refreshCatalog(silent = true)
     }
 
