@@ -39,3 +39,6 @@ private-signing/
 # Private/offline build inputs
 /.local-build/
 /private-ml/
+
+# Proprietary capability implementations (restored only for private/cocreator builds)
+/private-features/

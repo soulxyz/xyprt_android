@@ -4,7 +4,6 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val includeOnnxRuntime = providers.gradleProperty("XYPRT_INCLUDE_ONNX").orElse("false").get().toBoolean()
 val releaseOverlayDir = providers.gradleProperty("XYPRT_RELEASE_OVERLAY_DIR").orNull?.takeIf { it.isNotBlank() }
 
 val localSerializationCompiler = rootProject.file(".local-build/jars/kotlin-serialization-compiler-plugin.jar")
@@ -34,7 +33,7 @@ android {
         applicationId = "io.github.soulxyz.xyprt"
         minSdk = 26
         targetSdk = 36
-        versionCode = providers.gradleProperty("XYPRT_VERSION_CODE").orElse("1030007").get().toInt()
+        versionCode = providers.gradleProperty("XYPRT_VERSION_CODE").orElse("1030008").get().toInt()
         versionName = providers.gradleProperty("XYPRT_VERSION_NAME").orElse("1.2.4").get()
         manifestPlaceholders["appName"] = "口袋小印"
         val updateApiBase = providers.gradleProperty("XYPRT_UPDATE_API_BASE_URL")
@@ -44,18 +43,33 @@ android {
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
         buildConfigField("String", "UPDATE_API_BASE_URL", "\"$updateApiBase\"")
-        buildConfigField("boolean", "ENHANCED_SCANNER_AVAILABLE", includeOnnxRuntime.toString())
-        val distributionChannel = providers.gradleProperty("XYPRT_DISTRIBUTION_CHANNEL").orElse("community").get()
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
         val buildContractId = providers.gradleProperty("XYPRT_BUILD_CONTRACT_ID").orElse("source").get()
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
-        buildConfigField("String", "DISTRIBUTION_CHANNEL", "\"$distributionChannel\"")
         buildConfigField("String", "BUILD_CONTRACT_ID", "\"$buildContractId\"")
         val requestedAbis = providers.gradleProperty("XYPRT_ABIS").orElse("arm64-v8a,armeabi-v7a").get()
             .split(',').map { it.trim() }.filter { it.isNotEmpty() }
         ndk { abiFilters += requestedAbis }
+    }
+
+    flavorDimensions += "edition"
+    productFlavors {
+        create("opensource") {
+            dimension = "edition"
+            buildConfigField("String", "BUILD_EDITION", "\"opensource\"")
+            buildConfigField("boolean", "ENHANCED_SCANNER_AVAILABLE", "false")
+            val channel = providers.gradleProperty("XYPRT_DISTRIBUTION_CHANNEL").orElse("community").get()
+                .replace("\\", "\\\\").replace("\"", "\\\"")
+            buildConfigField("String", "DISTRIBUTION_CHANNEL", "\"$channel\"")
+        }
+        create("cocreator") {
+            dimension = "edition"
+            buildConfigField("String", "BUILD_EDITION", "\"cocreator\"")
+            buildConfigField("boolean", "ENHANCED_SCANNER_AVAILABLE", "true")
+            val channel = providers.gradleProperty("XYPRT_DISTRIBUTION_CHANNEL").orElse("cocreator").get()
+                .replace("\\", "\\\\").replace("\"", "\\\"")
+            buildConfigField("String", "DISTRIBUTION_CHANNEL", "\"$channel\"")
+        }
     }
 
     buildTypes {
@@ -82,13 +96,13 @@ android {
         jniLibs.useLegacyPackaging = providers.gradleProperty("XYPRT_COMPRESS_JNI").orElse("false").get().toBoolean()
     }
 
-    // The public/open-source build excludes ONNX completely. Co-creator builds opt in with
-    // -PXYPRT_INCLUDE_ONNX=true, while keeping the same Gradle task names and app id.
     sourceSets.getByName("main").apply {
-        if (includeOnnxRuntime) java.srcDir("src/cocreator/kotlin")
-        // Neutral release-contract hook. Public builds leave this unset; private release tooling may
-        // supply generated, build-specific assets without committing them into the public source tree.
+        // Neutral release-contract hook. Public builds leave this unset.
         if (releaseOverlayDir != null) assets.srcDir(releaseOverlayDir)
+    }
+    val privateScanPro = rootProject.file("private-features/scan-pro/src/main/kotlin")
+    if (privateScanPro.isDirectory) {
+        sourceSets.getByName("cocreator").java.srcDir(privateScanPro)
     }
 
     // Public/online builds keep release lint enabled. The portable offline archive currently
@@ -135,9 +149,10 @@ dependencies {
     val localOpenCv = rootProject.file(".local-build/aar/opencv-4.13.0.aar")
     if (localOpenCv.exists()) implementation(files(localOpenCv)) else implementation("org.opencv:opencv:4.13.0")
 
-    if (includeOnnxRuntime) {
+    if (rootProject.file("private-features/scan-pro").isDirectory) {
         val localOrt = rootProject.file(".local-build/aar/onnxruntime-android-1.24.1.aar")
-        if (localOrt.exists()) implementation(files(localOrt)) else implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.1")
+        if (localOrt.exists()) add("cocreatorImplementation", files(localOrt))
+        else add("cocreatorImplementation", "com.microsoft.onnxruntime:onnxruntime-android:1.24.1")
     }
 
     testImplementation("junit:junit:4.13.2")

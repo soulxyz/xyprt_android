@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 PRIVATE_PATH = re.compile(
-    r"(^|/)(?:\.local-build|local-build|private-signing|private-ml|private-models|signing)(?:/|$)"
+    r"(^|/)(?:\.local-build|local-build|private-signing|private-ml|private-models|private-features|signing)(?:/|$)"
     r"|(^|/)(?:config\.local\.php|sources\.local\.php|model_keys\.local\.php|asset_keys\.local\.php|keystore\.properties|\.env(?:\..*)?)$"
     r"|(?:^|/).*\.(?:jks|keystore|p12|pfx|pem|key)$"
     r"|(?:^|/)passwords(?:_[^/]*)?\.txt$",

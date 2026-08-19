@@ -15,6 +15,7 @@ annotation class BuildContract
 @BuildContract
 object ReleaseContract {
     val channel: String get() = BuildConfig.DISTRIBUTION_CHANNEL
+    val buildEdition: String get() = BuildConfig.BUILD_EDITION
     val contractId: String get() = BuildConfig.BUILD_CONTRACT_ID
 
     val channelLabel: String
