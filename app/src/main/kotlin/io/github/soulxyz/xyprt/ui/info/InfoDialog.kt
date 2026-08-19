@@ -54,6 +54,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import io.github.soulxyz.xyprt.App
+import io.github.soulxyz.xyprt.BuildConfig
 import io.github.soulxyz.xyprt.R
 import io.github.soulxyz.xyprt.data.UpdateState
 import io.github.soulxyz.xyprt.data.UpdateDownloadMode
@@ -213,6 +214,12 @@ fun InfoDialog(onDismiss: () -> Unit, onOpenCoCreator: () -> Unit = {}) {
                         }
                     },
                     onSource = { info -> openUrl(info.releaseUrl) },
+                    onSwitchChannel = { target ->
+                        scope.launch {
+                            Toast.makeText(context, "正在切换至" + if (target == "opensource") "社区版" else "共创版" + "…", Toast.LENGTH_SHORT).show()
+                            container.updates.checkForChannel(target)
+                        }
+                    },
                 )
 
                 Row(
@@ -273,6 +280,7 @@ private fun UpdateCard(
     onInstall: () -> Unit,
     onBrowser: (io.github.soulxyz.xyprt.data.UpdateInfo) -> Unit,
     onSource: (io.github.soulxyz.xyprt.data.UpdateInfo) -> Unit,
+    onSwitchChannel: (target: String) -> Unit,
 ) {
     val bg = MaterialTheme.colorScheme.surfaceContainerLow
     Column(
@@ -290,7 +298,14 @@ private fun UpdateCard(
                     Text("${info.releaseChannelLabel} · 最新版本 ${info.versionName}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     if (info.notes.isNotBlank()) ReleaseNotes(info.notes)
                 }
-                TextButton(onClick = onCheck) { Text("重新检查") }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = onCheck) { Text("重新检查") }
+                    val targetChannel = if (BuildConfig.BUILD_EDITION == "cocreator") "opensource" else "cocreator"
+                    val targetLabel = if (targetChannel == "opensource") "社区版" else "共创版"
+                    OutlinedButton(onClick = { onSwitchChannel(targetChannel) }) {
+                        Text("切换至$targetLabel")
+                    }
+                }
             }
             is UpdateState.Error -> {
                 Text("暂时无法检查更新", fontWeight = FontWeight.SemiBold)
@@ -301,6 +316,7 @@ private fun UpdateCard(
                 val info = state.info
                 Text("发现 ${info.releaseChannelLabel} ${info.versionName}", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                 if (info.notes.isNotBlank()) ReleaseNotes(info.notes)
+                SameVersionInstallHint(info)
                 val delta = info.delta
                 if (delta != null && info.fullSizeBytes != null && info.fullSizeBytes > 0) {
                     Text(
@@ -335,10 +351,12 @@ private fun UpdateCard(
                     } else UpdateButtons(info, onDownload, onBrowser, onSource)
                     is UpdateDownloadState.ReadyToInstall -> if (d.info.versionCode == info.versionCode) {
                         Text("更新已准备好。", style = MaterialTheme.typography.bodySmall)
+                        SameVersionInstallHint(info)
                         Button(onClick = onInstall) { Text("安装更新") }
                     } else UpdateButtons(info, onDownload, onBrowser, onSource)
                     is UpdateDownloadState.Installing -> if (d.info.versionCode == info.versionCode) {
                         Text("请按系统提示完成更新。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        SameVersionInstallHint(info)
                     } else UpdateButtons(info, onDownload, onBrowser, onSource)
                     is UpdateDownloadState.Failed -> if (d.info?.versionCode == info.versionCode) {
                         Text(d.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -351,6 +369,17 @@ private fun UpdateCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SameVersionInstallHint(info: io.github.soulxyz.xyprt.data.UpdateInfo) {
+    if (info.editionSwitch && info.versionCode == BuildConfig.VERSION_CODE) {
+        Text(
+            "本次为版本切换，与当前版本号相同。若系统提示安装相同版本，请点击继续安装。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.tertiary,
+        )
     }
 }
 
