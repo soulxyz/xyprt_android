@@ -36,6 +36,9 @@ signing/
 # Private release signing material (NEVER commit)
 private-signing/
 
+# Local full-workspace bundle zips
+/口袋小印_*.zip
+
 # Private/offline build inputs
 /.local-build/
 /private-ml/
