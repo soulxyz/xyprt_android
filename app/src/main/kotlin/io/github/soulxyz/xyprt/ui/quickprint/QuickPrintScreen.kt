@@ -264,7 +264,7 @@ fun QuickPrintScreen(
 
     fun hasMeaningfulDraft(): Boolean = when (sourceMode) {
         SourceMode.TEXT -> text.isNotBlank()
-        SourceMode.TODO -> todoTitle.isNotBlank() || todoItems.isNotBlank()
+        SourceMode.TODO -> todoItems.isNotBlank() || (todoTitle.isNotBlank() && todoTitle != "今日待办")
         SourceMode.IMAGE, SourceMode.PDF, SourceMode.CAMERA -> uris.isNotEmpty()
     }
 
@@ -677,14 +677,14 @@ fun QuickPrintScreen(
                                         Text("上次中途退出的内容已经保存。是否继续编辑？", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     TextButton(onClick = {
+                                        vm.clearDraft()
+                                        draftCandidate = null
+                                    }) { Text("放弃") }
+                                    Button(onClick = {
                                         applySource(draft.source, draft)
                                         draftCandidate = null
                                         pickerOpened = true
                                     }) { Text("继续") }
-                                    TextButton(onClick = {
-                                        vm.clearDraft()
-                                        draftCandidate = null
-                                    }) { Text("放弃") }
                                 }
                             }
                         }
