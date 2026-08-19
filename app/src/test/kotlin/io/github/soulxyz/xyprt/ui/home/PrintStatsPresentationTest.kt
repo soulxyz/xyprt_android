@@ -1,7 +1,10 @@
 package io.github.soulxyz.xyprt.ui.home
 
+import kotlin.random.Random
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PrintStatsPresentationTest {
@@ -14,9 +17,44 @@ class PrintStatsPresentationTest {
     }
 
     @Test
-    fun `analogy only appears when comparison is natural`() {
-        assertEquals("大约一支铅笔的长度", printedDistanceAnalogy(180))
-        assertEquals("差不多绕标准跑道一圈", printedDistanceAnalogy(400_000))
-        assertNull(printedDistanceAnalogy(5_000))
+    fun `short lengths compare to everyday small objects`() {
+        val candidates = printedDistanceCandidates(180)
+        assertTrue(candidates.any { it.contains("铅笔") })
+        assertTrue(candidates.size > 1)
+    }
+
+    @Test
+    fun `medium lengths offer several plausible comparisons`() {
+        val candidates = printedDistanceCandidates(1_500)
+        assertTrue(candidates.any { it.contains("双人床") })
+        assertTrue(candidates.size > 2)
+    }
+
+    @Test
+    fun `long distances use familiar landmarks`() {
+        assertTrue(printedDistanceCandidates(42_195_000).any { it.contains("马拉松") })
+        assertTrue(printedDistanceCandidates(1_318_000_000).any { it.contains("京沪高铁") })
+        assertTrue(printedDistanceCandidates(384_400_000_000L).any { it.contains("月球") })
+    }
+
+    @Test
+    fun `very long distances always fall back to earth laps`() {
+        val candidates = printedDistanceCandidates(10_000_000_000_000L)
+        assertTrue(candidates.isNotEmpty())
+        assertTrue(candidates.all { it.contains("绕地球") })
+    }
+
+    @Test
+    fun `random pick is stable for the same seed`() {
+        val a = printedDistanceAnalogy(180, Random(0))
+        val b = printedDistanceAnalogy(180, Random(0))
+        assertNotNull(a)
+        assertEquals(a, b)
+        assertTrue(printedDistanceCandidates(180).contains(a))
+    }
+
+    @Test
+    fun `no analogy for trivially short lengths`() {
+        assertNull(printedDistanceAnalogy(5, Random(0)))
     }
 }

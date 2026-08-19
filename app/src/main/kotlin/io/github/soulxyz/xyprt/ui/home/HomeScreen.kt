@@ -401,7 +401,7 @@ fun HomeScreen(
 @Composable
 private fun PrintStatsCard(stats: PrintStatsSnapshot) {
     val distance = formatPrintedDistance(stats.printedLengthMm, stats.mileageComplete)
-    val analogy = printedDistanceAnalogy(stats.printedLengthMm)
+    val analogy = remember(stats.printedLengthMm) { printedDistanceAnalogy(stats.printedLengthMm) }
     val shape = RoundedCornerShape(26.dp)
     Surface(
         modifier = Modifier
