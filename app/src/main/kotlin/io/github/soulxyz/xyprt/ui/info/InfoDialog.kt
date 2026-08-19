@@ -1,7 +1,13 @@
 package io.github.soulxyz.xyprt.ui.info
 
+import android.content.ContentValues
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -191,6 +197,20 @@ fun InfoDialog(onDismiss: () -> Unit, onOpenCoCreator: () -> Unit = {}) {
                     "支持文字、图片、PDF、纸张扫描和自由排版，也可从其他应用直接分享打印。让打印更简单，也更顺手。",
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
+                )
+
+                ShareToWeChatCard(
+                    onShare = {
+                        scope.launch {
+                            val saved = runCatching { saveLogoToGallery(context) }.isSuccess
+                            Toast.makeText(
+                                context,
+                                if (saved) "已保存到相册，正在打开微信" else "保存失败，请稍后再试",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                            openWeChat(context)
+                        }
+                    },
                 )
 
                 UpdateCard(
@@ -390,10 +410,17 @@ private fun UpdateButtons(
     onBrowser: (io.github.soulxyz.xyprt.data.UpdateInfo) -> Unit,
     onSource: (io.github.soulxyz.xyprt.data.UpdateInfo) -> Unit,
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { onDownload(info) }) { Text("应用内") }
-        OutlinedButton(onClick = { onBrowser(info) }) { Text("浏览器") }
-        TextButton(onClick = { onSource(info) }) { Text("发布页") }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { onDownload(info) }) { Text("应用内") }
+            OutlinedButton(onClick = { onBrowser(info) }) { Text("手动下载安装") }
+            TextButton(onClick = { onSource(info) }) { Text("发布页") }
+        }
+        Text(
+            "选择「应用内」更新，下载更快、更省流量。",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -404,6 +431,71 @@ private fun formatBytes(bytes: Long): String = when {
     else -> "$bytes B"
 }
 
+@Composable
+private fun ShareToWeChatCard(onShare: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .clickable { onShare() }
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(painterResource(R.drawable.ic_link), null, modifier = Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
+        Column(Modifier.weight(1f)) {
+            Text("把口袋小印分享给朋友", style = MaterialTheme.typography.bodyLarge)
+            Text("点击保存图标到相册并打开微信", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+private fun openWeChat(context: android.content.Context) {
+    val intent = context.packageManager.getLaunchIntentForPackage("com.tencent.mm")
+    if (intent == null) {
+        Toast.makeText(context, "未安装微信", Toast.LENGTH_SHORT).show()
+        return
+    }
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }
+        .onFailure { Toast.makeText(context, "打开微信失败", Toast.LENGTH_SHORT).show() }
+}
+
+private fun saveLogoToGallery(context: android.content.Context): Boolean {
+    val drawable = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.ic_logo_color) ?: return false
+    val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 256
+    val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 256
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    drawable.setBounds(0, 0, canvas.width, canvas.height)
+    drawable.draw(canvas)
+    val filename = "pocketprint_logo_${System.currentTimeMillis()}.png"
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, filename)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/PocketPrint")
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+        val resolver = context.contentResolver
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
+        runCatching {
+            resolver.openOutputStream(uri)?.use { os -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, os) }
+            values.clear()
+            values.put(MediaStore.Images.Media.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+        }.isSuccess
+    } else {
+        @Suppress("DEPRECATION")
+        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+        if (!dir.exists() && !dir.mkdirs()) return false
+        val file = java.io.File(dir, filename)
+        runCatching {
+            file.outputStream().use { os -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, os) }
+        }.isSuccess
+    }
+}
 
 @Composable
 private fun ReleaseNotes(markdown: String) {
