@@ -40,6 +40,7 @@ data class UpdateInfo(
     val title: String,
     val notes: String,
     val releaseUrl: String,
+    val releaseId: Int = 0,
     val sourceApkUrl: String?,
     val mirrorApkUrl: String?,
     val digestSha256: String?,
@@ -50,6 +51,7 @@ data class UpdateInfo(
     val requiresDeviceAuth: Boolean = false,
     val serverInstallAvailable: Boolean = false,
     val releaseChannelLabel: String = "社区版",
+    val channel: String? = null,
 )
 
 /**
@@ -90,15 +92,50 @@ class UpdateRepository(
                 fetchGateway()
             }
             _state.value = info.fold(
-                onSuccess = { latest -> if (latest != null && (latest.versionCode > currentVersionCode() || latest.serverInstallAvailable)) UpdateState.Available(latest) else UpdateState.Current(latest) },
+                onSuccess = { latest -> resolveAvailable(latest) },
                 onFailure = { UpdateState.Error(it.message ?: "检查更新失败") },
             )
         }
     }
 
+    fun checkForChannel(targetChannel: String) {
+        scope.launch {
+            _state.value = UpdateState.Checking
+            val result = runCatching { fetchManaged(requestedChannel = targetChannel) }
+            _state.value = result.fold(
+                onSuccess = { latest -> resolveAvailable(latest) },
+                onFailure = { UpdateState.Error(it.message ?: "检查更新失败") },
+            )
+        }
+    }
+
+    private fun resolveAvailable(latest: UpdateInfo?): UpdateState {
+        if (latest == null) return UpdateState.Current(null)
+        val switch = isChannelSwitch(latest)
+        val versionOk = if (switch) latest.versionCode >= currentVersionCode() else latest.versionCode > currentVersionCode()
+        return if (versionOk || latest.serverInstallAvailable) UpdateState.Available(latest) else UpdateState.Current(latest)
+    }
+
     fun currentVersionCode(): Int = BuildConfig.VERSION_CODE
 
-    private suspend fun fetchManaged(): UpdateInfo? {
+    /**
+     * Sponsor releases are gated by DeviceAuth, so the "browser download" button cannot reuse the
+     * in-app endpoint (a browser cannot sign the request). Instead the app signs once here to mint
+     * a single-use, short-lived browser pass, and returns the URL the external browser should open.
+     * Returns null when no browser pass is applicable (e.g. community releases), so callers fall
+     * back to the existing URL.
+     */
+    suspend fun browserDownloadUrl(info: UpdateInfo): String? {
+        if (!info.requiresDeviceAuth || info.releaseId <= 0) return null
+        val body = buildJsonObject {
+            put("releaseId", info.releaseId)
+            put("abi", Build.SUPPORTED_ABIS.firstOrNull().orEmpty())
+        }
+        val root = runCatching { api.signedPost("/v1/app/update-download-browser.php", body) }.getOrNull() ?: return null
+        return root.string("browserUrl")?.let(api::absolute)
+    }
+
+    private suspend fun fetchManaged(requestedChannel: String = ReleaseContract.channel): UpdateInfo? {
         // Community/public release lookup stays anonymous. Device authentication is only
         // established once a co-creator entitlement is already active locally or the user enters
         // the co-creator flow; installationId is never a public-update credential.
@@ -106,7 +143,7 @@ class UpdateRepository(
             put("version", BuildConfig.VERSION_NAME)
             put("versionCode", BuildConfig.VERSION_CODE)
             put("buildEdition", ReleaseContract.buildEdition)
-            put("channel", ReleaseContract.channel)
+            put("channel", requestedChannel)
             put("abi", Build.SUPPORTED_ABIS.firstOrNull().orEmpty())
         }
         val root = if (coCreator.state.value.active) {
@@ -128,6 +165,7 @@ class UpdateRepository(
                 title = release.string("title") ?: "口袋小印 $version",
                 notes = release.string("notes").orEmpty().trim().take(6_000),
                 releaseUrl = REPOSITORY_URL,
+                releaseId = release.int("id") ?: 0,
                 sourceApkUrl = if (updateAvailable) protectedDownload else null,
                 mirrorApkUrl = null,
                 digestSha256 = release["download"]?.let { runCatching { it.jsonObject.string("sha256") }.getOrNull() },
@@ -138,13 +176,14 @@ class UpdateRepository(
                 requiresDeviceAuth = true,
                 serverInstallAvailable = updateAvailable,
                 releaseChannelLabel = "共创版",
+                channel = channel,
             )
-        } else parseOpenSourceRelease(release, parseServerDownloadMode(root.string("downloadMode")))
+        } else parseOpenSourceRelease(release, parseServerDownloadMode(root.string("downloadMode")), channel)
     }
 
     private suspend fun fetchGateway(): UpdateInfo? = withContext(Dispatchers.IO) { parseGatewayUpdate(httpGet(API_LATEST), json) }
 
-    private fun parseOpenSourceRelease(latest: JsonObject, mode: ServerDownloadMode = ServerDownloadMode.AUTO): UpdateInfo? {
+    private fun parseOpenSourceRelease(latest: JsonObject, mode: ServerDownloadMode = ServerDownloadMode.AUTO, channel: String = "opensource"): UpdateInfo? {
         val version = latest.string("version") ?: return null
         return UpdateInfo(
             versionName = version,
@@ -157,6 +196,7 @@ class UpdateRepository(
             fullSizeBytes = latest.long("size"),
             serverDownloadMode = mode,
             releaseChannelLabel = "社区版",
+            channel = channel,
         )
     }
 
@@ -174,6 +214,18 @@ class UpdateRepository(
 
 internal fun shouldFallbackManagedFailure(coCreatorActive: Boolean, recoverableDeviceAuthFailure: Boolean): Boolean =
     !(coCreatorActive && recoverableDeviceAuthFailure)
+
+internal fun isChannelSwitch(info: UpdateInfo): Boolean {
+    val target = info.channel?.lowercase()?.takeIf { it.isNotBlank() } ?: return false
+    val current = ReleaseContract.channel.lowercase()
+    return channelGroup(target) != channelGroup(current)
+}
+
+internal fun channelGroup(c: String): String = when (c.lowercase()) {
+    "opensource", "community", "public" -> "public"
+    "cocreator", "sponsor", "internal", "beta" -> "private"
+    else -> c.lowercase()
+}
 
 internal fun parseGatewayUpdate(raw: String, json: Json): UpdateInfo? {
     val root = json.parseToJsonElement(raw).jsonObject

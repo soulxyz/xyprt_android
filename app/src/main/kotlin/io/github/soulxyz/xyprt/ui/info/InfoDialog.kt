@@ -205,7 +205,13 @@ fun InfoDialog(onDismiss: () -> Unit, onOpenCoCreator: () -> Unit = {}) {
                     },
                     onCancel = { container.updateDownloads.cancel() },
                     onInstall = { container.updateDownloads.installPrepared() },
-                    onBrowser = { info -> openUrl(info.mirrorApkUrl ?: info.sourceApkUrl ?: info.releaseUrl) },
+                    onBrowser = { info ->
+                        scope.launch {
+                            val url = container.updates.browserDownloadUrl(info)
+                                ?: (info.mirrorApkUrl ?: info.sourceApkUrl ?: info.releaseUrl)
+                            openUrl(url)
+                        }
+                    },
                     onSource = { info -> openUrl(info.releaseUrl) },
                 )
 
