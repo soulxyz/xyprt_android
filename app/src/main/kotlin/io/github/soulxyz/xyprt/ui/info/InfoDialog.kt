@@ -281,7 +281,7 @@ private fun UpdateCard(
             is UpdateState.Current -> {
                 Text("已是最新版本", fontWeight = FontWeight.SemiBold)
                 state.latest?.let { info ->
-                    Text("最新版本 ${info.versionName}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    Text("${info.releaseChannelLabel} · 最新版本 ${info.versionName}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     if (info.notes.isNotBlank()) ReleaseNotes(info.notes)
                 }
                 TextButton(onClick = onCheck) { Text("重新检查") }
@@ -293,7 +293,7 @@ private fun UpdateCard(
             }
             is UpdateState.Available -> {
                 val info = state.info
-                Text("发现 ${info.versionName}", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                Text("发现 ${info.releaseChannelLabel} ${info.versionName}", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                 if (info.notes.isNotBlank()) ReleaseNotes(info.notes)
                 val delta = info.delta
                 if (delta != null && info.fullSizeBytes != null && info.fullSizeBytes > 0) {

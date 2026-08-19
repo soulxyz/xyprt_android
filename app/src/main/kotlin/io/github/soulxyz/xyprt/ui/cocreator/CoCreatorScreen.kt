@@ -74,6 +74,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import io.github.soulxyz.xyprt.App
+import io.github.soulxyz.xyprt.security.ReleaseContract
 import io.github.soulxyz.xyprt.ui.components.SimpleMarkdown
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -181,6 +182,26 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .78f)) {
+                                Text(
+                                    "当前安装 · ${ReleaseContract.channelLabel}",
+                                    Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (state.active) {
+                                Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .78f)) {
+                                    Text(
+                                        "共创资格 · 已生效",
+                                        Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+                        }
                         Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .78f)) {
                             Text(
                                 state.planBadge.ifBlank { "小范围开放" },
@@ -385,6 +406,8 @@ private fun friendlyActivationError(message: String?): String = when {
     message.contains("sponsor_code_expired", true) -> "这张卡密已经过期"
     message.contains("device_limit", true) -> "这张卡密已经达到可激活设备数量"
     message.contains("device_identity_mismatch", true) -> "设备身份没有同步成功，可以在当前页面重新验证，不需要重装应用"
+    message.contains("device_signature_invalid", true) || message.contains("device_key_version_mismatch", true) -> "这台设备的安全身份需要修复。新版会先自动修复；如果仍失败，再在这里重新验证"
+    message.contains("device_recovery_required", true) -> "这台设备需要重新验证共创身份。社区功能和离线打印不受影响，不需要清数据或重装应用"
     message.contains("recovery_review_required", true) -> "这次恢复需要人工确认。社区功能和离线打印不受影响，可以联系维护者处理"
     message.contains("device_operation_conflict", true) || message.contains("device_recovery_conflict", true) -> "设备身份状态需要重新确认，请在当前页面重新验证"
     else -> "激活没成功：$message"

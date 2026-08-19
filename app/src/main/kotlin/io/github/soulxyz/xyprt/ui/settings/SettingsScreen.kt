@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.soulxyz.xyprt.App
 import io.github.soulxyz.xyprt.BuildConfig
+import io.github.soulxyz.xyprt.security.ReleaseContract
 import io.github.soulxyz.xyprt.R
 import io.github.soulxyz.xyprt.ble.BlePermissions
 import io.github.soulxyz.xyprt.ble.PrinterState
@@ -225,7 +226,7 @@ fun SettingsScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("共创计划", style = MaterialTheme.typography.titleSmall)
-                            Text(if (coCreator.active) "已加入" else "小范围开放中", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(if (coCreator.active) "已加入 · 当前安装 ${ReleaseContract.channelLabel}" else "小范围开放中 · 当前安装 ${ReleaseContract.channelLabel}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         TextButton(onClick = onOpenCoCreator) { Text(if (coCreator.active) "查看" else "了解") }
                     }
