@@ -233,7 +233,7 @@ class CoCreatorRepository(
         put("platform", "android")
         put("appVersion", BuildConfig.VERSION_NAME)
         put("appVersionCode", BuildConfig.VERSION_CODE)
-        put("edition", ReleaseContract.channel)
+        put("edition", ReleaseContract.buildEdition)
         put("androidIdHash", identity.androidIdHash)
         put("deviceKeyFingerprint", material.encryptionKeyFingerprint)
         put("devicePublicKey", material.encryptionPublicKeyBase64)

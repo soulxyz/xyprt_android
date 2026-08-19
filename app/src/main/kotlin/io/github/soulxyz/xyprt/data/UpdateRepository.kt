@@ -48,6 +48,7 @@ data class UpdateInfo(
     val serverDownloadMode: ServerDownloadMode = ServerDownloadMode.AUTO,
     val delta: DeltaUpdateInfo? = null,
     val requiresDeviceAuth: Boolean = false,
+    val serverInstallAvailable: Boolean = false,
 )
 
 /**
@@ -81,7 +82,7 @@ class UpdateRepository(
             _state.value = UpdateState.Checking
             val info = runCatching { fetchManaged() }.recoverCatching { fetchGateway() }
             _state.value = info.fold(
-                onSuccess = { latest -> if (latest != null && latest.versionCode > currentVersionCode()) UpdateState.Available(latest) else UpdateState.Current(latest) },
+                onSuccess = { latest -> if (latest != null && (latest.versionCode > currentVersionCode() || latest.serverInstallAvailable)) UpdateState.Available(latest) else UpdateState.Current(latest) },
                 onFailure = { UpdateState.Error(it.message ?: "检查更新失败") },
             )
         }
@@ -96,7 +97,8 @@ class UpdateRepository(
         val body = buildJsonObject {
             put("version", BuildConfig.VERSION_NAME)
             put("versionCode", BuildConfig.VERSION_CODE)
-            put("edition", ReleaseContract.channel)
+            put("buildEdition", ReleaseContract.buildEdition)
+            put("channel", ReleaseContract.channel)
             put("abi", Build.SUPPORTED_ABIS.firstOrNull().orEmpty())
         }
         val root = if (coCreator.state.value.active) {
@@ -126,6 +128,7 @@ class UpdateRepository(
                 serverDownloadMode = parseServerDownloadMode(root.string("downloadMode")),
                 delta = if (updateAvailable) parseManagedDelta(root, api) else null,
                 requiresDeviceAuth = true,
+                serverInstallAvailable = updateAvailable,
             )
         } else parseOpenSourceRelease(release, parseServerDownloadMode(root.string("downloadMode")))
     }
