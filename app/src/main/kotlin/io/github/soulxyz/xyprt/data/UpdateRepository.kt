@@ -49,6 +49,7 @@ data class UpdateInfo(
     val delta: DeltaUpdateInfo? = null,
     val requiresDeviceAuth: Boolean = false,
     val serverInstallAvailable: Boolean = false,
+    val releaseChannelLabel: String = "社区版",
 )
 
 /**
@@ -80,7 +81,14 @@ class UpdateRepository(
         checkedThisProcess = true
         scope.launch {
             _state.value = UpdateState.Checking
-            val info = runCatching { fetchManaged() }.recoverCatching { fetchGateway() }
+            val managed = runCatching { fetchManaged() }
+            val info = managed.recoverCatching { t ->
+                // Never hide a broken Sponsor DeviceAuth chain behind a successful public fallback.
+                // Otherwise a Cocreator-entitled device looks "up to date" while the protected
+                // update request is actually failing. Non-auth/network failures may still fall back.
+                if (!shouldFallbackManagedFailure(coCreator.state.value.active, coCreator.isRecoverableDeviceAuthFailure(t))) throw t
+                fetchGateway()
+            }
             _state.value = info.fold(
                 onSuccess = { latest -> if (latest != null && (latest.versionCode > currentVersionCode() || latest.serverInstallAvailable)) UpdateState.Available(latest) else UpdateState.Current(latest) },
                 onFailure = { UpdateState.Error(it.message ?: "检查更新失败") },
@@ -129,6 +137,7 @@ class UpdateRepository(
                 delta = if (updateAvailable) parseManagedDelta(root, api) else null,
                 requiresDeviceAuth = true,
                 serverInstallAvailable = updateAvailable,
+                releaseChannelLabel = "共创版",
             )
         } else parseOpenSourceRelease(release, parseServerDownloadMode(root.string("downloadMode")))
     }
@@ -147,6 +156,7 @@ class UpdateRepository(
             digestSha256 = latest.string("sha256"), checkedVia = latest.string("checkedVia") ?: "口袋小印更新服务",
             fullSizeBytes = latest.long("size"),
             serverDownloadMode = mode,
+            releaseChannelLabel = "社区版",
         )
     }
 
@@ -160,6 +170,10 @@ class UpdateRepository(
         } finally { c.disconnect() }
     }
 }
+
+
+internal fun shouldFallbackManagedFailure(coCreatorActive: Boolean, recoverableDeviceAuthFailure: Boolean): Boolean =
+    !(coCreatorActive && recoverableDeviceAuthFailure)
 
 internal fun parseGatewayUpdate(raw: String, json: Json): UpdateInfo? {
     val root = json.parseToJsonElement(raw).jsonObject
@@ -178,6 +192,7 @@ internal fun parseGatewayUpdate(raw: String, json: Json): UpdateInfo? {
         digestSha256 = latest.localString("sha256"), checkedVia = latest.localString("checkedVia") ?: "口袋小印更新服务",
         fullSizeBytes = latest.localString("size")?.toLongOrNull(),
         serverDownloadMode = parseServerDownloadMode(latest.localString("downloadMode")),
+        releaseChannelLabel = "社区版",
     )
 }
 

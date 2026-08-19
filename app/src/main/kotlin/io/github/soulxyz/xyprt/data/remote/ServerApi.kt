@@ -76,6 +76,7 @@ class ServerApi(
         connection.setRequestProperty("X-Device-Time", timestamp.toString())
         connection.setRequestProperty("X-Device-Nonce", nonce)
         connection.setRequestProperty("X-Device-Key-Version", version.toString())
+        connection.setRequestProperty("X-Device-Auth-Fingerprint", identity.authPublicKeyFingerprint)
         connection.setRequestProperty("X-Device-Signature", signature)
         connection.setRequestProperty("X-App-Channel", ReleaseContract.channel)
         connection.setRequestProperty("X-Build-Contract", ReleaseContract.contractId)

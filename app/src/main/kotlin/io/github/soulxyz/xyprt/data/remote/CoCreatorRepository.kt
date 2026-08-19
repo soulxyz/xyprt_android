@@ -50,7 +50,20 @@ class CoCreatorRepository(
         })
         val challenge = init["challenge"]?.jsonObject ?: error("设备认证初始化失败")
         if (challenge.boolean("alreadyBound") == true) {
-            api.signedPost("/v1/device/register.php", deviceBody(identity.currentKeyMaterial()))
+            try {
+                api.signedPost("/v1/device/register.php", deviceBody(identity.currentKeyMaterial()))
+            } catch (t: Throwable) {
+                if (!isRecoverableDeviceAuthFailure(t)) throw t
+                try {
+                    repairDeviceAuth()
+                    api.signedPost("/v1/device/register.php", deviceBody(identity.currentKeyMaterial()))
+                } catch (repairFailure: Throwable) {
+                    if (isRecoverableDeviceAuthFailure(repairFailure)) {
+                        _state.value = _state.value.copy(recoveryRequired = true, lastError = repairFailure.message)
+                    }
+                    throw repairFailure
+                }
+            }
             return
         }
 
@@ -116,6 +129,50 @@ class CoCreatorRepository(
                 _state.value = _state.value.copy(recoveryRequired = true, lastError = t.message)
             }
         }
+    }
+
+    /**
+     * Fast repair for a device whose EC request-signing key drifted while the original RSA
+     * Keystore identity is still present. The server challenge is encrypted to that old RSA key,
+     * so installationId alone cannot authorize the repair. If RSA is also gone we fall back to the
+     * explicit sponsor-code recovery flow below.
+     */
+    private suspend fun repairDeviceAuth() {
+        val existing = identity.pendingKeyOperation
+        if (existing != null) {
+            when (reconcilePendingKeyOperation()) {
+                PendingReconcile.COMMITTED -> return
+                PendingReconcile.NOT_APPLIED, PendingReconcile.CONFLICT -> identity.discardPendingKeyOperation(existing)
+                PendingReconcile.NONE -> Unit
+            }
+        }
+        val init = api.postJson("/v1/device/challenge.php", buildJsonObject {
+            put("installationId", identity.installationId)
+            put("purpose", "repair")
+        })
+        val challenge = init["challenge"]?.jsonObject ?: error("设备身份修复初始化失败")
+        val version = challenge.int("keyVersion") ?: error("设备身份修复版本为空")
+        require(version > identity.keyVersion) { "设备身份修复版本无效" }
+        val wrapped = challenge.string("wrappedChallenge") ?: error("设备身份修复挑战为空")
+        val challengeText = identity.unwrapRegistrationChallenge(wrapped, identity.keyVersion)
+        val challengeId = challenge.string("challengeId") ?: error("设备身份修复挑战编号为空")
+        val (pending, material) = identity.preparePendingKeyOperation("rotation", version)
+        val signature = identity.signChallenge(
+            purpose = "repair",
+            challengeId = challengeId,
+            challenge = challengeText,
+            version = version,
+            encryptionKeyFingerprint = material.encryptionKeyFingerprint,
+            authKeyFingerprint = material.authKeyFingerprint,
+        )
+        api.postJson("/v1/device/repair.php", buildJsonObject {
+            deviceFields(this, material)
+            put("operationId", pending.operationId)
+            put("challengeId", challengeId)
+            put("challengeSignature", signature)
+        })
+        identity.commitPendingKeyOperation(pending)
+        _state.value = _state.value.copy(recoveryRequired = false, lastError = null)
     }
 
     /**
@@ -242,7 +299,7 @@ class CoCreatorRepository(
         put("authPublicKey", material.authPublicKeyBase64)
     }
 
-    private fun isRecoverableDeviceAuthFailure(t: Throwable): Boolean {
+    fun isRecoverableDeviceAuthFailure(t: Throwable): Boolean {
         val msg = t.message.orEmpty()
         return listOf(
             "device_signature_invalid",
@@ -255,6 +312,8 @@ class CoCreatorRepository(
             "device auth key unavailable",
             "device_operation_conflict",
             "device_rotation_conflict",
+            "device_repair_conflict",
+            "invalid_repair_version",
             "device_recovery_conflict",
             "recovery_review_required",
         ).any { msg.contains(it, ignoreCase = true) }
