@@ -63,6 +63,7 @@ data class RemoteAsset(
     val locked: Boolean,
     val reason: String? = null,
     val file: RemoteAssetFile? = null,
+    val preview: RemoteAssetFile? = null,
     val dependencies: List<RemoteAssetDependency> = emptyList(),
     val metadata: JsonObject? = null,
 )
@@ -227,6 +228,18 @@ class RemoteAssetRepository(
     /** Convenience retained for fonts/plain assets. Protected resources must use [ensureCached]. */
     suspend fun ensure(asset: RemoteAsset): Result<File> = ensureCached(asset).mapCatching { handle ->
         handle.plainFile ?: error("受保护资源不会以明文文件形式落盘；请使用 openInputStream()")
+    }
+
+    /** Downloads and caches a plaintext preview image; previews stay visible even for locked assets. */
+    suspend fun previewFile(asset: RemoteAsset): Result<File> = runCatching {
+        val remote = asset.preview ?: error("这个素材没有预览图")
+        require(remote.encryptionMode == "none") { "预览图必须为明文资源" }
+        require(remote.sha256.isSha256() && remote.blobSha256.isSha256()) { "预览图缺少有效 SHA-256" }
+        cachedObject(remote.sha256)?.let { return@runCatching it }
+        val part = downloadBlob(asset, remote, authenticateDevice = coCreator.state.value.active)
+        require(remote.blobSha256.equals(remote.sha256, ignoreCase = true)) { "预览图的内容哈希不一致" }
+        require(remote.blobSize == remote.size) { "预览图的逻辑大小不一致" }
+        promoteToCache(part, remote.sha256)
     }
 
     fun cached(asset: RemoteAsset): File? {
@@ -490,6 +503,7 @@ class RemoteAssetRepository(
             locked = o.boolean("locked") ?: true,
             reason = o.string("reason"),
             file = o["file"]?.let { parseFile(it.jsonObject) },
+            preview = o["preview"]?.let { runCatching { parseFile(it.jsonObject) }.getOrNull() },
             dependencies = (o["dependencies"]?.jsonArray ?: JsonArray(emptyList())).mapNotNull { e ->
                 val d = e.jsonObject
                 runCatching {
