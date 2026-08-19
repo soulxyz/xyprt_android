@@ -142,12 +142,38 @@ class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json
 
     suspend fun getAll(): List<PrintHistoryEntry> = dao.observeAll().map { list -> list.map { it.toDomain() } }.first()
 
-    suspend fun importEntries(entries: List<PrintHistoryEntry>, replace: Boolean) {
-        if (replace) dao.clear()
-        entries.sortedBy { it.printedAt }.forEach { e ->
+    suspend fun importEntries(entries: List<PrintHistoryEntry>, replace: Boolean): HistoryImportResult {
+        if (replace) {
+            dao.clear()
+            entries.sortedBy { it.printedAt }.forEach { e ->
+                dao.insert(
+                    PrintHistoryEntity(
+                        id = e.id,
+                        templateId = e.templateId,
+                        templateName = e.templateName,
+                        tapeWidthMm = e.spec.tapeWidthMm,
+                        lengthMm = e.spec.lengthMm,
+                        media = e.spec.media.name,
+                        autoLength = e.spec.autoLength,
+                        elementsJson = json.encodeToString(e.elements),
+                        copies = e.copies,
+                        printedAt = e.printedAt,
+                        printedLengthMm = e.printedLengthMm,
+                        rasterBase64 = e.rasterBase64,
+                        rasterHeight = e.rasterHeight,
+                        sourceType = e.sourceType,
+                        sourceJson = e.sourceJson,
+                    )
+                )
+            }
+            dao.prune()
+            return HistoryImportResult(inserted = entries, skipped = emptyList())
+        }
+        val (fresh, skipped) = partitionDuplicateHistory(entries, getAll())
+        fresh.forEach { e ->
             dao.insert(
                 PrintHistoryEntity(
-                    id = if (replace) e.id else 0L,
+                    id = 0L,
                     templateId = e.templateId,
                     templateName = e.templateName,
                     tapeWidthMm = e.spec.tapeWidthMm,
@@ -166,6 +192,7 @@ class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json
             )
         }
         dao.prune()
+        return HistoryImportResult(inserted = fresh, skipped = skipped)
     }
 
     suspend fun delete(id: Long) = dao.delete(id)
@@ -232,3 +259,40 @@ class HistoryRepository(private val dao: PrintHistoryDao, private val json: Json
         }
     }
 }
+
+data class HistoryImportResult(
+    val inserted: List<PrintHistoryEntry>,
+    val skipped: List<PrintHistoryEntry>,
+)
+
+/**
+ * Splits a merge-import batch into fresh entries and duplicates. An entry is a duplicate when its
+ * original id is already present (a previous replace-import preserved ids) or when the same print
+ * action is already stored under a new local id (matched by time/name/copies/spec). Duplicate rows
+ * inside the incoming batch itself are also collapsed.
+ */
+internal fun partitionDuplicateHistory(
+    incoming: List<PrintHistoryEntry>,
+    existing: List<PrintHistoryEntry>,
+): Pair<List<PrintHistoryEntry>, List<PrintHistoryEntry>> {
+    val seenIds = existing.mapNotNull { it.id }.toHashSet()
+    val seenKeys = existing.map { historyTimeKey(it) }.toHashSet()
+    val fresh = mutableListOf<PrintHistoryEntry>()
+    val skipped = mutableListOf<PrintHistoryEntry>()
+    incoming.sortedBy { it.printedAt }.forEach { e ->
+        val key = historyTimeKey(e)
+        val dupById = e.id != 0L && e.id in seenIds
+        val dupByTime = key in seenKeys
+        if (dupById || dupByTime) {
+            skipped += e
+        } else {
+            fresh += e
+            if (e.id != 0L) seenIds += e.id
+            seenKeys += key
+        }
+    }
+    return fresh to skipped
+}
+
+private fun historyTimeKey(e: PrintHistoryEntry): String =
+    "${e.printedAt}|${e.templateName}|${e.copies}|${e.spec.lengthMm}|${e.spec.tapeWidthMm}|${e.spec.media}"

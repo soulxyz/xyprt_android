@@ -132,9 +132,12 @@ class BackupRepository(
             entries["documents/${meta.fileName}"]?.let { documents.addImported(meta, it) }
         }
         val hydratedHistory = backup.history.map { hydrateHistory(it, entries) }
-        if (hydratedHistory.isNotEmpty() || replace) history.importEntries(hydratedHistory, replace)
+        val importResult = if (hydratedHistory.isNotEmpty() || replace) history.importEntries(hydratedHistory, replace)
+        else HistoryImportResult(inserted = emptyList(), skipped = emptyList())
         if (replace) {
             backup.printStats?.let(printStats::replace) ?: printStats.replaceFromHistory(hydratedHistory)
+        } else {
+            mergeImportedStats(backup.printStats, importResult)
         }
         applySettings(backup.settings)
     }
@@ -203,6 +206,18 @@ class BackupRepository(
             templates.insert(tpl)
         }
         applySettings(backup.settings)
+    }
+
+    private fun mergeImportedStats(snapshot: PrintStatsSnapshot?, result: HistoryImportResult) {
+        if (snapshot != null) {
+            // All incoming history was already present: the snapshot adds nothing new.
+            if (result.inserted.isEmpty() && result.skipped.isNotEmpty()) return
+            val incoming = if (result.skipped.isEmpty()) snapshot
+            else subtractStats(snapshot, recoverStatsFromEntries(result.skipped))
+            printStats.merge(incoming)
+        } else if (result.inserted.isNotEmpty()) {
+            printStats.mergeHistory(result.inserted)
+        }
     }
 
     private suspend fun applySettings(s: BackupSettings) {

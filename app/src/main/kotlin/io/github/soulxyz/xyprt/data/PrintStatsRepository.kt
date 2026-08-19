@@ -70,11 +70,23 @@ class PrintStatsRepository(
         ))
     }
 
+    /** Additive import: fold an imported backup snapshot into current lifetime stats. */
+    @Synchronized
+    fun merge(snapshot: PrintStatsSnapshot) {
+        persist(mergeStats(_stats.value, snapshot))
+    }
+
     /** Used when importing an older backup that has history but predates lifetime stats. */
     @Synchronized
     fun replaceFromHistory(entries: List<PrintHistoryEntry>) {
-        val recovered = recoverFromEntries(entries)
-        persist(recovered)
+        persist(recoverStatsFromEntries(entries))
+    }
+
+    /** Additive import fallback: fold what the imported history can prove into current stats. */
+    @Synchronized
+    fun mergeHistory(entries: List<PrintHistoryEntry>) {
+        if (entries.isEmpty()) return
+        merge(recoverStatsFromEntries(entries))
     }
 
     private fun loadOrMigrate(): PrintStatsSnapshot {
@@ -112,25 +124,6 @@ class PrintStatsRepository(
         _stats.value = value
     }
 
-    private fun recoverFromEntries(entries: List<PrintHistoryEntry>): PrintStatsSnapshot {
-        var copies = 0L
-        var length = 0.0
-        var first: Long? = null
-        entries.forEach { entry ->
-            val c = entry.copies.coerceAtLeast(1)
-            copies += c
-            length += entry.printedLengthMm ?: (entry.spec.lengthMm.toDouble() * c)
-            if (entry.printedAt > 0L) first = first?.let { minOf(it, entry.printedAt) } ?: entry.printedAt
-        }
-        return PrintStatsSnapshot(
-            printCount = entries.size.toLong(),
-            copyCount = copies,
-            printedLengthMm = length.roundToLong(),
-            firstPrintedAt = first,
-            mileageComplete = entries.size < 50,
-        )
-    }
-
     companion object {
         private const val PREFS = "xyprt_print_stats_v1"
         private const val KEY_INITIALIZED = "initialized"
@@ -145,6 +138,46 @@ class PrintStatsRepository(
         private const val LEGACY_HISTORY_SEQ_KEY = "history_seq"
     }
 }
+
+internal fun recoverStatsFromEntries(entries: List<PrintHistoryEntry>): PrintStatsSnapshot {
+    var copies = 0L
+    var length = 0.0
+    var first: Long? = null
+    entries.forEach { entry ->
+        val c = entry.copies.coerceAtLeast(1)
+        copies += c
+        length += entry.printedLengthMm ?: (entry.spec.lengthMm.toDouble() * c)
+        if (entry.printedAt > 0L) first = first?.let { minOf(it, entry.printedAt) } ?: entry.printedAt
+    }
+    return PrintStatsSnapshot(
+        printCount = entries.size.toLong(),
+        copyCount = copies,
+        printedLengthMm = length.roundToLong(),
+        firstPrintedAt = first,
+        mileageComplete = entries.size < 50,
+    )
+}
+
+internal fun mergeStats(current: PrintStatsSnapshot, incoming: PrintStatsSnapshot): PrintStatsSnapshot = PrintStatsSnapshot(
+    printCount = current.printCount + incoming.printCount.coerceAtLeast(0),
+    copyCount = current.copyCount + incoming.copyCount.coerceAtLeast(0),
+    printedLengthMm = current.printedLengthMm + incoming.printedLengthMm.coerceAtLeast(0),
+    firstPrintedAt = when {
+        current.firstPrintedAt == null -> incoming.firstPrintedAt
+        incoming.firstPrintedAt == null -> current.firstPrintedAt
+        else -> minOf(current.firstPrintedAt!!, incoming.firstPrintedAt!!)
+    },
+    mileageComplete = current.mileageComplete && incoming.mileageComplete,
+)
+
+/** Removes the contribution of duplicate history rows from an imported snapshot. */
+internal fun subtractStats(base: PrintStatsSnapshot, sub: PrintStatsSnapshot): PrintStatsSnapshot = PrintStatsSnapshot(
+    printCount = (base.printCount - sub.printCount.coerceAtLeast(0)).coerceAtLeast(0),
+    copyCount = (base.copyCount - sub.copyCount.coerceAtLeast(0)).coerceAtLeast(0),
+    printedLengthMm = (base.printedLengthMm - sub.printedLengthMm.coerceAtLeast(0)).coerceAtLeast(0),
+    firstPrintedAt = base.firstPrintedAt,
+    mileageComplete = base.mileageComplete,
+)
 
 internal fun recoverLegacyPrintStats(rawHistory: String?, historySeq: Long, json: Json): PrintStatsSnapshot {
     if (rawHistory.isNullOrBlank()) {
