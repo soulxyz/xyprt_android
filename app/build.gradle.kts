@@ -47,7 +47,7 @@ android {
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
         buildConfigField("String", "BUILD_CONTRACT_ID", "\"$buildContractId\"")
-        val requestedAbis = providers.gradleProperty("XYPRT_ABIS").orElse("arm64-v8a,armeabi-v7a").get()
+        val requestedAbis = providers.gradleProperty("XYPRT_ABIS").orElse("arm64-v8a").get()
             .split(',').map { it.trim() }.filter { it.isNotEmpty() }
         ndk { abiFilters += requestedAbis }
     }
