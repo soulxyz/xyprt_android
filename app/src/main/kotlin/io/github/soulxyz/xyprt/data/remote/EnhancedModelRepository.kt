@@ -136,7 +136,13 @@ class EnhancedModelRepository(
         return runCatching { decryptPackage(pkg, identity.unwrapModelKey(wrapped)) }.getOrNull()
     }
 
-    fun bestInstalled(): EnhancedCapability? = _catalog.value.items.firstOrNull { it.installed && !it.locked && it.engine == "quad_heatmap_mask_v1" }
+    fun bestInstalled(): EnhancedCapability? = bestInstalledForEngine("quad_heatmap_mask_v1")
+
+    fun bestInstalledForEngine(engine: String): EnhancedCapability? =
+        _catalog.value.items
+            .asSequence()
+            .filter { it.installed && !it.locked && it.engine == engine }
+            .maxWithOrNull(compareBy<EnhancedCapability> { it.version }.thenBy { it.publishedAt ?: 0L })
 
     private fun decryptPackage(pkg: ByteArray, key: ByteArray): ByteArray {
         try {

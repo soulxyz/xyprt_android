@@ -17,6 +17,12 @@ data class EnhancedScanProposal(
     val confidence: Float,
 )
 
+data class EnhancedRuntimeProbeResult(
+    val ready: Boolean,
+    val title: String,
+    val detail: String,
+)
+
 /** Public fallback: DocumentScanner still owns OpenCV detection/refinement and manual adjustment. */
 object BasicEnhancedScanEngine : EnhancedScanEngine {
     override suspend fun detect(bitmap: Bitmap): EnhancedScanProposal? = null
@@ -35,4 +41,7 @@ private class SelectableEnhancedScanEngine(
 object EnhancedScanEngineFactory {
     fun create(models: EnhancedModelRepository, settings: SettingsRepository): EnhancedScanEngine =
         SelectableEnhancedScanEngine(EnhancedScanEngineProvider.create(models), settings)
+
+    suspend fun probeRuntime(models: EnhancedModelRepository): EnhancedRuntimeProbeResult =
+        EnhancedScanEngineProvider.probeRuntime(models)
 }

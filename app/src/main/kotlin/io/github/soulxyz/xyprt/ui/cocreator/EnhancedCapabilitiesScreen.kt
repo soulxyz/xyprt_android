@@ -45,6 +45,8 @@ import androidx.compose.ui.unit.dp
 import io.github.soulxyz.xyprt.App
 import io.github.soulxyz.xyprt.BuildConfig
 import io.github.soulxyz.xyprt.data.remote.EnhancedCapability
+import io.github.soulxyz.xyprt.scanner.EnhancedRuntimeProbeResult
+import io.github.soulxyz.xyprt.scanner.EnhancedScanEngineFactory
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.launch
@@ -60,6 +62,8 @@ fun EnhancedCapabilitiesScreen(onBack: () -> Unit) {
     val coCreator by coCreatorRepo.state.collectAsState()
     val scope = rememberCoroutineScope()
     var busyId by remember { mutableStateOf<String?>(null) }
+    var probing by remember { mutableStateOf(false) }
+    var probeResult by remember { mutableStateOf<EnhancedRuntimeProbeResult?>(null) }
     val runtimeAvailable = BuildConfig.ENHANCED_SCANNER_AVAILABLE
 
     LaunchedEffect(runtimeAvailable) {
@@ -116,6 +120,31 @@ fun EnhancedCapabilitiesScreen(onBack: () -> Unit) {
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.primary,
                             )
+                        }
+                    }
+                }
+            }
+
+            if (runtimeAvailable) {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Text("增强能力自检", fontWeight = FontWeight.SemiBold)
+                            Text("检查私有运行时；若已下载 LiteRT 测试模型，也会验证解密、Lease 与模型加载。", style = MaterialTheme.typography.bodySmall)
+                            probeResult?.let {
+                                Text(it.title, color = if (it.ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelLarge)
+                                Text(it.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    scope.launch {
+                                        probing = true
+                                        probeResult = EnhancedScanEngineFactory.probeRuntime(repo)
+                                        probing = false
+                                    }
+                                },
+                                enabled = !probing,
+                            ) { Text(if (probing) "检查中…" else "检查增强能力") }
                         }
                     }
                 }

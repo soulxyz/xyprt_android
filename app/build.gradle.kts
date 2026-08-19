@@ -153,6 +153,10 @@ dependencies {
         val localOrt = rootProject.file(".local-build/aar/onnxruntime-android-1.24.1.aar")
         if (localOrt.exists()) add("cocreatorImplementation", files(localOrt))
         else add("cocreatorImplementation", "com.microsoft.onnxruntime:onnxruntime-android:1.24.1")
+
+        // PRIVATE-only LiteRT runtime. The public OpenSource graph never resolves this file.
+        val localLiteRt = rootProject.file("private-features/scan-pro/runtime/litert-2.1.5-java-compat.aar")
+        if (localLiteRt.exists()) add("cocreatorImplementation", files(localLiteRt))
     }
 
     testImplementation("junit:junit:4.13.2")
