@@ -260,7 +260,7 @@
     <string name="length_fixed">固定长度</string>
     <string name="length_auto_hint">自动长度会去除页尾白边。</string>
     <string name="length_fixed_hint">20–500 mm</string>
-    <string name="settings_simple_hint">连接打印机后即可使用。</string>
+    <string name="settings_simple_hint"></string>
     <string name="quick_print_title">快速打印</string>
     <string name="quick_text_hint">输入文字，可多行</string>
     <string name="quick_choose_image">选择图片</string>
