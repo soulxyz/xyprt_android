@@ -1183,13 +1183,14 @@ fun QuickPrintScreen(
         )
     }
 
-    if (cameraCaptureActive) {
-        CameraCaptureScreen(
-            onExit = { leaveScreen() },
-            onCaptured = { uri -> applyCapturedPhoto(uri) },
-            onPickFromGallery = { scanImagePicker.launch(arrayOf("image/*")) },
-        )
-    }
+    // TODO: 暂时屏蔽内置相机预览，下版本修复闪退问题
+    // if (cameraCaptureActive) {
+    //     CameraCaptureScreen(
+    //         onExit = { leaveScreen() },
+    //         onCaptured = { uri -> applyCapturedPhoto(uri) },
+    //         onPickFromGallery = { scanImagePicker.launch(arrayOf("image/*")) },
+    //     )
+    // }
 }
 
 @Composable
