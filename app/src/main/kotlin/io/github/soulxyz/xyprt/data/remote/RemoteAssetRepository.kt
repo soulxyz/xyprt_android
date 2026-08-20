@@ -14,6 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -118,6 +120,7 @@ class RemoteAssetRepository(
     private val scope: CoroutineScope,
 ) {
     private val prefs = context.getSharedPreferences("xyprt_remote_assets", Context.MODE_PRIVATE)
+    private val previewMutex = Mutex()
     // Downloaded commercial assets and device-bound envelopes must never be restored by Auto Backup.
     private val root = File(context.noBackupFilesDir, "asset-cache-v1").apply { mkdirs() }
     private val objects = File(root, "objects").apply { mkdirs() }
@@ -236,10 +239,15 @@ class RemoteAssetRepository(
         require(remote.encryptionMode == "none") { "预览图必须为明文资源" }
         require(remote.sha256.isSha256() && remote.blobSha256.isSha256()) { "预览图缺少有效 SHA-256" }
         cachedObject(remote.sha256)?.let { return@runCatching it }
-        val part = downloadBlob(asset, remote, authenticateDevice = coCreator.state.value.active)
-        require(remote.blobSha256.equals(remote.sha256, ignoreCase = true)) { "预览图的内容哈希不一致" }
-        require(remote.blobSize == remote.size) { "预览图的逻辑大小不一致" }
-        promoteToCache(part, remote.sha256)
+        // One preview at a time: a parallel burst of preview tickets/redeems needlessly
+        // stresses the server's SQLite write path and can trip rate-limit bookkeeping.
+        previewMutex.withLock {
+            cachedObject(remote.sha256)?.let { return@runCatching it }
+            val part = downloadBlob(asset, remote, authenticateDevice = coCreator.state.value.active)
+            require(remote.blobSha256.equals(remote.sha256, ignoreCase = true)) { "预览图的内容哈希不一致" }
+            require(remote.blobSize == remote.size) { "预览图的逻辑大小不一致" }
+            promoteToCache(part, remote.sha256)
+        }
     }
 
     fun cached(asset: RemoteAsset): File? {
