@@ -97,6 +97,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Base64
+import android.util.Log
 import io.github.soulxyz.xyprt.App
 import io.github.soulxyz.xyprt.R
 import io.github.soulxyz.xyprt.data.remote.RemoteAsset
@@ -1354,24 +1355,55 @@ private fun OutlineOptionsRow(
 @Composable
 private fun ImageProperties(element: ImageElement, onUpdate: (LabelElement) -> Unit) {
     var ditherThumbs by remember(element.pngBase64) { mutableStateOf<Map<DitherMode, MonoImage?>>(emptyMap()) }
+    var ditherThumbErrors by remember(element.pngBase64) { mutableStateOf<Map<DitherMode, String?>>(emptyMap()) }
     LaunchedEffect(element.pngBase64) {
-        ditherThumbs = withContext(Dispatchers.IO) {
+        val results = withContext(Dispatchers.IO) {
             val bytes = runCatching { Base64.decode(element.pngBase64, Base64.NO_WRAP) }.getOrNull()
-                ?: return@withContext emptyMap()
-            val full = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@withContext emptyMap()
-            val small = if (full.width > 160) {
-                Bitmap.createScaledBitmap(full, 160, (full.height * 160 / full.width).coerceAtLeast(1), true)
+                ?: return@withContext null
+            val full = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@withContext null
+            val headDots = io.github.soulxyz.xyprt.printer.Protocol.HEAD_DOTS
+            val cropped = if (full.height.toFloat() / full.width > 3f) {
+                val targetHeight = (full.width * 3f).toInt()
+                val top = (full.height - targetHeight) / 2
+                Bitmap.createBitmap(full, 0, top, full.width, targetHeight)
             } else full
-            if (small !== full) full.recycle()
+            val small = if (cropped.width != headDots) {
+                Bitmap.createScaledBitmap(
+                    cropped,
+                    headDots,
+                    (cropped.height.toLong() * headDots / cropped.width).toInt().coerceAtLeast(1),
+                    true,
+                )
+            } else cropped
             try {
-                DitherMode.entries.associateWith { mode ->
-                    runCatching {
+                val monos = mutableMapOf<DitherMode, MonoImage?>()
+                val errors = mutableMapOf<DitherMode, String?>()
+                DitherMode.entries.forEach { mode ->
+                    val r = runCatching {
                         QuickPrintRenderer.toMono(small, QuickImageAdjustments(mode = mode, threshold = element.threshold, contrast = element.contrast))
-                    }.getOrNull()
+                    }
+                    if (r.isSuccess) {
+                        monos[mode] = r.getOrNull()
+                        errors[mode] = null
+                    } else {
+                        monos[mode] = null
+                        errors[mode] = r.exceptionOrNull()?.let { it::class.simpleName + ": " + (it.message ?: "") }
+                        Log.w("EffectThumb", "toMono failed for mode=$mode", r.exceptionOrNull())
+                    }
                 }
+                Pair(monos, errors)
             } finally {
                 small.recycle()
+                if (cropped !== full) cropped.recycle()
+                if (small !== full) full.recycle()
             }
+        }
+        if (results != null) {
+            ditherThumbs = results.first
+            ditherThumbErrors = results.second
+        } else {
+            ditherThumbs = emptyMap()
+            ditherThumbErrors = emptyMap()
         }
     }
     Spacer(Modifier.height(6.dp))
@@ -1379,7 +1411,12 @@ private fun ImageProperties(element: ImageElement, onUpdate: (LabelElement) -> U
     EffectThumbRow(
         selectedId = element.dither.name,
         thumbs = DitherMode.entries.map { mode ->
-            EffectThumb(mode.name, ditherLabel(mode), ditherThumbs[mode])
+            EffectThumb(
+                id = mode.name,
+                label = ditherLabel(mode),
+                mono = ditherThumbs[mode],
+                error = ditherThumbErrors[mode],
+            )
         },
         onSelect = { id -> DitherMode.entries.firstOrNull { it.name == id }?.let { onUpdate(element.copy(dither = it)) } },
     )
@@ -1389,7 +1426,6 @@ private fun ImageProperties(element: ImageElement, onUpdate: (LabelElement) -> U
         threshold = element.threshold,
         contrast = element.contrast,
         invert = element.invert,
-        onMode = { onUpdate(element.copy(dither = it)) },
         onThreshold = { onUpdate(element.copy(threshold = it)) },
         onContrast = { onUpdate(element.copy(contrast = it)) },
         onInvert = { onUpdate(element.copy(invert = it)) },
@@ -1611,12 +1647,24 @@ private fun RemoteFontLibraryDialog(
                     .heightIn(max = 460.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
-                Text(
-                    "字体只在你选择时下载；已经下载的字体离线也能继续使用。部分字体暂时处于共创计划内测阶段。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
+                Row(modifier = Modifier.padding(bottom = 6.dp)) {
+                    Text(
+                        "字体只在你选择时下载；已经下载的字体离线也能继续使用。部分字体暂时处于",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "共创计划",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { onOpenCoCreator() },
+                    )
+                    Text(
+                        "内测阶段。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 if (remoteFonts.isEmpty()) {
                     Text(
                         if (remoteFontsRefreshing) "正在同步字体目录…" else "暂时没有可用在线字体",
@@ -1630,7 +1678,6 @@ private fun RemoteFontLibraryDialog(
                             active = element.fontAssetId == font.slug,
                             state = remoteFontDownloads[font.id],
                             onUse = { onUseRemoteFont(font) },
-                            onOpenCoCreator = onOpenCoCreator,
                         )
                         if (index != remoteFonts.lastIndex) HorizontalDivider()
                     }
@@ -1652,7 +1699,6 @@ private fun RemoteFontCard(
     active: Boolean,
     state: RemoteFontDownloadState?,
     onUse: () -> Unit,
-    onOpenCoCreator: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val container = remember(context) { (context.applicationContext as App).container }
@@ -1688,12 +1734,22 @@ private fun RemoteFontCard(
                     font.preview != null && !previewReady -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     installed -> {
                         val face = FontRegistry.remote(font.slug)
-                        Text(
-                            "口袋小印 · 字体预览",
-                            fontSize = 16.sp,
-                            fontFamily = face?.let { androidx.compose.ui.text.font.FontFamily(it) },
-                            maxLines = 1,
-                        )
+                        if (face == null) {
+                            // 字体文件已存在但加载失败（损坏）
+                            Text(
+                                "字体文件损坏",
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.error,
+                                maxLines = 1,
+                            )
+                        } else {
+                            Text(
+                                "口袋小印 · 字体预览",
+                                fontSize = 16.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily(face),
+                                maxLines = 1,
+                            )
+                        }
                     }
                     else -> Text(
                         "口袋小印 · 字体预览",
@@ -1716,27 +1772,17 @@ private fun RemoteFontCard(
                 Text(
                     listOfNotNull(
                         sizeText.takeIf { it.isNotEmpty() },
-                        when {
-                            active -> "使用中"
-                            installed -> "已下载"
-                            font.locked -> remoteFontLockReason(font.reason)
-                            else -> null
-                        },
+                when {
+                    active -> "使用中"
+                    installed -> "已下载"
+                    else -> null
+                },
                     ).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (state?.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                                     state?.error?.let {
                                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                                    }
-                                    if (font.locked && font.reason == "sponsor_required") {
-                                        TextButton(
-                                            onClick = onOpenCoCreator,
-                                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
-                                            modifier = Modifier.height(28.dp),
-                                        ) {
-                                            Text("共创计划", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                                        }
                                     }
             }
             Button(
@@ -1748,20 +1794,43 @@ private fun RemoteFontCard(
                     val p = state.progress
                     if (p != null) {
                         val animP by animateFloatAsState(p, label = "fontDl")
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.width(52.dp).height(20.dp)) {
-                            LinearProgressIndicator(
-                                progress = { animP },
-                                modifier = Modifier.fillMaxWidth().height(20.dp).clip(RoundedCornerShape(10.dp)),
-                                trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.width(52.dp).height(20.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(20.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                    ),
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(animP.coerceIn(0f, 1f))
+                                    .height(20.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.primary),
                             )
                             Text(
                                 "${(animP * 100).toInt()}%",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontSize = 10.sp,
+                                color = if (animP < 0.5f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimary,
                             )
                         }
                     } else {
-                        LinearProgressIndicator(modifier = Modifier.width(40.dp).height(2.dp))
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.width(40.dp).height(20.dp),
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        }
                     }
                 } else Text(if (installed) "使用" else "下载")
             }

@@ -301,7 +301,7 @@ fun RasterAdjustmentTabs(
     threshold: Int,
     contrast: Int,
     invert: Boolean,
-    onMode: (DitherMode) -> Unit,
+    onMode: ((DitherMode) -> Unit)? = null,
     onThreshold: (Int) -> Unit,
     onContrast: (Int) -> Unit,
     onInvert: (Boolean) -> Unit,
@@ -344,7 +344,9 @@ fun RasterAdjustmentTabs(
         }
         when (safeTab) {
             RasterAdjustmentTab.EFFECT -> {
-                RasterModeSelector(mode = mode, onMode = onMode)
+                if (onMode != null) {
+                    RasterModeSelector(mode = mode, onMode = onMode)
+                }
                 when (mode) {
                     DitherMode.OUTLINE -> {}
                     DitherMode.THRESHOLD -> CompactSliderLine(

@@ -35,6 +35,7 @@ data class EffectThumb(
     val id: String,
     val label: String,
     val mono: MonoImage?,
+    val error: String? = null,
 )
 
 /**
@@ -78,6 +79,20 @@ fun EffectThumbRow(
                             contentScale = ContentScale.Fit,
                             filterQuality = FilterQuality.None,
                         )
+                    } else if (thumb.error != null) {
+                        Box(
+                            modifier = Modifier
+                                .width(72.dp)
+                                .height(56.dp)
+                                .background(MaterialTheme.colorScheme.errorContainer),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "⚠",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        }
                     } else {
                         Box(
                             modifier = Modifier
