@@ -204,4 +204,17 @@ class EnhancedModelRepository(
     private fun safeId(id: String) = id.replace(Regex("[^A-Za-z0-9._-]"), "_")
     private fun sha256(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
     private fun java.io.FileOutputStream.fdSync() = runCatching { fd.sync() }.getOrNull()
+
+    /** 清理所有已下载的增强模型 */
+    fun clearAllModels() {
+        root.listFiles()?.filter { it.isFile && it.extension == "xymodel" }?.forEach { it.delete() }
+        val ids = prefs.getStringSet("installed_ids", emptySet()).orEmpty()
+        val editor = prefs.edit()
+        ids.forEach { id ->
+            editor.remove("version:$id").remove("sha:$id").remove("lease:$id").remove("lease_exp:$id")
+                .remove("name:$id").remove("description:$id").remove("engine:$id").remove("release:$id").remove("published:$id").remove("size:$id")
+        }
+        editor.putStringSet("installed_ids", emptySet()).apply()
+        _catalog.value = _catalog.value.copy(items = _catalog.value.items.map(::withInstalled))
+    }
 }

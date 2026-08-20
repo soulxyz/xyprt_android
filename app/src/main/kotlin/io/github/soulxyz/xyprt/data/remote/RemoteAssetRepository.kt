@@ -596,4 +596,27 @@ class RemoteAssetRepository(
 
     private fun String.isSha256() = matches(Regex("[0-9a-fA-F]{64}"))
     private fun urlEncode(s: String) = java.net.URLEncoder.encode(s, Charsets.UTF_8.name())
+
+    /** 当前注册的字体数量。委托给 FontRegistry，因为它已经跟踪了所有文件 */
+    fun countCachedFonts(): Int = FontRegistry.remoteFontCount()
+    /** 当前注册的字体占用字节数 */
+    fun cachedFontsBytes(): Long = FontRegistry.remoteFontFiles().sumOf { if (it.isFile) it.length() else 0L }
+
+    /** 清理所有已下载的字体。委托给 FontRegistry，只删它跟踪的文件 */
+    fun clearFontCache() { FontRegistry.clearRemoteFonts() }
+
+    /** 获取更新缓存大小（字节）。目录由 UpdateDownloadManager 持有 */
+    fun getUpdateCacheSizeBytes(): Long {
+        val updateDir = File(context.filesDir, "updates")
+        if (!updateDir.isDirectory) return 0
+        return updateDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+    }
+
+    /** 清理所有更新缓存（包括当前版本） */
+    fun clearUpdateCache() {
+        val updateDir = File(context.filesDir, "updates")
+        if (updateDir.isDirectory) {
+            updateDir.listFiles()?.forEach { it.delete() }
+        }
+    }
 }

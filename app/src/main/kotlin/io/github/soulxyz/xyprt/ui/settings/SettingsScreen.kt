@@ -46,6 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -362,12 +363,92 @@ fun SettingsScreen(
                 }
             }
 
+            Spacer(Modifier.height(16.dp))
+            Text("下载资源管理", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(6.dp))
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("管理已下载的资源文件，释放存储空间。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    var showClearConfirm by remember { mutableStateOf<String?>(null) }
+                    var clearing by remember { mutableStateOf(false) }
+                    val remoteAssets = appContainer.remoteAssets
+                    val enhancedModels = appContainer.enhancedModels
+                    val modelCatalog by enhancedModels.catalog.collectAsState()
+                    val fontCount = remember { mutableIntStateOf(0) }
+                    val updateCacheSize = remember { mutableLongStateOf(0L) }
+                    LaunchedEffect(Unit) {
+                        withContext(Dispatchers.IO) {
+                            fontCount.intValue = remoteAssets.countCachedFonts()
+                            updateCacheSize.longValue = remoteAssets.getUpdateCacheSizeBytes()
+                        }
+                    }
+                    // 字体缓存
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("字体缓存", style = MaterialTheme.typography.bodyMedium)
+                            Text("${fontCount.intValue} 个字体文件", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        OutlinedButton(onClick = { showClearConfirm = "fonts" }, enabled = fontCount.intValue > 0 && !clearing) { Text("清理") }
+                    }
+                    HorizontalDivider()
+                    // 增强模型
+                    val installedModels = modelCatalog.items.count { it.installed }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("增强识别模型", style = MaterialTheme.typography.bodyMedium)
+                            Text("$installedModels 个模型文件", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        OutlinedButton(onClick = { showClearConfirm = "models" }, enabled = installedModels > 0 && !clearing) { Text("清理") }
+                    }
+                    HorizontalDivider()
+                    // 更新缓存
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("更新缓存", style = MaterialTheme.typography.bodyMedium)
+                            Text(formatFileSize(updateCacheSize.longValue), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        OutlinedButton(onClick = { showClearConfirm = "updateCache" }, enabled = updateCacheSize.longValue > 0 && !clearing) { Text("清理") }
+                    }
+                    // 确认对话框
+                    showClearConfirm?.let { type ->
+                        val (title, message) = when (type) {
+                            "fonts" -> "清理字体缓存" to "将删除所有已下载的在线字体文件。需要时可以重新下载。"
+                            "models" -> "清理增强模型" to "将删除所有已下载的增强识别模型。需要时可以重新下载。"
+                            "updateCache" -> "清理更新缓存" to "将删除所有已下载的更新安装包和增量补丁，包括当前版本。"
+                            else -> "" to ""
+                        }
+                        AlertDialog(
+                            onDismissRequest = { showClearConfirm = null },
+                            title = { Text(title) },
+                            text = { Text(message) },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    clearing = true
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            when (type) {
+                                                "fonts" -> remoteAssets.clearFontCache()
+                                                "models" -> enhancedModels.clearAllModels()
+                                                "updateCache" -> remoteAssets.clearUpdateCache()
+                                            }
+                                        }
+                                        withContext(Dispatchers.IO) {
+                                            fontCount.intValue = remoteAssets.countCachedFonts()
+                                            updateCacheSize.longValue = remoteAssets.getUpdateCacheSizeBytes()
+                                        }
+                                        clearing = false
+                                        showClearConfirm = null
+                                        Toast.makeText(context, "清理完成", Toast.LENGTH_SHORT).show()
+                                    }
+                                }) { Text("确认清理") }
+                            },
+                            dismissButton = { TextButton(onClick = { showClearConfirm = null }) { Text("取消") } },
+                        )
+                    }
+                }
+            }
+
             Spacer(Modifier.height(20.dp))
-            Text(
-                stringResource(R.string.settings_simple_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
             Spacer(Modifier.height(24.dp))
         }
         }
@@ -400,6 +481,13 @@ fun SettingsScreen(
             }
         )
     }
+}
+
+private fun formatFileSize(bytes: Long): String = when {
+    bytes >= 1024L * 1024 * 1024 -> String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024))
+    bytes >= 1024L * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024))
+    bytes >= 1024L -> String.format("%.1f KB", bytes / 1024.0)
+    else -> "$bytes B"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
