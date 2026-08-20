@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -72,6 +73,8 @@ fun HistoryScreen(
     val entries by vm.entries.collectAsState()
     var reprint by remember { mutableStateOf<Pair<MonoImage, PrintHistoryEntry>?>(null) }
     val withBlePermissions = rememberBlePermissionRunner()
+    var showClearAllConfirm by remember { mutableStateOf(false) }
+    var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -89,7 +92,7 @@ fun HistoryScreen(
                 },
                 actions = {
                     if (entries.isNotEmpty()) {
-                        TextButton(onClick = vm::clear) { Text("清空") }
+                        TextButton(onClick = { showClearAllConfirm = true }) { Text("清空") }
                     }
                 },
             )
@@ -126,13 +129,49 @@ fun HistoryScreen(
                             reprint = (exact ?: LabelRenderer.renderMono(entry.spec, entry.elements)) to entry
                         }
                     },
-                    onDelete = { vm.delete(entry.id) },
+                    onDelete = { pendingDeleteId = entry.id },
                     onEditQuick = if (entry.rasterBase64 != null) ({ onEditQuick(entry.id) }) else null,
                     onConvertLayout = if (entry.rasterBase64 != null) ({ vm.convertQuickToTemplate(entry.id) { id -> if (id != null) onOpenTemplate(id) } }) else null,
                 )
             }
         }
         }
+    }
+
+    // 清空所有历史记录确认对话框
+    if (showClearAllConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearAllConfirm = false },
+            title = { Text("清空打印历史") },
+            text = { Text("确定要删除所有 ${entries.size} 条打印记录吗？此操作不可撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearAllConfirm = false
+                    vm.clear()
+                }) { Text("确认清空") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearAllConfirm = false }) { Text("取消") }
+            },
+        )
+    }
+
+    // 删除单条记录确认对话框
+    pendingDeleteId?.let { id ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteId = null },
+            title = { Text("删除打印记录") },
+            text = { Text("确定要删除这条打印记录吗？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDeleteId = null
+                    vm.delete(id)
+                }) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteId = null }) { Text("取消") }
+            },
+        )
     }
 
     reprint?.let { (image, entry) ->
