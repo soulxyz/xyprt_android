@@ -165,6 +165,7 @@ fun QuickPrintScreen(
     var savingDraft by remember { mutableStateOf(false) }
     var draftCandidate by remember { mutableStateOf<QuickPrintDraft?>(null) }
     var draftChecked by remember { mutableStateOf(false) }
+    val cameraCaptureActive = sourceMode == SourceMode.CAMERA && uris.isEmpty() && !showCropEditor && draftCandidate == null
     val preparedCache = remember { PreparedBitmapCache() }
     DisposableEffect(Unit) { onDispose { preparedCache.clear() } }
     val withBt = rememberBlePermissionRunner()
@@ -310,22 +311,25 @@ fun QuickPrintScreen(
             switchMode(SourceMode.PDF)
         }
     }
+    fun applyCapturedPhoto(uri: Uri) {
+        sourceMode = SourceMode.CAMERA
+        adjustments = defaultAdjustments(SourceMode.CAMERA)
+        draftCandidate = null
+        uris = listOf(uri)
+        cameraQuadDraft = DocumentQuad()
+        cameraQuadApplied = DocumentQuad()
+        imageSuggestionQuad = null
+        cameraScanHint = null
+        scanGeneration++
+        showCropEditor = true
+        error = null
+    }
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val uri = pendingCameraUriText?.let(Uri::parse)
         val readable = uri?.let { cameraOutputReadable(context, it) } == true
         pendingCameraUriText = null
         if ((ok || readable) && uri != null) {
-            sourceMode = SourceMode.CAMERA
-            adjustments = defaultAdjustments(SourceMode.CAMERA)
-            draftCandidate = null
-            uris = listOf(uri)
-            cameraQuadDraft = DocumentQuad()
-            cameraQuadApplied = DocumentQuad()
-            imageSuggestionQuad = null
-            cameraScanHint = null
-            scanGeneration++
-            showCropEditor = true
-            error = null
+            applyCapturedPhoto(uri)
         } else {
             error = "没有获取到照片，请重新拍摄"
         }
@@ -417,8 +421,7 @@ fun QuickPrintScreen(
             when (sourceMode) {
                 SourceMode.IMAGE -> imagePicker.launch(arrayOf("image/*"))
                 SourceMode.PDF -> pdfPicker.launch(arrayOf("application/pdf"))
-                SourceMode.CAMERA -> launchCamera()
-                SourceMode.TEXT, SourceMode.TODO -> Unit
+                SourceMode.CAMERA, SourceMode.TEXT, SourceMode.TODO -> Unit
             }
         }
     }
@@ -591,7 +594,13 @@ fun QuickPrintScreen(
                 },
                 actions = {
                     if (sourceMode == SourceMode.CAMERA && showCropEditor) {
-                        IconButton(onClick = { launchCamera() }) {
+                        IconButton(onClick = {
+                            uris = emptyList()
+                            showCropEditor = false
+                            cameraQuadDraft = DocumentQuad()
+                            cameraQuadApplied = DocumentQuad()
+                            preparedCache.clear()
+                        }) {
                             Icon(painterResource(R.drawable.ic_camera), contentDescription = "重新拍摄")
                         }
                         IconButton(onClick = { scanImagePicker.launch(arrayOf("image/*")) }) {
@@ -1136,6 +1145,14 @@ fun QuickPrintScreen(
                 showPrint = false
                 onOpenPrinterSettings()
             },
+        )
+    }
+
+    if (cameraCaptureActive) {
+        CameraCaptureScreen(
+            onExit = { leaveScreen() },
+            onCaptured = { uri -> applyCapturedPhoto(uri) },
+            onPickFromGallery = { scanImagePicker.launch(arrayOf("image/*")) },
         )
     }
 }
