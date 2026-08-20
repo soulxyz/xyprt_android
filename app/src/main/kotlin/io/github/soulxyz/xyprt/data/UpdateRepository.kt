@@ -52,6 +52,7 @@ data class UpdateInfo(
     val serverInstallAvailable: Boolean = false,
     val releaseChannelLabel: String = "社区版",
     val editionSwitch: Boolean = false,
+    val hasCustomReleaseUrl: Boolean = false,
 )
 
 /**
@@ -158,15 +159,16 @@ class UpdateRepository(
         return if (channel == "sponsor") {
             val download = release["download"]?.let { runCatching { it.jsonObject }.getOrNull() }
             val protectedDownload = download?.string("endpoint")?.let(api::absolute)
+            val serverReleaseUrl = release.string("releaseUrl")?.takeIf { it.isNotBlank() }
             UpdateInfo(
                 versionName = version,
                 versionCode = release.int("versionCode") ?: semanticVersionCode(version),
                 title = release.string("title") ?: "口袋小印 $version",
                 notes = release.string("notes").orEmpty().trim().take(6_000),
-                releaseUrl = REPOSITORY_URL,
+                releaseUrl = serverReleaseUrl ?: REPOSITORY_URL,
                 releaseId = release.int("id") ?: 0,
                 sourceApkUrl = if (updateAvailable) protectedDownload else null,
-                mirrorApkUrl = null,
+                mirrorApkUrl = if (updateAvailable) protectedDownload?.toGhfastMirror() else null,
                 digestSha256 = release["download"]?.let { runCatching { it.jsonObject.string("sha256") }.getOrNull() },
                 checkedVia = "口袋小印更新服务",
                 fullSizeBytes = release["download"]?.let { runCatching { it.jsonObject.long("size") }.getOrNull() },
@@ -176,6 +178,9 @@ class UpdateRepository(
                 serverInstallAvailable = updateAvailable,
                 releaseChannelLabel = "共创版",
                 editionSwitch = root.boolean("editionSwitch") == true,
+                // 共创版已有「应用内 / 手动下载安装」入口，「发布页」按钮默认隐藏；
+                // 社区版的自定义发布页逻辑不沿用至此，避免切换共创版后多余按钮出现。
+                hasCustomReleaseUrl = false,
             )
         } else parseOpenSourceRelease(release, parseServerDownloadMode(root.string("downloadMode")), root.boolean("editionSwitch") == true)
     }
@@ -190,7 +195,8 @@ class UpdateRepository(
             title = latest.string("title") ?: "口袋小印 $version",
             notes = latest.string("notes").orEmpty().trim().take(6_000),
             releaseUrl = latest.string("releaseUrl") ?: "$REPOSITORY_URL/releases/latest",
-            sourceApkUrl = latest.string("downloadUrl"), mirrorApkUrl = null,
+            sourceApkUrl = latest.string("downloadUrl"),
+            mirrorApkUrl = latest.string("downloadUrl")?.toGhfastMirror(),
             digestSha256 = latest.string("sha256"), checkedVia = latest.string("checkedVia") ?: "口袋小印更新服务",
             fullSizeBytes = latest.long("size"),
             serverDownloadMode = mode,
@@ -227,12 +233,18 @@ internal fun parseGatewayUpdate(raw: String, json: Json): UpdateInfo? {
         title = latest.localString("title") ?: "口袋小印 $version",
         notes = latest.localString("notes").orEmpty().trim().take(6_000),
         releaseUrl = releaseUrl,
-        sourceApkUrl = latest.localString("downloadUrl"), mirrorApkUrl = null,
+        sourceApkUrl = latest.localString("downloadUrl"),
+        mirrorApkUrl = latest.localString("downloadUrl")?.toGhfastMirror(),
         digestSha256 = latest.localString("sha256"), checkedVia = latest.localString("checkedVia") ?: "口袋小印更新服务",
         fullSizeBytes = latest.localString("size")?.toLongOrNull(),
         serverDownloadMode = parseServerDownloadMode(latest.localString("downloadMode")),
         releaseChannelLabel = "社区版",
     )
+}
+
+private fun String.toGhfastMirror(): String? {
+    if (!contains("github.com") || !contains("/releases/")) return null
+    return "https://ghfast.top/$this"
 }
 
 private fun parseServerDownloadMode(raw: String?): ServerDownloadMode = when (raw?.lowercase()) {

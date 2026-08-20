@@ -3,6 +3,8 @@ package io.github.soulxyz.xyprt.ui.editor
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
@@ -43,6 +45,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -56,6 +59,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -72,7 +77,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.focus.onFocusChanged
@@ -87,6 +94,11 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
+import android.util.Log
+import io.github.soulxyz.xyprt.App
 import io.github.soulxyz.xyprt.R
 import io.github.soulxyz.xyprt.data.remote.RemoteAsset
 import io.github.soulxyz.xyprt.model.BarcodeElement
@@ -104,14 +116,19 @@ import io.github.soulxyz.xyprt.model.QrPayloadType
 import io.github.soulxyz.xyprt.model.Symbology
 import io.github.soulxyz.xyprt.model.TableElement
 import io.github.soulxyz.xyprt.model.TextElement
+import io.github.soulxyz.xyprt.printer.MonoImage
 import io.github.soulxyz.xyprt.printer.dither.DitherMode
 import io.github.soulxyz.xyprt.printer.dither.OutlineMethod
 import io.github.soulxyz.xyprt.render.FontRegistry
 import io.github.soulxyz.xyprt.render.LabelRenderer
 import io.github.soulxyz.xyprt.ui.components.ClearButton
-import io.github.soulxyz.xyprt.ui.components.RasterEffectControls
+import io.github.soulxyz.xyprt.ui.components.EffectThumb
+import io.github.soulxyz.xyprt.ui.components.EffectThumbRow
+import io.github.soulxyz.xyprt.ui.components.RasterAdjustmentTabs
 import io.github.soulxyz.xyprt.ui.components.rememberBlePermissionRunner
 import io.github.soulxyz.xyprt.ui.home.LabelDialog
+import io.github.soulxyz.xyprt.ui.quickprint.QuickImageAdjustments
+import io.github.soulxyz.xyprt.ui.quickprint.QuickPrintRenderer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -126,6 +143,7 @@ fun EditorScreen(
     templateId: String,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit = {},
+    onOpenCoCreator: () -> Unit = {},
     vm: EditorViewModel = viewModel(factory = EditorViewModel.factory(templateId)),
 ) {
     val template by vm.template.collectAsState()
@@ -314,13 +332,8 @@ fun EditorScreen(
                 guides = guides,
                 onSelect = vm::select,
                 onDoubleTap = { id ->
-                    val element = t.elements.find { it.id == id }
-                    if (element is TextElement) {
-                        editingTextId = element.id
-                        editingTextValue = element.text
-                    } else {
-                        showPropertiesSheet = true
-                    }
+                    vm.select(id)
+                    showPropertiesSheet = true
                 },
                 onDeleteSelected = vm::deleteSelected,
                 onDragStart = vm::beginDrag,
@@ -468,6 +481,7 @@ fun EditorScreen(
                     onCancelRemoteFont = vm::cancelRemoteFontSelection,
                     onRefreshRemoteFonts = vm::refreshRemoteFonts,
                     onUpdate = vm::updateElement,
+                    onOpenCoCreator = onOpenCoCreator,
                     onDelete = {
                         vm.deleteSelected()
                         showPropertiesSheet = false
@@ -762,7 +776,7 @@ private fun humanFileSize(bytes: Long): String = when {
 }
 
 private fun remoteFontLockReason(reason: String?): String = when (reason) {
-    "sponsor_required" -> "需要 Sponsor"
+    "sponsor_required" -> "部分字体暂时处于共创计划内测阶段"
     "login_required" -> "登录后可用"
     "permission_required" -> "暂不可用"
     else -> "暂不可用"
@@ -804,7 +818,7 @@ private fun ElementChipLabel(element: LabelElement) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun PropertiesPanel(
     element: LabelElement,
@@ -816,86 +830,119 @@ private fun PropertiesPanel(
     onRefreshRemoteFonts: () -> Unit,
     onUpdate: (LabelElement) -> Unit,
     onDelete: () -> Unit,
+    onOpenCoCreator: () -> Unit = {},
 ) {
+    val tabs = when (element) {
+        is TextElement -> listOf("文字", "字体", "排版", "调整")
+        is IconElement -> listOf("符号", "调整")
+        is FrameElement -> listOf("样式", "调整")
+        is TableElement -> listOf("表格", "调整")
+        is BarcodeElement -> listOf("条码", "调整")
+        is ImageElement -> listOf("图片", "调整")
+        is DrawingElement -> listOf("调整")
+    }
+    var tab by remember(element.id) { mutableStateOf(0) }
     Column {
-        when (element) {
-            is TextElement -> TextProperties(
-                element = element,
-                remoteFonts = remoteFonts,
-                remoteFontDownloads = remoteFontDownloads,
-                remoteFontsRefreshing = remoteFontsRefreshing,
-                onUseRemoteFont = onUseRemoteFont,
-                onCancelRemoteFont = onCancelRemoteFont,
-                onRefreshRemoteFonts = onRefreshRemoteFonts,
-                onUpdate = onUpdate,
-            )
-            is IconElement -> IconProperties(element, onUpdate)
-            is FrameElement -> FrameProperties(element, onUpdate)
-            is TableElement -> TableProperties(element, onUpdate)
-            is BarcodeElement -> BarcodeProperties(element, onUpdate)
-            is ImageElement -> ImageProperties(element, onUpdate)
-            is DrawingElement -> Unit
-        }
-        Spacer(Modifier.height(8.dp))
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Column {
-                GroupLabel(stringResource(R.string.cd_rotate))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    // Fine 15° steps plus a quick 90° jump.
-                    Stepper(
-                        label = "",
-                        value = "${element.rotation}°",
-                        onDecrease = { onUpdate(element.withRotation((element.rotation - 15 + 360) % 360)) },
-                        onIncrease = { onUpdate(element.withRotation((element.rotation + 15) % 360)) },
+        if (tabs.size > 1) {
+            SecondaryTabRow(selectedTabIndex = tab.coerceIn(0, tabs.size - 1)) {
+                tabs.forEachIndexed { index, label ->
+                    Tab(
+                        selected = tab == index,
+                        onClick = { tab = index },
+                        text = { Text(label, maxLines = 1) },
                     )
-                    OutlinedButton(
-                        onClick = { onUpdate(element.withRotation((element.rotation + 90) % 360)) },
-                        contentPadding = PaddingValues(horizontal = 12.dp),
-                    ) {
-                        Icon(
-                            painterResource(R.drawable.ic_rotate_cw),
-                            contentDescription = stringResource(R.string.cd_rotate),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text("90°")
-                    }
                 }
             }
-            Column {
-                GroupLabel(stringResource(R.string.group_scale))
-                val pct = (LabelRenderer.measure(element).width / LabelSpec.PRINT_WIDTH_PX * 100f)
-                    .roundToInt().coerceIn(1, 999)
-                // Codes cap at 100 % (their box must fit the printable height to stay scannable);
-                // everything else scales up to 200 %.
-                val scaleMax = if (element is BarcodeElement) 100 else 200
+            Spacer(Modifier.height(12.dp))
+        }
+        when (element) {
+            is TextElement -> when (tab) {
+                0 -> TextContentSection(element, onUpdate)
+                1 -> FontSection(
+                    element = element,
+                    remoteFonts = remoteFonts,
+                    remoteFontDownloads = remoteFontDownloads,
+                    remoteFontsRefreshing = remoteFontsRefreshing,
+                    onUseRemoteFont = onUseRemoteFont,
+                    onCancelRemoteFont = onCancelRemoteFont,
+                    onRefreshRemoteFonts = onRefreshRemoteFonts,
+                    onUpdate = onUpdate,
+                    onOpenCoCreator = onOpenCoCreator,
+                )
+                2 -> TextLayoutSection(element, onUpdate)
+                else -> AdjustSection(element, onUpdate, onDelete)
+            }
+            is IconElement -> if (tab == 0) IconProperties(element, onUpdate) else AdjustSection(element, onUpdate, onDelete)
+            is FrameElement -> if (tab == 0) FrameProperties(element, onUpdate) else AdjustSection(element, onUpdate, onDelete)
+            is TableElement -> if (tab == 0) TableProperties(element, onUpdate) else AdjustSection(element, onUpdate, onDelete)
+            is BarcodeElement -> if (tab == 0) BarcodeProperties(element, onUpdate) else AdjustSection(element, onUpdate, onDelete)
+            is ImageElement -> if (tab == 0) ImageProperties(element, onUpdate) else AdjustSection(element, onUpdate, onDelete)
+            is DrawingElement -> AdjustSection(element, onUpdate, onDelete)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AdjustSection(element: LabelElement, onUpdate: (LabelElement) -> Unit, onDelete: () -> Unit) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Column {
+            GroupLabel(stringResource(R.string.cd_rotate))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                // Fine 15° steps plus a quick 90° jump.
                 Stepper(
                     label = "",
-                    value = "$pct %",
-                    onDecrease = { onUpdate(element.scaledToHeightPercent((pct - 1).coerceAtLeast(2))) },
-                    onIncrease = { onUpdate(element.scaledToHeightPercent((pct + 1).coerceAtMost(scaleMax))) },
+                    value = "${element.rotation}°",
+                    onDecrease = { onUpdate(element.withRotation((element.rotation - 15 + 360) % 360)) },
+                    onIncrease = { onUpdate(element.withRotation((element.rotation + 15) % 360)) },
                 )
+                OutlinedButton(
+                    onClick = { onUpdate(element.withRotation((element.rotation + 90) % 360)) },
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                ) {
+                    Icon(
+                        painterResource(R.drawable.ic_rotate_cw),
+                        contentDescription = stringResource(R.string.cd_rotate),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("90°")
+                }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        OutlinedButton(
-            onClick = onDelete,
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-        ) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
+        Column {
+            GroupLabel(stringResource(R.string.group_scale))
+            val pct = (LabelRenderer.measure(element).width / LabelSpec.PRINT_WIDTH_PX * 100f)
+                .roundToInt().coerceIn(1, 999)
+            // Codes cap at 100 % (their box must fit the printable height to stay scannable);
+            // everything else scales up to 200 %.
+            val scaleMax = if (element is BarcodeElement) 100 else 200
+            Stepper(
+                label = "",
+                value = "$pct %",
+                onDecrease = { onUpdate(element.scaledToHeightPercent((pct - 1).coerceAtLeast(2))) },
+                onIncrease = { onUpdate(element.scaledToHeightPercent((pct + 1).coerceAtMost(scaleMax))) },
             )
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.menu_delete))
         }
+    }
+    Spacer(Modifier.height(12.dp))
+    OutlinedButton(
+        onClick = onDelete,
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+    ) {
+        Icon(
+            Icons.Default.Delete,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(stringResource(R.string.menu_delete))
     }
 }
 
@@ -1307,23 +1354,91 @@ private fun OutlineOptionsRow(
 
 @Composable
 private fun ImageProperties(element: ImageElement, onUpdate: (LabelElement) -> Unit) {
-    RasterEffectControls(
+    var ditherThumbs by remember(element.pngBase64) { mutableStateOf<Map<DitherMode, MonoImage?>>(emptyMap()) }
+    var ditherThumbErrors by remember(element.pngBase64) { mutableStateOf<Map<DitherMode, String?>>(emptyMap()) }
+    LaunchedEffect(element.pngBase64) {
+        val results = withContext(Dispatchers.IO) {
+            val bytes = runCatching { Base64.decode(element.pngBase64, Base64.NO_WRAP) }.getOrNull()
+                ?: return@withContext null
+            val full = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@withContext null
+            val headDots = io.github.soulxyz.xyprt.printer.Protocol.HEAD_DOTS
+            val cropped = if (full.height.toFloat() / full.width > 3f) {
+                val targetHeight = (full.width * 3f).toInt()
+                val top = (full.height - targetHeight) / 2
+                Bitmap.createBitmap(full, 0, top, full.width, targetHeight)
+            } else full
+            val small = if (cropped.width != headDots) {
+                Bitmap.createScaledBitmap(
+                    cropped,
+                    headDots,
+                    (cropped.height.toLong() * headDots / cropped.width).toInt().coerceAtLeast(1),
+                    true,
+                )
+            } else cropped
+            try {
+                val monos = mutableMapOf<DitherMode, MonoImage?>()
+                val errors = mutableMapOf<DitherMode, String?>()
+                DitherMode.entries.forEach { mode ->
+                    val r = runCatching {
+                        QuickPrintRenderer.toMono(small, QuickImageAdjustments(mode = mode, threshold = element.threshold, contrast = element.contrast))
+                    }
+                    if (r.isSuccess) {
+                        monos[mode] = r.getOrNull()
+                        errors[mode] = null
+                    } else {
+                        monos[mode] = null
+                        errors[mode] = r.exceptionOrNull()?.let { it::class.simpleName + ": " + (it.message ?: "") }
+                        Log.w("EffectThumb", "toMono failed for mode=$mode", r.exceptionOrNull())
+                    }
+                }
+                Pair(monos, errors)
+            } finally {
+                small.recycle()
+                if (cropped !== full) cropped.recycle()
+                if (small !== full) full.recycle()
+            }
+        }
+        if (results != null) {
+            ditherThumbs = results.first
+            ditherThumbErrors = results.second
+        } else {
+            ditherThumbs = emptyMap()
+            ditherThumbErrors = emptyMap()
+        }
+    }
+    Spacer(Modifier.height(6.dp))
+    GroupLabel("效果预设")
+    EffectThumbRow(
+        selectedId = element.dither.name,
+        thumbs = DitherMode.entries.map { mode ->
+            EffectThumb(
+                id = mode.name,
+                label = ditherLabel(mode),
+                mono = ditherThumbs[mode],
+                error = ditherThumbErrors[mode],
+            )
+        },
+        onSelect = { id -> DitherMode.entries.firstOrNull { it.name == id }?.let { onUpdate(element.copy(dither = it)) } },
+    )
+    Spacer(Modifier.height(10.dp))
+    RasterAdjustmentTabs(
         mode = element.dither,
         threshold = element.threshold,
         contrast = element.contrast,
         invert = element.invert,
+        onThreshold = { onUpdate(element.copy(threshold = it)) },
+        onContrast = { onUpdate(element.copy(contrast = it)) },
+        onInvert = { onUpdate(element.copy(invert = it)) },
         outlineSensitivity = element.outlineSensitivity,
         outlineThickness = element.outlineThickness,
         outlineMethod = element.outlineMethod,
         outlineSmooth = element.outlineSmooth,
-        onMode = { onUpdate(element.copy(dither = it)) },
-        onThreshold = { onUpdate(element.copy(threshold = it)) },
-        onContrast = { onUpdate(element.copy(contrast = it)) },
-        onInvert = { onUpdate(element.copy(invert = it)) },
         onOutlineSensitivity = { onUpdate(element.copy(outlineSensitivity = it)) },
         onOutlineThickness = { onUpdate(element.copy(outlineThickness = it)) },
         onOutlineMethod = { onUpdate(element.copy(outlineMethod = it)) },
         onOutlineSmooth = { onUpdate(element.copy(outlineSmooth = it)) },
+        rotationDegrees = element.rotation,
+        onRotationDegrees = { onUpdate(element.copy(rotation = it)) },
         removeRedInk = element.removeRedInk,
         removeBlueInk = element.removeBlueInk,
         onRemoveRedInk = { onUpdate(element.copy(removeRedInk = it)) },
@@ -1331,27 +1446,16 @@ private fun ImageProperties(element: ImageElement, onUpdate: (LabelElement) -> U
     )
 }
 
+private fun ditherLabel(mode: DitherMode): String = when (mode) {
+    DitherMode.OUTLINE -> "线稿"
+    DitherMode.THRESHOLD -> "黑白"
+    DitherMode.FLOYD_STEINBERG -> "细腻"
+    DitherMode.ATKINSON -> "清晰"
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TextProperties(
-    element: TextElement,
-    remoteFonts: List<RemoteAsset>,
-    remoteFontDownloads: Map<Int, RemoteFontDownloadState>,
-    remoteFontsRefreshing: Boolean,
-    onUseRemoteFont: (String, RemoteAsset) -> Unit,
-    onCancelRemoteFont: (String) -> Unit,
-    onRefreshRemoteFonts: () -> Unit,
-    onUpdate: (LabelElement) -> Unit,
-) {
-    var showRemoteFonts by remember { mutableStateOf(false) }
-    var pendingRemoteSlug by remember { mutableStateOf<String?>(null) }
-    val selectedRemote = remoteFonts.firstOrNull { it.slug == element.fontAssetId }
-    LaunchedEffect(element.fontAssetId, pendingRemoteSlug) {
-        if (pendingRemoteSlug != null && element.fontAssetId == pendingRemoteSlug) {
-            pendingRemoteSlug = null
-            showRemoteFonts = false
-        }
-    }
+private fun TextContentSection(element: TextElement, onUpdate: (LabelElement) -> Unit) {
     OutlinedTextField(
         value = element.text,
         onValueChange = { onUpdate(element.copy(text = it)) },
@@ -1361,7 +1465,27 @@ private fun TextProperties(
         minLines = 1,
         maxLines = 4
     )
-    Spacer(Modifier.height(4.dp))
+    Spacer(Modifier.height(10.dp))
+    GroupLabel(stringResource(R.string.group_variables))
+    val tokens = listOf(
+        stringResource(R.string.var_date) to "{date}",
+        stringResource(R.string.var_time) to "{time}",
+        stringResource(R.string.var_number) to "{#}",
+        stringResource(R.string.var_var) to "{var:Text}",
+    )
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        tokens.forEach { (label, token) ->
+            ChoiceChip(
+                selected = false,
+                onClick = { onUpdate(element.copy(text = element.text + token)) },
+                label = { Text(label) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun TextLayoutSection(element: TextElement, onUpdate: (LabelElement) -> Unit) {
     Stepper(
         label = stringResource(R.string.prop_size) + ": ",
         value = "${element.fontSizePx.toInt()} px",
@@ -1375,8 +1499,65 @@ private fun TextProperties(
         onDecrease = { onUpdate(element.copy(lineSpacingPercent = (element.lineSpacingPercent - 5).coerceAtLeast(80))) },
         onIncrease = { onUpdate(element.copy(lineSpacingPercent = (element.lineSpacingPercent + 5).coerceAtMost(200))) },
     )
+    Spacer(Modifier.height(10.dp))
+    GroupLabel(stringResource(R.string.group_format))
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ChoiceChip(
+            selected = element.bold,
+            onClick = { onUpdate(element.copy(bold = !element.bold)) },
+            label = { Text(stringResource(R.string.prop_bold)) })
+        ChoiceChip(
+            selected = element.italic,
+            onClick = { onUpdate(element.copy(italic = !element.italic)) },
+            label = { Text(stringResource(R.string.prop_italic)) })
+        ChoiceChip(
+            selected = element.underline,
+            onClick = { onUpdate(element.copy(underline = !element.underline)) },
+            label = { Text(stringResource(R.string.prop_underline)) })
+    }
+    Spacer(Modifier.height(10.dp))
+    GroupLabel(stringResource(R.string.group_align))
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        LabelTextAlign.entries.forEach { align ->
+            ChoiceChip(
+                selected = element.align == align,
+                onClick = { onUpdate(element.copy(align = align)) },
+                label = {
+                    Text(
+                        when (align) {
+                            LabelTextAlign.LEFT -> stringResource(R.string.align_left)
+                            LabelTextAlign.CENTER -> stringResource(R.string.align_center)
+                            LabelTextAlign.RIGHT -> stringResource(R.string.align_right)
+                        }
+                    )
+                }
+            )
+        }
+    }
+}
 
-    Spacer(Modifier.height(6.dp))
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FontSection(
+    element: TextElement,
+    remoteFonts: List<RemoteAsset>,
+    remoteFontDownloads: Map<Int, RemoteFontDownloadState>,
+    remoteFontsRefreshing: Boolean,
+    onUseRemoteFont: (String, RemoteAsset) -> Unit,
+    onCancelRemoteFont: (String) -> Unit,
+    onRefreshRemoteFonts: () -> Unit,
+    onUpdate: (LabelElement) -> Unit,
+    onOpenCoCreator: () -> Unit = {},
+) {
+    var showRemoteFonts by remember { mutableStateOf(false) }
+    var pendingRemoteSlug by remember { mutableStateOf<String?>(null) }
+    val selectedRemote = remoteFonts.firstOrNull { it.slug == element.fontAssetId }
+    LaunchedEffect(element.fontAssetId, pendingRemoteSlug) {
+        if (pendingRemoteSlug != null && element.fontAssetId == pendingRemoteSlug) {
+            pendingRemoteSlug = null
+            showRemoteFonts = false
+        }
+    }
     GroupLabel(stringResource(R.string.group_font))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         LabelFont.entries.forEach { f ->
@@ -1407,7 +1588,7 @@ private fun TextProperties(
         }
     }
 
-    Spacer(Modifier.height(8.dp))
+    Spacer(Modifier.height(10.dp))
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -1429,140 +1610,230 @@ private fun TextProperties(
     }
 
     if (showRemoteFonts) {
-        AlertDialog(
-            onDismissRequest = { showRemoteFonts = false },
-            title = { Text("在线字体") },
-            text = {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 440.dp)
-                        .verticalScroll(rememberScrollState()),
-                ) {
+        RemoteFontLibraryDialog(
+            element = element,
+            remoteFonts = remoteFonts,
+            remoteFontDownloads = remoteFontDownloads,
+            remoteFontsRefreshing = remoteFontsRefreshing,
+            onUseRemoteFont = { asset ->
+                pendingRemoteSlug = asset.slug
+                onUseRemoteFont(element.id, asset)
+            },
+            onRefreshRemoteFonts = onRefreshRemoteFonts,
+            onDismiss = { showRemoteFonts = false },
+            onOpenCoCreator = onOpenCoCreator,
+        )
+    }
+}
+
+@Composable
+private fun RemoteFontLibraryDialog(
+    element: TextElement,
+    remoteFonts: List<RemoteAsset>,
+    remoteFontDownloads: Map<Int, RemoteFontDownloadState>,
+    remoteFontsRefreshing: Boolean,
+    onUseRemoteFont: (RemoteAsset) -> Unit,
+    onRefreshRemoteFonts: () -> Unit,
+    onDismiss: () -> Unit,
+    onOpenCoCreator: () -> Unit = {},
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("在线字体") },
+        text = {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Row(modifier = Modifier.padding(bottom = 6.dp)) {
                     Text(
-                        "字体只在你选择时下载；已经下载的字体离线也能继续使用。",
+                        "字体只在你选择时下载；已经下载的字体离线也能继续使用。部分字体暂时处于",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 10.dp),
                     )
-                    if (remoteFonts.isEmpty()) {
-                        Text(
-                            if (remoteFontsRefreshing) "正在同步字体目录…" else "暂时没有可用在线字体",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 16.dp),
+                    Text(
+                        "共创计划",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { onOpenCoCreator() },
+                    )
+                    Text(
+                        "内测阶段。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (remoteFonts.isEmpty()) {
+                    Text(
+                        if (remoteFontsRefreshing) "正在同步字体目录…" else "暂时没有可用在线字体",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 16.dp),
+                    )
+                } else {
+                    remoteFonts.forEachIndexed { index, font ->
+                        RemoteFontCard(
+                            font = font,
+                            active = element.fontAssetId == font.slug,
+                            state = remoteFontDownloads[font.id],
+                            onUse = { onUseRemoteFont(font) },
                         )
-                    } else {
-                        remoteFonts.forEachIndexed { index, font ->
-                            val state = remoteFontDownloads[font.id]
-                            val installed = FontRegistry.remote(font.slug) != null
-                            val active = element.fontAssetId == font.slug
-                            val enabled = font.downloadable && !font.locked && state?.loading != true
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(font.name, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
-                                    val sizeText = font.file?.size?.let(::humanFileSize).orEmpty()
-                                    Text(
-                                        listOfNotNull(
-                                            sizeText.takeIf { it.isNotEmpty() },
-                                            when {
-                                                active -> "使用中"
-                                                installed -> "已下载"
-                                                font.locked -> remoteFontLockReason(font.reason)
-                                                else -> null
-                                            },
-                                        ).joinToString(" · "),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (state?.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                        if (index != remoteFonts.lastIndex) HorizontalDivider()
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onRefreshRemoteFonts, enabled = !remoteFontsRefreshing) {
+                Text(if (remoteFontsRefreshing) "同步中…" else "刷新")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
+    )
+}
+
+@Composable
+private fun RemoteFontCard(
+    font: RemoteAsset,
+    active: Boolean,
+    state: RemoteFontDownloadState?,
+    onUse: () -> Unit,
+) {
+    val context = LocalContext.current
+    val container = remember(context) { (context.applicationContext as App).container }
+    var preview by remember(font.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var previewReady by remember(font.id) { mutableStateOf(font.preview == null) }
+    val installed = FontRegistry.remote(font.slug) != null
+    val enabled = font.downloadable && !font.locked && state?.loading != true
+    LaunchedEffect(font.preview?.sha256) {
+        if (font.preview != null) {
+            previewReady = false
+            container.remoteAssets.previewFile(font).onSuccess { file ->
+                preview = withContext(Dispatchers.IO) { runCatching { BitmapFactory.decodeFile(file.absolutePath) }.getOrNull() }
+                previewReady = true
+            }.onFailure { previewReady = true }
+        }
+    }
+    Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().height(64.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                val bmp = preview
+                when {
+                    bmp != null -> Image(
+                        bmp.asImageBitmap(),
+                        contentDescription = font.name,
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp),
+                        contentScale = ContentScale.Fit,
+                    )
+                    font.preview != null && !previewReady -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    installed -> {
+                        val face = FontRegistry.remote(font.slug)
+                        if (face == null) {
+                            // 字体文件已存在但加载失败（损坏）
+                            Text(
+                                "字体文件损坏",
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.error,
+                                maxLines = 1,
+                            )
+                        } else {
+                            Text(
+                                "口袋小印 · 字体预览",
+                                fontSize = 16.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily(face),
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                    else -> Text(
+                        "口袋小印 · 字体预览",
+                        fontSize = 16.sp,
+                        maxLines = 1,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(font.name, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val sizeText = font.file?.size?.let(::humanFileSize).orEmpty()
+                Text(
+                    listOfNotNull(
+                        sizeText.takeIf { it.isNotEmpty() },
+                when {
+                    active -> "使用中"
+                    installed -> "已下载"
+                    else -> null
+                },
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (state?.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                                     state?.error?.let {
                                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                                     }
-                                }
-                                Button(
-                                    onClick = {
-                                        pendingRemoteSlug = font.slug
-                                        onUseRemoteFont(element.id, font)
-                                    },
-                                    enabled = enabled && !active,
-                                    contentPadding = PaddingValues(horizontal = 14.dp),
-                                ) {
-                                    if (state?.loading == true) {
-                                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                                    } else Text(if (installed) "使用" else "下载")
-                                }
-                            }
-                            if (index != remoteFonts.lastIndex) HorizontalDivider()
+            }
+            Button(
+                onClick = onUse,
+                enabled = enabled && !active,
+                contentPadding = PaddingValues(horizontal = 14.dp),
+            ) {
+                if (state?.loading == true) {
+                    val p = state.progress
+                    if (p != null) {
+                        val animP by animateFloatAsState(p, label = "fontDl")
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.width(52.dp).height(20.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(20.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                    ),
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(animP.coerceIn(0f, 1f))
+                                    .height(20.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.primary),
+                            )
+                            Text(
+                                "${(animP * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 10.sp,
+                                color = if (animP < 0.5f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimary,
+                            )
+                        }
+                    } else {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.width(40.dp).height(20.dp),
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                            )
                         }
                     }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = onRefreshRemoteFonts, enabled = !remoteFontsRefreshing) {
-                    Text(if (remoteFontsRefreshing) "同步中…" else "刷新")
-                }
-            },
-            dismissButton = { TextButton(onClick = { showRemoteFonts = false }) { Text("关闭") } },
-        )
-    }
-
-    Spacer(Modifier.height(6.dp))
-    GroupLabel(stringResource(R.string.group_format))
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        ChoiceChip(
-            selected = element.bold,
-            onClick = { onUpdate(element.copy(bold = !element.bold)) },
-            label = { Text(stringResource(R.string.prop_bold)) })
-        ChoiceChip(
-            selected = element.italic,
-            onClick = { onUpdate(element.copy(italic = !element.italic)) },
-            label = { Text(stringResource(R.string.prop_italic)) })
-        ChoiceChip(
-            selected = element.underline,
-            onClick = { onUpdate(element.copy(underline = !element.underline)) },
-            label = { Text(stringResource(R.string.prop_underline)) })
-    }
-
-    Spacer(Modifier.height(6.dp))
-    GroupLabel(stringResource(R.string.group_align))
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        LabelTextAlign.entries.forEach { align ->
-            ChoiceChip(
-                selected = element.align == align,
-                onClick = { onUpdate(element.copy(align = align)) },
-                label = {
-                    Text(
-                        when (align) {
-                            LabelTextAlign.LEFT -> stringResource(R.string.align_left)
-                            LabelTextAlign.CENTER -> stringResource(R.string.align_center)
-                            LabelTextAlign.RIGHT -> stringResource(R.string.align_right)
-                        }
-                    )
-                }
-            )
-        }
-    }
-
-    Spacer(Modifier.height(6.dp))
-    GroupLabel(stringResource(R.string.group_variables))
-    val tokens = listOf(
-        stringResource(R.string.var_date) to "{date}",
-        stringResource(R.string.var_time) to "{time}",
-        stringResource(R.string.var_number) to "{#}",
-        stringResource(R.string.var_var) to "{var:Text}",
-    )
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        tokens.forEach { (label, token) ->
-            ChoiceChip(
-                selected = false,
-                onClick = { onUpdate(element.copy(text = element.text + token)) },
-                label = { Text(label) }
-            )
+                } else Text(if (installed) "使用" else "下载")
+            }
         }
     }
 }

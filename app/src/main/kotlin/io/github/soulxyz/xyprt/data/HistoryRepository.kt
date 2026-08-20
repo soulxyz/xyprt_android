@@ -67,6 +67,8 @@ data class QuickPrintHistorySource(
     val scalePercent: Int = 100,
     val removeRedInk: Boolean = false,
     val removeBlueInk: Boolean = false,
+    /** Whether AI scan-normalization was requested for this quick-print source. */
+    val enhance: Boolean = false,
     val pdfAutoCrop: Boolean = true,
     val cameraQuad: List<Float> = emptyList(),
 )

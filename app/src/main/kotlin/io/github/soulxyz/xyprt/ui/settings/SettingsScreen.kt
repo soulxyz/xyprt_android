@@ -1,5 +1,6 @@
 package io.github.soulxyz.xyprt.ui.settings
 
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -45,6 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -63,7 +65,9 @@ import io.github.soulxyz.xyprt.ble.BlePermissions
 import io.github.soulxyz.xyprt.ble.PrinterState
 import io.github.soulxyz.xyprt.data.UpdateDownloadMode
 import io.github.soulxyz.xyprt.data.ScanRecognitionMode
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -290,12 +294,161 @@ fun SettingsScreen(
                 }
             }
 
+            Spacer(Modifier.height(16.dp))
+            Text("备份和迁移", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(6.dp))
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("导出或恢复所有模板、文档和打印记录。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val backup = appContainer.backup
+                    var pendingImport by remember { mutableStateOf<ByteArray?>(null) }
+                    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+                        if (uri != null) scope.launch {
+                            val ok = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    val bytes = backup.exportPackage(io.github.soulxyz.xyprt.ui.info.currentAppLanguageTag(context))
+                                    (context.contentResolver.openOutputStream(uri) ?: error("no stream")).use { it.write(bytes) }
+                                }.isSuccess
+                            }
+                            Toast.makeText(context, context.getString(if (ok) R.string.backup_ok else R.string.backup_failed), Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                        if (uri != null) scope.launch {
+                            val bytes = withContext(Dispatchers.IO) {
+                                runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+                            }
+                            if (bytes == null) {
+                                Toast.makeText(context, context.getString(R.string.backup_failed), Toast.LENGTH_SHORT).show()
+                            } else if (backup.hasContent()) {
+                                pendingImport = bytes
+                            } else {
+                                runCatching { backup.importPackage(bytes, false) }.isSuccess
+                                Toast.makeText(context, context.getString(R.string.backup_ok), Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                    pendingImport?.let { bytes ->
+                        AlertDialog(
+                            onDismissRequest = { pendingImport = null },
+                            title = { Text(stringResource(R.string.backup_replace_title)) },
+                            text = { Text(stringResource(R.string.backup_replace_message)) },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    pendingImport = null
+                                    scope.launch {
+                                        val ok = runCatching { backup.importPackage(bytes, true) }.isSuccess
+                                        Toast.makeText(context, context.getString(if (ok) R.string.backup_ok else R.string.backup_failed), Toast.LENGTH_SHORT).show()
+                                    }
+                                }) { Text(stringResource(R.string.backup_replace)) }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = {
+                                    pendingImport = null
+                                    scope.launch {
+                                        val ok = runCatching { backup.importPackage(bytes, false) }.isSuccess
+                                        Toast.makeText(context, context.getString(if (ok) R.string.backup_ok else R.string.backup_failed), Toast.LENGTH_SHORT).show()
+                                    }
+                                }) { Text(stringResource(R.string.backup_add)) }
+                            },
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            val stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
+                            exportLauncher.launch("xyprt-backup-$stamp.xyprt")
+                        }) { Text("导出到设备") }
+                        OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/zip", "application/octet-stream", "application/json")) }) { Text("从备份恢复") }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Text("下载资源管理", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(6.dp))
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("管理已下载的资源文件，释放存储空间。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    var showClearConfirm by remember { mutableStateOf<String?>(null) }
+                    var clearing by remember { mutableStateOf(false) }
+                    val remoteAssets = appContainer.remoteAssets
+                    val enhancedModels = appContainer.enhancedModels
+                    val modelCatalog by enhancedModels.catalog.collectAsState()
+                    val fontCount = remember { mutableIntStateOf(0) }
+                    val updateCacheSize = remember { mutableLongStateOf(0L) }
+                    LaunchedEffect(Unit) {
+                        withContext(Dispatchers.IO) {
+                            fontCount.intValue = remoteAssets.countCachedFonts()
+                            updateCacheSize.longValue = remoteAssets.getUpdateCacheSizeBytes()
+                        }
+                    }
+                    // 字体缓存
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("字体缓存", style = MaterialTheme.typography.bodyMedium)
+                            Text("${fontCount.intValue} 个字体文件", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        OutlinedButton(onClick = { showClearConfirm = "fonts" }, enabled = fontCount.intValue > 0 && !clearing) { Text("清理") }
+                    }
+                    HorizontalDivider()
+                    // 增强模型
+                    val installedModels = modelCatalog.items.count { it.installed }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("增强识别模型", style = MaterialTheme.typography.bodyMedium)
+                            Text("$installedModels 个模型文件", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        OutlinedButton(onClick = { showClearConfirm = "models" }, enabled = installedModels > 0 && !clearing) { Text("清理") }
+                    }
+                    HorizontalDivider()
+                    // 更新缓存
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("更新缓存", style = MaterialTheme.typography.bodyMedium)
+                            Text(formatFileSize(updateCacheSize.longValue), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        OutlinedButton(onClick = { showClearConfirm = "updateCache" }, enabled = updateCacheSize.longValue > 0 && !clearing) { Text("清理") }
+                    }
+                    // 确认对话框
+                    showClearConfirm?.let { type ->
+                        val (title, message) = when (type) {
+                            "fonts" -> "清理字体缓存" to "将删除所有已下载的在线字体文件。需要时可以重新下载。"
+                            "models" -> "清理增强模型" to "将删除所有已下载的增强识别模型。需要时可以重新下载。"
+                            "updateCache" -> "清理更新缓存" to "将删除所有已下载的更新安装包和增量补丁，包括当前版本。"
+                            else -> "" to ""
+                        }
+                        AlertDialog(
+                            onDismissRequest = { showClearConfirm = null },
+                            title = { Text(title) },
+                            text = { Text(message) },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    clearing = true
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            when (type) {
+                                                "fonts" -> remoteAssets.clearFontCache()
+                                                "models" -> enhancedModels.clearAllModels()
+                                                "updateCache" -> remoteAssets.clearUpdateCache()
+                                            }
+                                        }
+                                        withContext(Dispatchers.IO) {
+                                            fontCount.intValue = remoteAssets.countCachedFonts()
+                                            updateCacheSize.longValue = remoteAssets.getUpdateCacheSizeBytes()
+                                        }
+                                        clearing = false
+                                        showClearConfirm = null
+                                        Toast.makeText(context, "清理完成", Toast.LENGTH_SHORT).show()
+                                    }
+                                }) { Text("确认清理") }
+                            },
+                            dismissButton = { TextButton(onClick = { showClearConfirm = null }) { Text("取消") } },
+                        )
+                    }
+                }
+            }
+
             Spacer(Modifier.height(20.dp))
-            Text(
-                stringResource(R.string.settings_simple_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
             Spacer(Modifier.height(24.dp))
         }
         }
@@ -328,6 +481,13 @@ fun SettingsScreen(
             }
         )
     }
+}
+
+private fun formatFileSize(bytes: Long): String = when {
+    bytes >= 1024L * 1024 * 1024 -> String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024))
+    bytes >= 1024L * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024))
+    bytes >= 1024L -> String.format("%.1f KB", bytes / 1024.0)
+    else -> "$bytes B"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -199,20 +199,6 @@ fun InfoDialog(onDismiss: () -> Unit, onOpenCoCreator: () -> Unit = {}) {
                     textAlign = TextAlign.Center,
                 )
 
-                ShareToWeChatCard(
-                    onShare = {
-                        scope.launch {
-                            val saved = runCatching { saveLogoToGallery(context) }.isSuccess
-                            Toast.makeText(
-                                context,
-                                if (saved) "已保存到相册，正在打开微信" else "保存失败，请稍后再试",
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                            openWeChat(context)
-                        }
-                    },
-                )
-
                 UpdateCard(
                     state = updateState,
                     downloadState = updateDownloadState,
@@ -318,12 +304,22 @@ private fun UpdateCard(
                     Text("${info.releaseChannelLabel} · 最新版本 ${info.versionName}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     if (info.notes.isNotBlank()) ReleaseNotes(info.notes)
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = onCheck) { Text("重新检查") }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "重新检查",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { onCheck() }.padding(vertical = 2.dp),
+                    )
                     val targetChannel = if (BuildConfig.BUILD_EDITION == "cocreator") "opensource" else "cocreator"
                     val targetLabel = if (targetChannel == "opensource") "社区版" else "共创版"
-                    OutlinedButton(onClick = { onSwitchChannel(targetChannel) }) {
-                        Text("切换至$targetLabel")
+                    if (state.latest?.editionSwitch == true) {
+                        Text(
+                            "切换至$targetLabel",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable { onSwitchChannel(targetChannel) }.padding(vertical = 2.dp),
+                        )
                     }
                 }
             }
@@ -377,6 +373,7 @@ private fun UpdateCard(
                     is UpdateDownloadState.Installing -> if (d.info.versionCode == info.versionCode) {
                         Text("请按系统提示完成更新。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                         SameVersionInstallHint(info)
+                        TextButton(onClick = onInstall) { Text("重新安装") }
                     } else UpdateButtons(info, onDownload, onBrowser, onSource)
                     is UpdateDownloadState.Failed -> if (d.info?.versionCode == info.versionCode) {
                         Text(d.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -414,7 +411,10 @@ private fun UpdateButtons(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { onDownload(info) }) { Text("应用内") }
             OutlinedButton(onClick = { onBrowser(info) }) { Text("手动下载安装") }
-            TextButton(onClick = { onSource(info) }) { Text("发布页") }
+            // 只有服务器返回了自定义发布页链接时才显示"发布页"按钮
+            if (info.hasCustomReleaseUrl) {
+                TextButton(onClick = { onSource(info) }) { Text("发布页") }
+            }
         }
         Text(
             "选择「应用内」更新，下载更快、更省流量。",
@@ -431,26 +431,6 @@ private fun formatBytes(bytes: Long): String = when {
     else -> "$bytes B"
 }
 
-@Composable
-private fun ShareToWeChatCard(onShare: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .clickable { onShare() }
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Icon(painterResource(R.drawable.ic_link), null, modifier = Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
-        Column(Modifier.weight(1f)) {
-            Text("把口袋小印分享给朋友", style = MaterialTheme.typography.bodyLarge)
-            Text("点击保存图标到相册并打开微信", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
 private fun openWeChat(context: android.content.Context) {
     val intent = context.packageManager.getLaunchIntentForPackage("com.tencent.mm")
     if (intent == null) {
@@ -460,41 +440,6 @@ private fun openWeChat(context: android.content.Context) {
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     runCatching { context.startActivity(intent) }
         .onFailure { Toast.makeText(context, "打开微信失败", Toast.LENGTH_SHORT).show() }
-}
-
-private fun saveLogoToGallery(context: android.content.Context): Boolean {
-    val drawable = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.ic_logo_color) ?: return false
-    val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 256
-    val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 256
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    drawable.setBounds(0, 0, canvas.width, canvas.height)
-    drawable.draw(canvas)
-    val filename = "pocketprint_logo_${System.currentTimeMillis()}.png"
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, filename)
-            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-            put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/PocketPrint")
-            put(MediaStore.Images.Media.IS_PENDING, 1)
-        }
-        val resolver = context.contentResolver
-        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
-        runCatching {
-            resolver.openOutputStream(uri)?.use { os -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, os) }
-            values.clear()
-            values.put(MediaStore.Images.Media.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
-        }.isSuccess
-    } else {
-        @Suppress("DEPRECATION")
-        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-        if (!dir.exists() && !dir.mkdirs()) return false
-        val file = java.io.File(dir, filename)
-        runCatching {
-            file.outputStream().use { os -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, os) }
-        }.isSuccess
-    }
 }
 
 @Composable

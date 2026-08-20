@@ -42,6 +42,7 @@ private const val ELEM_SNAP_TOL = 3f  // small zone for aligning to other elemen
 
 data class RemoteFontDownloadState(
     val loading: Boolean = false,
+    val progress: Float? = null,
     val error: String? = null,
 )
 
@@ -195,9 +196,13 @@ class EditorViewModel(app: Application, private val templateId: String) : Androi
         if (asset.type != "font") return
         pendingRemoteFontAssetByElement[elementId] = asset.id
         _remoteFontDownloads.value = _remoteFontDownloads.value +
-            (asset.id to RemoteFontDownloadState(loading = true))
+            (asset.id to RemoteFontDownloadState(loading = true, progress = 0f))
         viewModelScope.launch {
-            container.remoteAssets.ensure(asset).onSuccess {
+            container.remoteAssets.ensure(asset, onProgress = { p ->
+                _remoteFontDownloads.value = _remoteFontDownloads.value.toMutableMap().apply {
+                    get(asset.id)?.let { put(asset.id, it.copy(progress = p)) }
+                }
+            }).onSuccess {
                 // A user may choose another font while this download is in flight. Never let a
                 // stale completion unexpectedly overwrite their newer selection.
                 if (pendingRemoteFontAssetByElement[elementId] == asset.id) {

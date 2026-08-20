@@ -186,11 +186,18 @@ class UpdateDownloadManager(
     }
 
     private suspend fun downloadFull(info: UpdateInfo): File = withContext(Dispatchers.IO) {
-        val url = info.mirrorApkUrl ?: info.sourceApkUrl ?: error("这个版本没有可用的安装包下载地址")
+        val primaryUrl = info.mirrorApkUrl ?: info.sourceApkUrl ?: error("这个版本没有可用的安装包下载地址")
+        val fallbackUrl = if (info.mirrorApkUrl != null) info.sourceApkUrl else null
         val target = File(dir, "${info.versionCode}.apk")
         if (target.isFile && runCatching { verifyApk(target, info) }.isSuccess) return@withContext target
         val part = File(dir, "${info.versionCode}.apk.part")
-        downloadTo(url, part, info.fullSizeBytes, info, usingDelta = false, note = null)
+        try {
+            downloadTo(primaryUrl, part, info.fullSizeBytes, info, usingDelta = false, note = null)
+        } catch (primaryError: Throwable) {
+            if (fallbackUrl != null && part.length() == 0L) {
+                downloadTo(fallbackUrl, part, info.fullSizeBytes, info, usingDelta = false, note = null)
+            } else throw primaryError
+        }
         if (!part.renameTo(target)) {
             part.copyTo(target, overwrite = true); part.delete()
         }

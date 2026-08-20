@@ -14,6 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -48,6 +50,7 @@ data class RemoteAssetFile(
     val encryptionMode: String = "none",
     val keyEnvelopeEndpoint: String? = null,
     val downloadEndpoint: String,
+    val cdnUrl: String? = null,
 )
 
 @Serializable
@@ -63,6 +66,7 @@ data class RemoteAsset(
     val locked: Boolean,
     val reason: String? = null,
     val file: RemoteAssetFile? = null,
+    val preview: RemoteAssetFile? = null,
     val dependencies: List<RemoteAssetDependency> = emptyList(),
     val metadata: JsonObject? = null,
 )
@@ -117,6 +121,7 @@ class RemoteAssetRepository(
     private val scope: CoroutineScope,
 ) {
     private val prefs = context.getSharedPreferences("xyprt_remote_assets", Context.MODE_PRIVATE)
+    private val previewMutex = Mutex()
     // Downloaded commercial assets and device-bound envelopes must never be restored by Auto Backup.
     private val root = File(context.noBackupFilesDir, "asset-cache-v1").apply { mkdirs() }
     private val objects = File(root, "objects").apply { mkdirs() }
@@ -173,7 +178,7 @@ class RemoteAssetRepository(
     }
 
     /** Generic path: protected assets stay encrypted at rest and return a stream-capable handle. */
-    suspend fun ensureCached(asset: RemoteAsset): Result<CachedRemoteAsset> = runCatching {
+    suspend fun ensureCached(asset: RemoteAsset, onProgress: ((Float) -> Unit)? = null): Result<CachedRemoteAsset> = runCatching {
         require(asset.downloadable && !asset.locked) { asset.reason ?: "当前素材不可下载" }
         if (asset.type == "template") {
             val schema = asset.metadata?.int("schemaVersion") ?: PrintDocument.SCHEMA_VERSION
@@ -211,13 +216,13 @@ class RemoteAssetRepository(
         val handle = when {
             mode == "up_to_date" && previousSha != null -> {
                 cachedObject(previousSha)?.let { PlainCachedRemoteAsset(asset, it, remote.sha256, remote.size) }
-                    ?: downloadFull(asset, remote, authenticateDevice)
+                    ?: downloadFull(asset, remote, authenticateDevice, onProgress)
             }
             mode == "delta" && remote.encryptionMode == "none" -> runCatching {
                 val file = applyDelta(asset, remote, previousSha, resolution, authenticateDevice)
                 PlainCachedRemoteAsset(asset, file, remote.sha256, remote.size)
-            }.getOrElse { downloadFull(asset, remote, authenticateDevice) }
-            else -> downloadFull(asset, remote, authenticateDevice)
+            }.getOrElse { downloadFull(asset, remote, authenticateDevice, onProgress) }
+            else -> downloadFull(asset, remote, authenticateDevice, onProgress)
         }
         rememberInstalled(asset, remote)
         handle.plainFile?.let { registerFontIfNeeded(asset, it) }
@@ -225,8 +230,33 @@ class RemoteAssetRepository(
     }
 
     /** Convenience retained for fonts/plain assets. Protected resources must use [ensureCached]. */
-    suspend fun ensure(asset: RemoteAsset): Result<File> = ensureCached(asset).mapCatching { handle ->
-        handle.plainFile ?: error("受保护资源不会以明文文件形式落盘；请使用 openInputStream()")
+    suspend fun ensure(asset: RemoteAsset, onProgress: ((Float) -> Unit)? = null): Result<File> =
+        ensureCached(asset, onProgress = onProgress).mapCatching { handle ->
+            handle.plainFile ?: error("受保护资源不会以明文文件形式落盘；请使用 openInputStream()")
+        }
+
+    /** Downloads and caches a plaintext preview image; previews stay visible even for locked assets. */
+    suspend fun previewFile(asset: RemoteAsset): Result<File> = runCatching {
+        val remote = asset.preview ?: error("这个素材没有预览图")
+        require(remote.encryptionMode == "none") { "预览图必须为明文资源" }
+        require(remote.sha256.isSha256() && remote.blobSha256.isSha256()) { "预览图缺少有效 SHA-256" }
+        cachedObject(remote.sha256)?.let { return@runCatching it }
+        // 优先直接从 CDN 下载（manifest 中携带签名 CDN URL），绕过 PHP 发票链路。
+        val cdnUrl = remote.cdnUrl
+        if (cdnUrl != null) {
+            val part = File(temp, "preview-${asset.id}-${remote.blobSha256}.part")
+            api.downloadAbsoluteToFile(cdnUrl, part, maxBytes = 1024L * 1024, expectedSize = remote.size, authenticateFirstParty = false)
+            require(remote.blobSha256.equals(remote.sha256, ignoreCase = true)) { "预览图CDN下载校验失败" }
+            return@runCatching promoteToCache(part, remote.sha256)
+        }
+        // 回退到 ticket 流程（老版本 manifest 无 cdnUrl）
+        previewMutex.withLock {
+            cachedObject(remote.sha256)?.let { return@runCatching it }
+            val part = downloadBlob(asset, remote, authenticateDevice = coCreator.state.value.active)
+            require(remote.blobSha256.equals(remote.sha256, ignoreCase = true)) { "预览图的内容哈希不一致" }
+            require(remote.blobSize == remote.size) { "预览图的逻辑大小不一致" }
+            promoteToCache(part, remote.sha256)
+        }
     }
 
     fun cached(asset: RemoteAsset): File? {
@@ -318,10 +348,10 @@ class RemoteAssetRepository(
         }
     }
 
-    private suspend fun downloadFull(asset: RemoteAsset, remote: RemoteAssetFile, authenticateDevice: Boolean): CachedRemoteAsset {
+    private suspend fun downloadFull(asset: RemoteAsset, remote: RemoteAssetFile, authenticateDevice: Boolean, onProgress: ((Float) -> Unit)? = null): CachedRemoteAsset {
         return when (remote.encryptionMode) {
             "none" -> {
-                val part = downloadBlob(asset, remote, authenticateDevice)
+                val part = downloadBlob(asset, remote, authenticateDevice, onProgress)
                 require(remote.blobSha256.equals(remote.sha256, ignoreCase = true)) { "未加密素材的内容哈希与对象哈希不一致" }
                 require(remote.blobSize == remote.size) { "未加密素材的逻辑大小与对象大小不一致" }
                 val file = promoteToCache(part, remote.sha256)
@@ -345,7 +375,7 @@ class RemoteAssetRepository(
         }
     }
 
-    private suspend fun downloadBlob(asset: RemoteAsset, remote: RemoteAssetFile, authenticateDevice: Boolean): File {
+    private suspend fun downloadBlob(asset: RemoteAsset, remote: RemoteAssetFile, authenticateDevice: Boolean, onProgress: ((Float) -> Unit)? = null): File {
         val endpoint = remote.downloadEndpoint
         val sep = if ('?' in endpoint) '&' else '?'
         val ticketPath = "$endpoint${sep}appVersionCode=${BuildConfig.VERSION_CODE}"
@@ -360,7 +390,7 @@ class RemoteAssetRepository(
         val part = File(temp, "asset-${asset.id}-${remote.blobSha256}.part")
         if (!preparePartForResume(part, remote.blobSize, remote.blobSha256)) {
             val max = maxOf(remote.blobSize + 1024L * 1024L, 8L * 1024 * 1024)
-            api.downloadAbsoluteToFile(url, part, maxBytes = max, expectedSize = remote.blobSize)
+            api.downloadAbsoluteToFile(url, part, maxBytes = max, expectedSize = remote.blobSize, onProgress = onProgress?.let { cb -> { downloaded, total -> cb(if (total != null && total > 0) downloaded.toFloat() / total else 0f) } })
         }
         require(sha256(part).equals(remote.blobSha256, ignoreCase = true)) { "素材传输 SHA-256 校验失败" }
         return part
@@ -490,6 +520,7 @@ class RemoteAssetRepository(
             locked = o.boolean("locked") ?: true,
             reason = o.string("reason"),
             file = o["file"]?.let { parseFile(it.jsonObject) },
+            preview = o["preview"]?.let { runCatching { parseFile(it.jsonObject) }.getOrNull() },
             dependencies = (o["dependencies"]?.jsonArray ?: JsonArray(emptyList())).mapNotNull { e ->
                 val d = e.jsonObject
                 runCatching {
@@ -516,6 +547,7 @@ class RemoteAssetRepository(
             encryptionMode = encryption?.string("mode") ?: "none",
             keyEnvelopeEndpoint = encryption?.string("keyEnvelopeEndpoint"),
             downloadEndpoint = o.string("downloadEndpoint") ?: error("download endpoint missing"),
+            cdnUrl = o.string("cdnUrl"),
         )
     }
 
@@ -564,4 +596,27 @@ class RemoteAssetRepository(
 
     private fun String.isSha256() = matches(Regex("[0-9a-fA-F]{64}"))
     private fun urlEncode(s: String) = java.net.URLEncoder.encode(s, Charsets.UTF_8.name())
+
+    /** 当前注册的字体数量。委托给 FontRegistry，因为它已经跟踪了所有文件 */
+    fun countCachedFonts(): Int = FontRegistry.remoteFontCount()
+    /** 当前注册的字体占用字节数 */
+    fun cachedFontsBytes(): Long = FontRegistry.remoteFontFiles().sumOf { if (it.isFile) it.length() else 0L }
+
+    /** 清理所有已下载的字体。委托给 FontRegistry，只删它跟踪的文件 */
+    fun clearFontCache() { FontRegistry.clearRemoteFonts() }
+
+    /** 获取更新缓存大小（字节）。目录由 UpdateDownloadManager 持有 */
+    fun getUpdateCacheSizeBytes(): Long {
+        val updateDir = File(context.filesDir, "updates")
+        if (!updateDir.isDirectory) return 0
+        return updateDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+    }
+
+    /** 清理所有更新缓存（包括当前版本） */
+    fun clearUpdateCache() {
+        val updateDir = File(context.filesDir, "updates")
+        if (updateDir.isDirectory) {
+            updateDir.listFiles()?.forEach { it.delete() }
+        }
+    }
 }

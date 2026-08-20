@@ -102,6 +102,7 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
     var qrLoading by remember { mutableStateOf(false) }
     var qrReload by remember { mutableIntStateOf(0) }
     var confirmQr by remember { mutableStateOf(false) }
+    var showExitConfirm by remember { mutableStateOf(false) }
     var pendingSave by remember { mutableStateOf<ByteArray?>(null) }
 
     // Community use stays anonymous until the user actually opens co-creator features.
@@ -211,6 +212,7 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                             )
                         }
                         if (state.active) Button(onClick = onOpenCapabilities, modifier = Modifier.fillMaxWidth()) { Text("查看可用功能") }
+                        if (state.active) OutlinedButton(onClick = { showExitConfirm = true }, modifier = Modifier.fillMaxWidth()) { Text("退出共创计划") }
                     }
                 }
 
@@ -329,7 +331,7 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                                 textAlign = TextAlign.Center,
                             )
                             Text(
-                                "说实话，这个项目我们投入了大量时间和心血，方案也经历了无数次推倒重来。大家的支持常常连电费、服务器和云储存的费用都难以分摊——它更像一个非盈利的爱好，而不是一门生意。正因为有你们，我们才愿意一直把它做下去。",
+                                "口袋小印是在一次次尝试、推倒重来和反馈中，慢慢走到今天的。它更像一个长期维护的非营利爱好项目，而不是一门生意。\n\n服务器、存储和持续维护都需要成本，所以我们通过支持和共创计划，让项目能够继续运转。社区版会保持稳定开放，共创计划则提供测试功能和提前体验。正因为知道有人在使用、在期待，我们将竭尽所能地把它做下去，并尽量把它做得更好。",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
@@ -370,6 +372,26 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                 }) { Text("继续") }
             },
             dismissButton = { TextButton(onClick = { confirmQr = false }) { Text("取消") } },
+        )
+    }
+
+    if (showExitConfirm) {
+        AlertDialog(
+            onDismissRequest = { showExitConfirm = false },
+            title = { Text("退出共创计划？") },
+            text = {
+                Text(
+                    "退出后，当前设备将失去共创资格，不再收到共创计划的更新推送。共创码与这台设备绑定，退出后无法直接绑定到另一台手机。如需重新加入，需要新的共创码。",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showExitConfirm = false
+                    repo.deactivate()
+                    Toast.makeText(context, "已退出共创计划", Toast.LENGTH_SHORT).show()
+                }) { Text("确认退出") }
+            },
+            dismissButton = { TextButton(onClick = { showExitConfirm = false }) { Text("取消") } },
         )
     }
 }
