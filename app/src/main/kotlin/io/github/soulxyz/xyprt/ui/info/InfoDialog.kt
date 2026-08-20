@@ -322,8 +322,10 @@ private fun UpdateCard(
                     TextButton(onClick = onCheck) { Text("重新检查") }
                     val targetChannel = if (BuildConfig.BUILD_EDITION == "cocreator") "opensource" else "cocreator"
                     val targetLabel = if (targetChannel == "opensource") "社区版" else "共创版"
-                    OutlinedButton(onClick = { onSwitchChannel(targetChannel) }) {
-                        Text("切换至$targetLabel")
+                    if (state.latest?.editionSwitch == true) {
+                        OutlinedButton(onClick = { onSwitchChannel(targetChannel) }) {
+                            Text("切换至$targetLabel")
+                        }
                     }
                 }
             }
@@ -377,6 +379,7 @@ private fun UpdateCard(
                     is UpdateDownloadState.Installing -> if (d.info.versionCode == info.versionCode) {
                         Text("请按系统提示完成更新。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                         SameVersionInstallHint(info)
+                        TextButton(onClick = onInstall) { Text("重新安装") }
                     } else UpdateButtons(info, onDownload, onBrowser, onSource)
                     is UpdateDownloadState.Failed -> if (d.info?.versionCode == info.versionCode) {
                         Text(d.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)

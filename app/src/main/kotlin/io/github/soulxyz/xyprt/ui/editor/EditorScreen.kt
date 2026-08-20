@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
@@ -44,6 +45,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -140,6 +142,7 @@ fun EditorScreen(
     templateId: String,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit = {},
+    onOpenCoCreator: () -> Unit = {},
     vm: EditorViewModel = viewModel(factory = EditorViewModel.factory(templateId)),
 ) {
     val template by vm.template.collectAsState()
@@ -328,13 +331,8 @@ fun EditorScreen(
                 guides = guides,
                 onSelect = vm::select,
                 onDoubleTap = { id ->
-                    val element = t.elements.find { it.id == id }
-                    if (element is TextElement) {
-                        editingTextId = element.id
-                        editingTextValue = element.text
-                    } else {
-                        showPropertiesSheet = true
-                    }
+                    vm.select(id)
+                    showPropertiesSheet = true
                 },
                 onDeleteSelected = vm::deleteSelected,
                 onDragStart = vm::beginDrag,
@@ -482,6 +480,7 @@ fun EditorScreen(
                     onCancelRemoteFont = vm::cancelRemoteFontSelection,
                     onRefreshRemoteFonts = vm::refreshRemoteFonts,
                     onUpdate = vm::updateElement,
+                    onOpenCoCreator = onOpenCoCreator,
                     onDelete = {
                         vm.deleteSelected()
                         showPropertiesSheet = false
@@ -776,7 +775,7 @@ private fun humanFileSize(bytes: Long): String = when {
 }
 
 private fun remoteFontLockReason(reason: String?): String = when (reason) {
-    "sponsor_required" -> "共创用户可用"
+    "sponsor_required" -> "部分字体暂时处于共创计划内测阶段"
     "login_required" -> "登录后可用"
     "permission_required" -> "暂不可用"
     else -> "暂不可用"
@@ -830,6 +829,7 @@ private fun PropertiesPanel(
     onRefreshRemoteFonts: () -> Unit,
     onUpdate: (LabelElement) -> Unit,
     onDelete: () -> Unit,
+    onOpenCoCreator: () -> Unit = {},
 ) {
     val tabs = when (element) {
         is TextElement -> listOf("文字", "字体", "排版", "调整")
@@ -866,6 +866,7 @@ private fun PropertiesPanel(
                     onCancelRemoteFont = onCancelRemoteFont,
                     onRefreshRemoteFonts = onRefreshRemoteFonts,
                     onUpdate = onUpdate,
+                    onOpenCoCreator = onOpenCoCreator,
                 )
                 2 -> TextLayoutSection(element, onUpdate)
                 else -> AdjustSection(element, onUpdate, onDelete)
@@ -1510,6 +1511,7 @@ private fun FontSection(
     onCancelRemoteFont: (String) -> Unit,
     onRefreshRemoteFonts: () -> Unit,
     onUpdate: (LabelElement) -> Unit,
+    onOpenCoCreator: () -> Unit = {},
 ) {
     var showRemoteFonts by remember { mutableStateOf(false) }
     var pendingRemoteSlug by remember { mutableStateOf<String?>(null) }
@@ -1583,6 +1585,7 @@ private fun FontSection(
             },
             onRefreshRemoteFonts = onRefreshRemoteFonts,
             onDismiss = { showRemoteFonts = false },
+            onOpenCoCreator = onOpenCoCreator,
         )
     }
 }
@@ -1596,6 +1599,7 @@ private fun RemoteFontLibraryDialog(
     onUseRemoteFont: (RemoteAsset) -> Unit,
     onRefreshRemoteFonts: () -> Unit,
     onDismiss: () -> Unit,
+    onOpenCoCreator: () -> Unit = {},
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1608,7 +1612,7 @@ private fun RemoteFontLibraryDialog(
                     .verticalScroll(rememberScrollState()),
             ) {
                 Text(
-                    "字体只在你选择时下载；已经下载的字体离线也能继续使用。带锁字体需开通共创能力。",
+                    "字体只在你选择时下载；已经下载的字体离线也能继续使用。部分字体暂时处于共创计划内测阶段。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 6.dp),
@@ -1626,6 +1630,7 @@ private fun RemoteFontLibraryDialog(
                             active = element.fontAssetId == font.slug,
                             state = remoteFontDownloads[font.id],
                             onUse = { onUseRemoteFont(font) },
+                            onOpenCoCreator = onOpenCoCreator,
                         )
                         if (index != remoteFonts.lastIndex) HorizontalDivider()
                     }
@@ -1647,6 +1652,7 @@ private fun RemoteFontCard(
     active: Boolean,
     state: RemoteFontDownloadState?,
     onUse: () -> Unit,
+    onOpenCoCreator: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val container = remember(context) { (context.applicationContext as App).container }
@@ -1720,9 +1726,18 @@ private fun RemoteFontCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = if (state?.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                state?.error?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
+                                    state?.error?.let {
+                                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                                    }
+                                    if (font.locked && font.reason == "sponsor_required") {
+                                        TextButton(
+                                            onClick = onOpenCoCreator,
+                                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                                            modifier = Modifier.height(28.dp),
+                                        ) {
+                                            Text("共创计划", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                        }
+                                    }
             }
             Button(
                 onClick = onUse,
@@ -1730,7 +1745,24 @@ private fun RemoteFontCard(
                 contentPadding = PaddingValues(horizontal = 14.dp),
             ) {
                 if (state?.loading == true) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    val p = state.progress
+                    if (p != null) {
+                        val animP by animateFloatAsState(p, label = "fontDl")
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.width(52.dp).height(20.dp)) {
+                            LinearProgressIndicator(
+                                progress = { animP },
+                                modifier = Modifier.fillMaxWidth().height(20.dp).clip(RoundedCornerShape(10.dp)),
+                                trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            )
+                            Text(
+                                "${(animP * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 10.sp,
+                            )
+                        }
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.width(40.dp).height(2.dp))
+                    }
                 } else Text(if (installed) "使用" else "下载")
             }
         }

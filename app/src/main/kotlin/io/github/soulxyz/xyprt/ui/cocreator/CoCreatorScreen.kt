@@ -102,6 +102,7 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
     var qrLoading by remember { mutableStateOf(false) }
     var qrReload by remember { mutableIntStateOf(0) }
     var confirmQr by remember { mutableStateOf(false) }
+    var showExitConfirm by remember { mutableStateOf(false) }
     var pendingSave by remember { mutableStateOf<ByteArray?>(null) }
 
     // Community use stays anonymous until the user actually opens co-creator features.
@@ -211,6 +212,7 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                             )
                         }
                         if (state.active) Button(onClick = onOpenCapabilities, modifier = Modifier.fillMaxWidth()) { Text("查看可用功能") }
+                        if (state.active) OutlinedButton(onClick = { showExitConfirm = true }, modifier = Modifier.fillMaxWidth()) { Text("退出共创计划") }
                     }
                 }
 
@@ -370,6 +372,26 @@ fun CoCreatorScreen(onBack: () -> Unit, onOpenCapabilities: () -> Unit) {
                 }) { Text("继续") }
             },
             dismissButton = { TextButton(onClick = { confirmQr = false }) { Text("取消") } },
+        )
+    }
+
+    if (showExitConfirm) {
+        AlertDialog(
+            onDismissRequest = { showExitConfirm = false },
+            title = { Text("退出共创计划？") },
+            text = {
+                Text(
+                    "退出后，当前设备将失去共创资格，不再收到共创计划的更新推送。共创码与这台设备绑定，退出后无法直接绑定到另一台手机。如需重新加入，需要新的共创码。",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showExitConfirm = false
+                    repo.deactivate()
+                    Toast.makeText(context, "已退出共创计划", Toast.LENGTH_SHORT).show()
+                }) { Text("确认退出") }
+            },
+            dismissButton = { TextButton(onClick = { showExitConfirm = false }) { Text("取消") } },
         )
     }
 }

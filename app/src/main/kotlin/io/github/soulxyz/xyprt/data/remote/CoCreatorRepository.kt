@@ -131,6 +131,11 @@ class CoCreatorRepository(
         }
     }
 
+    fun deactivate() {
+        prefs.edit().clear().apply()
+        _state.value = CoCreatorState()
+    }
+
     /**
      * Fast repair for a device whose EC request-signing key drifted while the original RSA
      * Keystore identity is still present. The server challenge is encrypted to that old RSA key,

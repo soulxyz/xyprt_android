@@ -1,5 +1,6 @@
 package io.github.soulxyz.xyprt.ui.settings
 
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -63,7 +64,9 @@ import io.github.soulxyz.xyprt.ble.BlePermissions
 import io.github.soulxyz.xyprt.ble.PrinterState
 import io.github.soulxyz.xyprt.data.UpdateDownloadMode
 import io.github.soulxyz.xyprt.data.ScanRecognitionMode
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -286,6 +289,75 @@ fun SettingsScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Text("备份和迁移", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(6.dp))
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("导出或恢复所有模板、文档和打印记录。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val backup = appContainer.backup
+                    var pendingImport by remember { mutableStateOf<ByteArray?>(null) }
+                    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+                        if (uri != null) scope.launch {
+                            val ok = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    val bytes = backup.exportPackage(io.github.soulxyz.xyprt.ui.info.currentAppLanguageTag(context))
+                                    (context.contentResolver.openOutputStream(uri) ?: error("no stream")).use { it.write(bytes) }
+                                }.isSuccess
+                            }
+                            Toast.makeText(context, context.getString(if (ok) R.string.backup_ok else R.string.backup_failed), Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                        if (uri != null) scope.launch {
+                            val bytes = withContext(Dispatchers.IO) {
+                                runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+                            }
+                            if (bytes == null) {
+                                Toast.makeText(context, context.getString(R.string.backup_failed), Toast.LENGTH_SHORT).show()
+                            } else if (backup.hasContent()) {
+                                pendingImport = bytes
+                            } else {
+                                runCatching { backup.importPackage(bytes, false) }.isSuccess
+                                Toast.makeText(context, context.getString(R.string.backup_ok), Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                    pendingImport?.let { bytes ->
+                        AlertDialog(
+                            onDismissRequest = { pendingImport = null },
+                            title = { Text(stringResource(R.string.backup_replace_title)) },
+                            text = { Text(stringResource(R.string.backup_replace_message)) },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    pendingImport = null
+                                    scope.launch {
+                                        val ok = runCatching { backup.importPackage(bytes, true) }.isSuccess
+                                        Toast.makeText(context, context.getString(if (ok) R.string.backup_ok else R.string.backup_failed), Toast.LENGTH_SHORT).show()
+                                    }
+                                }) { Text(stringResource(R.string.backup_replace)) }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = {
+                                    pendingImport = null
+                                    scope.launch {
+                                        val ok = runCatching { backup.importPackage(bytes, false) }.isSuccess
+                                        Toast.makeText(context, context.getString(if (ok) R.string.backup_ok else R.string.backup_failed), Toast.LENGTH_SHORT).show()
+                                    }
+                                }) { Text(stringResource(R.string.backup_add)) }
+                            },
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            val stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
+                            exportLauncher.launch("xyprt-backup-$stamp.xyprt")
+                        }) { Text("导出到设备") }
+                        OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/zip", "application/octet-stream", "application/json")) }) { Text("从备份恢复") }
                     }
                 }
             }

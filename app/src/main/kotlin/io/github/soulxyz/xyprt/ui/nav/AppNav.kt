@@ -115,7 +115,8 @@ fun AppNav(startDestination: String = "home") {
             EditorScreen(
                 templateId = id,
                 onBack = { nav.popBackStack() },
-                onOpenSettings = { nav.navigate("settings") }
+                onOpenSettings = { nav.navigate("settings") },
+                onOpenCoCreator = { nav.navigate("cocreator") },
             )
         }
         composable("settings") {

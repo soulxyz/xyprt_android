@@ -204,7 +204,7 @@ private fun HistoryCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onReprint, contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp), modifier = Modifier.height(36.dp)) { Text("再打") }
+                    TextButton(onClick = onReprint, contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp), modifier = Modifier.height(36.dp)) { Text("重打") }
                     if (onEditQuick != null) TextButton(onClick = onEditQuick, contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp), modifier = Modifier.height(36.dp)) { Text("重新编辑") }
                     if (onConvertLayout != null) TextButton(onClick = onConvertLayout, contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp), modifier = Modifier.height(36.dp)) { Text("自由排版") }
                     IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {

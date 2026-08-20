@@ -130,6 +130,7 @@ class ServerApi(
         maxBytes: Long = 512L * 1024 * 1024,
         expectedSize: Long? = null,
         authenticateFirstParty: Boolean = false,
+        onProgress: ((Long, Long?) -> Unit)? = null,
     ): Long = withContext(Dispatchers.IO) {
         target.parentFile?.mkdirs()
         var existing = target.takeIf { it.isFile }?.length()?.coerceAtLeast(0L) ?: 0L
@@ -184,6 +185,7 @@ class ServerApi(
                             downloaded += n
                             if (downloaded > maxBytes) error("文件超过允许大小")
                             out.write(buffer, 0, n)
+                            onProgress?.invoke(downloaded, total)
                         }
                         out.fd.sync()
                     }

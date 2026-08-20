@@ -178,7 +178,7 @@ class RemoteAssetRepository(
     }
 
     /** Generic path: protected assets stay encrypted at rest and return a stream-capable handle. */
-    suspend fun ensureCached(asset: RemoteAsset): Result<CachedRemoteAsset> = runCatching {
+    suspend fun ensureCached(asset: RemoteAsset, onProgress: ((Float) -> Unit)? = null): Result<CachedRemoteAsset> = runCatching {
         require(asset.downloadable && !asset.locked) { asset.reason ?: "当前素材不可下载" }
         if (asset.type == "template") {
             val schema = asset.metadata?.int("schemaVersion") ?: PrintDocument.SCHEMA_VERSION
@@ -216,13 +216,13 @@ class RemoteAssetRepository(
         val handle = when {
             mode == "up_to_date" && previousSha != null -> {
                 cachedObject(previousSha)?.let { PlainCachedRemoteAsset(asset, it, remote.sha256, remote.size) }
-                    ?: downloadFull(asset, remote, authenticateDevice)
+                    ?: downloadFull(asset, remote, authenticateDevice, onProgress)
             }
             mode == "delta" && remote.encryptionMode == "none" -> runCatching {
                 val file = applyDelta(asset, remote, previousSha, resolution, authenticateDevice)
                 PlainCachedRemoteAsset(asset, file, remote.sha256, remote.size)
-            }.getOrElse { downloadFull(asset, remote, authenticateDevice) }
-            else -> downloadFull(asset, remote, authenticateDevice)
+            }.getOrElse { downloadFull(asset, remote, authenticateDevice, onProgress) }
+            else -> downloadFull(asset, remote, authenticateDevice, onProgress)
         }
         rememberInstalled(asset, remote)
         handle.plainFile?.let { registerFontIfNeeded(asset, it) }
@@ -230,9 +230,10 @@ class RemoteAssetRepository(
     }
 
     /** Convenience retained for fonts/plain assets. Protected resources must use [ensureCached]. */
-    suspend fun ensure(asset: RemoteAsset): Result<File> = ensureCached(asset).mapCatching { handle ->
-        handle.plainFile ?: error("受保护资源不会以明文文件形式落盘；请使用 openInputStream()")
-    }
+    suspend fun ensure(asset: RemoteAsset, onProgress: ((Float) -> Unit)? = null): Result<File> =
+        ensureCached(asset, onProgress = onProgress).mapCatching { handle ->
+            handle.plainFile ?: error("受保护资源不会以明文文件形式落盘；请使用 openInputStream()")
+        }
 
     /** Downloads and caches a plaintext preview image; previews stay visible even for locked assets. */
     suspend fun previewFile(asset: RemoteAsset): Result<File> = runCatching {
@@ -347,10 +348,10 @@ class RemoteAssetRepository(
         }
     }
 
-    private suspend fun downloadFull(asset: RemoteAsset, remote: RemoteAssetFile, authenticateDevice: Boolean): CachedRemoteAsset {
+    private suspend fun downloadFull(asset: RemoteAsset, remote: RemoteAssetFile, authenticateDevice: Boolean, onProgress: ((Float) -> Unit)? = null): CachedRemoteAsset {
         return when (remote.encryptionMode) {
             "none" -> {
-                val part = downloadBlob(asset, remote, authenticateDevice)
+                val part = downloadBlob(asset, remote, authenticateDevice, onProgress)
                 require(remote.blobSha256.equals(remote.sha256, ignoreCase = true)) { "未加密素材的内容哈希与对象哈希不一致" }
                 require(remote.blobSize == remote.size) { "未加密素材的逻辑大小与对象大小不一致" }
                 val file = promoteToCache(part, remote.sha256)
@@ -374,7 +375,7 @@ class RemoteAssetRepository(
         }
     }
 
-    private suspend fun downloadBlob(asset: RemoteAsset, remote: RemoteAssetFile, authenticateDevice: Boolean): File {
+    private suspend fun downloadBlob(asset: RemoteAsset, remote: RemoteAssetFile, authenticateDevice: Boolean, onProgress: ((Float) -> Unit)? = null): File {
         val endpoint = remote.downloadEndpoint
         val sep = if ('?' in endpoint) '&' else '?'
         val ticketPath = "$endpoint${sep}appVersionCode=${BuildConfig.VERSION_CODE}"
@@ -389,7 +390,7 @@ class RemoteAssetRepository(
         val part = File(temp, "asset-${asset.id}-${remote.blobSha256}.part")
         if (!preparePartForResume(part, remote.blobSize, remote.blobSha256)) {
             val max = maxOf(remote.blobSize + 1024L * 1024L, 8L * 1024 * 1024)
-            api.downloadAbsoluteToFile(url, part, maxBytes = max, expectedSize = remote.blobSize)
+            api.downloadAbsoluteToFile(url, part, maxBytes = max, expectedSize = remote.blobSize, onProgress = onProgress?.let { cb -> { downloaded, total -> cb(if (total != null && total > 0) downloaded.toFloat() / total else 0f) } })
         }
         require(sha256(part).equals(remote.blobSha256, ignoreCase = true)) { "素材传输 SHA-256 校验失败" }
         return part
