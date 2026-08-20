@@ -50,6 +50,7 @@ data class RemoteAssetFile(
     val encryptionMode: String = "none",
     val keyEnvelopeEndpoint: String? = null,
     val downloadEndpoint: String,
+    val cdnUrl: String? = null,
 )
 
 @Serializable
@@ -239,8 +240,15 @@ class RemoteAssetRepository(
         require(remote.encryptionMode == "none") { "预览图必须为明文资源" }
         require(remote.sha256.isSha256() && remote.blobSha256.isSha256()) { "预览图缺少有效 SHA-256" }
         cachedObject(remote.sha256)?.let { return@runCatching it }
-        // One preview at a time: a parallel burst of preview tickets/redeems needlessly
-        // stresses the server's SQLite write path and can trip rate-limit bookkeeping.
+        // 优先直接从 CDN 下载（manifest 中携带签名 CDN URL），绕过 PHP 发票链路。
+        val cdnUrl = remote.cdnUrl
+        if (cdnUrl != null) {
+            val part = File(temp, "preview-${asset.id}-${remote.blobSha256}.part")
+            api.downloadAbsoluteToFile(cdnUrl, part, maxBytes = 1024L * 1024, expectedSize = remote.size, authenticateFirstParty = false)
+            require(remote.blobSha256.equals(remote.sha256, ignoreCase = true)) { "预览图CDN下载校验失败" }
+            return@runCatching promoteToCache(part, remote.sha256)
+        }
+        // 回退到 ticket 流程（老版本 manifest 无 cdnUrl）
         previewMutex.withLock {
             cachedObject(remote.sha256)?.let { return@runCatching it }
             val part = downloadBlob(asset, remote, authenticateDevice = coCreator.state.value.active)
@@ -538,6 +546,7 @@ class RemoteAssetRepository(
             encryptionMode = encryption?.string("mode") ?: "none",
             keyEnvelopeEndpoint = encryption?.string("keyEnvelopeEndpoint"),
             downloadEndpoint = o.string("downloadEndpoint") ?: error("download endpoint missing"),
+            cdnUrl = o.string("cdnUrl"),
         )
     }
 
