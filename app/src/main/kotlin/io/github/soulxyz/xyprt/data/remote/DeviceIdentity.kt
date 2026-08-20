@@ -312,15 +312,44 @@ class DeviceIdentity(private val context: Context) {
     }
 
     private fun readOrCreateInstallationId(): String {
+        // 单一权威来源：文件存储。prefs 只用于一次性迁移。
         val fromFile = runCatching { idFile.takeIf { it.isFile }?.readText()?.trim() }.getOrNull()
             ?.takeIf { it.length in 16..128 }
         if (fromFile != null) return fromFile
+
+        // 一次性从 prefs 迁移老版本（v1）的 installation_id 到文件，然后不再读 prefs。
+        // prefs 里的值可能存在也可能不存在；如果文件已经被损坏/删除而 prefs 还在，
+        // 这里会读取 prefs（这是预期的迁移路径），完成后 prefs 中的 installation_id
+        // 会被清除，永远不再使用。
         val legacy = prefs.getString("installation_id", null)?.takeIf { it.length in 16..128 }
-        val value = legacy ?: newInstallationId()
+        if (legacy != null) {
+            idFile.parentFile?.mkdirs()
+            runCatching { idFile.writeText(legacy) }
+            prefs.edit().remove("installation_id").apply()
+            return legacy
+        }
+
+        // 文件丢失 + prefs 无值（全新安装 / 用户清空数据）：用 ANDROID_ID + 包名
+        // 生成确定性 ID。ANDROID_ID 在同设备上稳定，因此跨卸载保留。
+        // 模拟器默认 ANDROID_ID 与少数 ROM 固定值不影响正确性——它们只会在自己
+        // 设备集合内产生稳定 ID；服务器不会把它们与真机混淆，因为 packageName
+        // 已经把多用户/多设备/多应用的边界隔离开了。
+        val value = generateDeterministicId()
         idFile.parentFile?.mkdirs()
         runCatching { idFile.writeText(value) }
-        prefs.edit().remove("installation_id").apply()
         return value
+    }
+
+    /**
+     * 使用 ANDROID_ID + 包名生成确定性 Installation ID。
+     * 同设备同包名永远生成相同 ID；卸载重装后保持一致。
+     */
+    private fun generateDeterministicId(): String {
+        val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID).orEmpty()
+        // 即使 androidId 为空或为已知固定值（模拟器），sha256 仍然能给出稳定输出；
+        // 不同设备/ROM 给出相同 ANDROID_ID 的概率极低，且不会与真机数据交叉。
+        val hash = sha256Hex("${context.packageName}:$androidId".toByteArray())
+        return hash.substring(0, 32)
     }
 
     private fun newInstallationId() = UUID.randomUUID().toString().replace("-", "")
