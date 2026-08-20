@@ -23,6 +23,17 @@ data class EnhancedRuntimeProbeResult(
     val detail: String,
 )
 
+/** Optional post-capture image normalizer. Private providers return null until their models are installed. */
+interface DocumentImageEnhancer {
+    suspend fun enhance(bitmap: Bitmap, useBlackpoint: Boolean): Bitmap?
+    fun release() = Unit
+}
+
+/** Public fallback: the photo is used as-is, no AI normalization. */
+object BasicDocumentImageEnhancer : DocumentImageEnhancer {
+    override suspend fun enhance(bitmap: Bitmap, useBlackpoint: Boolean): Bitmap? = null
+}
+
 /** Public fallback: DocumentScanner still owns OpenCV detection/refinement and manual adjustment. */
 object BasicEnhancedScanEngine : EnhancedScanEngine {
     override suspend fun detect(bitmap: Bitmap): EnhancedScanProposal? = null
@@ -41,6 +52,9 @@ private class SelectableEnhancedScanEngine(
 object EnhancedScanEngineFactory {
     fun create(models: EnhancedModelRepository, settings: SettingsRepository): EnhancedScanEngine =
         SelectableEnhancedScanEngine(EnhancedScanEngineProvider.create(models), settings)
+
+    fun createEnhancer(models: EnhancedModelRepository): DocumentImageEnhancer =
+        EnhancedScanEngineProvider.createEnhancer(models)
 
     suspend fun probeRuntime(models: EnhancedModelRepository): EnhancedRuntimeProbeResult =
         EnhancedScanEngineProvider.probeRuntime(models)

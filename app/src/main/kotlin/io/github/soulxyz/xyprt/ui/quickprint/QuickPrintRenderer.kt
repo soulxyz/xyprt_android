@@ -52,6 +52,8 @@ data class QuickImageAdjustments(
     val scalePercent: Int = 100,
     val removeRedInk: Boolean = false,
     val removeBlueInk: Boolean = false,
+    /** Run the AI scan-normalization (enhance field + optional blackpoint) before printing. */
+    val enhance: Boolean = false,
 )
 
 internal fun QuickImageAdjustments.outputRotationDegrees(): Int =

@@ -92,7 +92,9 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Base64
 import io.github.soulxyz.xyprt.App
 import io.github.soulxyz.xyprt.R
 import io.github.soulxyz.xyprt.data.remote.RemoteAsset
@@ -111,14 +113,19 @@ import io.github.soulxyz.xyprt.model.QrPayloadType
 import io.github.soulxyz.xyprt.model.Symbology
 import io.github.soulxyz.xyprt.model.TableElement
 import io.github.soulxyz.xyprt.model.TextElement
+import io.github.soulxyz.xyprt.printer.MonoImage
 import io.github.soulxyz.xyprt.printer.dither.DitherMode
 import io.github.soulxyz.xyprt.printer.dither.OutlineMethod
 import io.github.soulxyz.xyprt.render.FontRegistry
 import io.github.soulxyz.xyprt.render.LabelRenderer
 import io.github.soulxyz.xyprt.ui.components.ClearButton
-import io.github.soulxyz.xyprt.ui.components.RasterEffectControls
+import io.github.soulxyz.xyprt.ui.components.EffectThumb
+import io.github.soulxyz.xyprt.ui.components.EffectThumbRow
+import io.github.soulxyz.xyprt.ui.components.RasterAdjustmentTabs
 import io.github.soulxyz.xyprt.ui.components.rememberBlePermissionRunner
 import io.github.soulxyz.xyprt.ui.home.LabelDialog
+import io.github.soulxyz.xyprt.ui.quickprint.QuickImageAdjustments
+import io.github.soulxyz.xyprt.ui.quickprint.QuickPrintRenderer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1345,28 +1352,68 @@ private fun OutlineOptionsRow(
 
 @Composable
 private fun ImageProperties(element: ImageElement, onUpdate: (LabelElement) -> Unit) {
-    RasterEffectControls(
+    var ditherThumbs by remember(element.pngBase64) { mutableStateOf<Map<DitherMode, MonoImage?>>(emptyMap()) }
+    LaunchedEffect(element.pngBase64) {
+        ditherThumbs = withContext(Dispatchers.IO) {
+            val bytes = runCatching { Base64.decode(element.pngBase64, Base64.NO_WRAP) }.getOrNull()
+                ?: return@withContext emptyMap()
+            val full = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@withContext emptyMap()
+            val small = if (full.width > 160) {
+                Bitmap.createScaledBitmap(full, 160, (full.height * 160 / full.width).coerceAtLeast(1), true)
+            } else full
+            if (small !== full) full.recycle()
+            try {
+                DitherMode.entries.associateWith { mode ->
+                    runCatching {
+                        QuickPrintRenderer.toMono(small, QuickImageAdjustments(mode = mode, threshold = element.threshold, contrast = element.contrast))
+                    }.getOrNull()
+                }
+            } finally {
+                small.recycle()
+            }
+        }
+    }
+    Spacer(Modifier.height(6.dp))
+    GroupLabel("效果预设")
+    EffectThumbRow(
+        selectedId = element.dither.name,
+        thumbs = DitherMode.entries.map { mode ->
+            EffectThumb(mode.name, ditherLabel(mode), ditherThumbs[mode])
+        },
+        onSelect = { id -> DitherMode.entries.firstOrNull { it.name == id }?.let { onUpdate(element.copy(dither = it)) } },
+    )
+    Spacer(Modifier.height(10.dp))
+    RasterAdjustmentTabs(
         mode = element.dither,
         threshold = element.threshold,
         contrast = element.contrast,
         invert = element.invert,
-        outlineSensitivity = element.outlineSensitivity,
-        outlineThickness = element.outlineThickness,
-        outlineMethod = element.outlineMethod,
-        outlineSmooth = element.outlineSmooth,
         onMode = { onUpdate(element.copy(dither = it)) },
         onThreshold = { onUpdate(element.copy(threshold = it)) },
         onContrast = { onUpdate(element.copy(contrast = it)) },
         onInvert = { onUpdate(element.copy(invert = it)) },
+        outlineSensitivity = element.outlineSensitivity,
+        outlineThickness = element.outlineThickness,
+        outlineMethod = element.outlineMethod,
+        outlineSmooth = element.outlineSmooth,
         onOutlineSensitivity = { onUpdate(element.copy(outlineSensitivity = it)) },
         onOutlineThickness = { onUpdate(element.copy(outlineThickness = it)) },
         onOutlineMethod = { onUpdate(element.copy(outlineMethod = it)) },
         onOutlineSmooth = { onUpdate(element.copy(outlineSmooth = it)) },
+        rotationDegrees = element.rotation,
+        onRotationDegrees = { onUpdate(element.copy(rotation = it)) },
         removeRedInk = element.removeRedInk,
         removeBlueInk = element.removeBlueInk,
         onRemoveRedInk = { onUpdate(element.copy(removeRedInk = it)) },
         onRemoveBlueInk = { onUpdate(element.copy(removeBlueInk = it)) },
     )
+}
+
+private fun ditherLabel(mode: DitherMode): String = when (mode) {
+    DitherMode.OUTLINE -> "线稿"
+    DitherMode.THRESHOLD -> "黑白"
+    DitherMode.FLOYD_STEINBERG -> "细腻"
+    DitherMode.ATKINSON -> "清晰"
 }
 
 @OptIn(ExperimentalLayoutApi::class)

@@ -6,6 +6,8 @@ import io.github.soulxyz.xyprt.data.remote.EnhancedModelRepository
 object EnhancedScanEngineProvider {
     fun create(models: EnhancedModelRepository): EnhancedScanEngine = BasicEnhancedScanEngine
 
+    fun createEnhancer(models: EnhancedModelRepository): DocumentImageEnhancer = BasicDocumentImageEnhancer
+
     suspend fun probeRuntime(models: EnhancedModelRepository): EnhancedRuntimeProbeResult =
         EnhancedRuntimeProbeResult(false, "基础识别", "当前构建不包含增强识别运行时。")
 }
