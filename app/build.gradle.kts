@@ -33,7 +33,7 @@ android {
         applicationId = "io.github.soulxyz.xyprt"
         minSdk = 26
         targetSdk = 36
-        versionCode = providers.gradleProperty("XYPRT_VERSION_CODE").orElse("1030100").get().toInt()
+        versionCode = providers.gradleProperty("XYPRT_VERSION_CODE").orElse("1030011").get().toInt()
         versionName = providers.gradleProperty("XYPRT_VERSION_NAME").orElse("1.3.0").get()
         manifestPlaceholders["appName"] = "口袋小印"
         val updateApiBase = providers.gradleProperty("XYPRT_UPDATE_API_BASE_URL")
